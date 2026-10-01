@@ -25,7 +25,7 @@ claude          # in a terminal, then /login, so the CLI has a valid session
 
 ## Run
 ```bash
-uv run autocv serve        # → http://127.0.0.1:8000
+uv run autocv serve        # opens http://127.0.0.1:8000 in your default browser (--no-browser to skip)
 ```
 - Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).
 - Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001`.

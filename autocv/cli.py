@@ -6,7 +6,8 @@
     autocv evidence [term]           list citable evidence ids (optionally filtered)
     autocv check <app_dir>           fact-check + ATS report (exit 1 on errors)
     autocv build <app_dir>           check → .docx → .pdf → page limit → status "built"
-    autocv serve [--port 8000]       start the web UI backend (localhost only)
+    autocv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
+                 [--no-browser]
 """
 
 from __future__ import annotations
@@ -141,15 +142,37 @@ def cmd_build(args) -> int:
     return 0
 
 
+def _open_when_ready(url: str, port: int, timeout: float = 20.0) -> None:
+    """Open the default browser once the server accepts connections."""
+    import socket
+    import time
+    import webbrowser
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.2)
+
+
 def cmd_serve(args) -> int:
+    import threading
+
     import uvicorn
 
     from .api import create_app
     from .store import ROOT
-    if not (ROOT / "web" / "dist").exists():
+    url = f"http://127.0.0.1:{args.port}"
+    built = (ROOT / "web" / "dist").exists()
+    if not built:
         print("note: web UI not built — run `npm --prefix web install && npm --prefix web run build` "
               "(or use `npm --prefix web run dev` on :5173). Serving the API only.")
-    print(f"AutoCV → http://127.0.0.1:{args.port}")
+    print(f"AutoCV → {url}", flush=True)
+    if built and not args.no_browser:
+        threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
     uvicorn.run(create_app(), host="127.0.0.1", port=args.port)
     return 0
 
@@ -165,7 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("check"); p.add_argument("app"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("build"); p.add_argument("app"); p.add_argument("--no-pdf", action="store_true")
     p.add_argument("--max-pages", type=int, default=MAX_PAGES); p.set_defaults(fn=cmd_build)
-    p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=8000); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--no-browser", action="store_true", help="don't open the web UI in the default browser")
+    p.set_defaults(fn=cmd_serve)
     args = parser.parse_args(argv)
     return args.fn(args)
 

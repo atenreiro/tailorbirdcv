@@ -4,13 +4,13 @@
     {
       "name": "autocv",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "autocv", "serve", "--port", "8000"],
+      "runtimeArgs": ["run", "autocv", "serve", "--port", "8000", "--no-browser"],
       "port": 8000
     },
     {
       "name": "autocv-demo",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["AUTOCV_ENGINE=fake", "uv", "run", "autocv", "serve", "--port", "8001"],
+      "runtimeArgs": ["AUTOCV_ENGINE=fake", "uv", "run", "autocv", "serve", "--port", "8001", "--no-browser"],
       "port": 8001
     },
     {
