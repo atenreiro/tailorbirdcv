@@ -72,6 +72,12 @@ export interface Preference {
 }
 export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[]; retired_ids?: string[]; version?: string }
 export interface Issue { where: string; message: string }
+export interface SentCopy {
+  id: string; created: string; reason: string; company?: string; role?: string; pages?: number | null; files: string[]
+}
+export interface HistoryEntry { id: string; time: string; cause: string; size: number }
+export interface HistoryDiff { id: string; yaml: string; summary: string[]; diff: string }
+export type HistoryKind = 'profile' | 'knowledge'
 export type ScoreKey = 'fit' | 'impact' | 'clarity' | 'seniority'
 export interface CritiqueIssue {
   id: string; where: string; kind: string; severity: 'high' | 'medium' | 'low'; problem: string
@@ -107,10 +113,11 @@ export interface Application {
   answers: AppAnswer[]; edits: number
   outputs_stale: boolean
   critique: Critique | null
+  sent: SentCopy[]
   length: { lines: number; budget: number } | null
   build?: { pages: number | null; too_long: boolean }
 }
-export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean }
+export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean; sent?: SentCopy | null }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
@@ -120,9 +127,11 @@ export const STATUSES = ['draft', 'analyzed', 'composed', 'built', 'applied', 'i
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code?: string
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -138,11 +147,14 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
   }
   if (!res.ok) {
     let msg = res.statusText
+    let code: string | undefined
     try {
       const data = await res.json()
-      msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
+      if (typeof data.detail === 'string') msg = data.detail
+      else if (data.detail && typeof data.detail.message === 'string') { msg = data.detail.message; code = data.detail.code }
+      else msg = JSON.stringify(data.detail)
     } catch { /* not json */ }
-    throw new ApiError(res.status, msg)
+    throw new ApiError(res.status, msg, code)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
@@ -175,7 +187,15 @@ export const api = {
     req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
   trim: (id: string) => req<Application>('POST', `/applications/${id}/trim`),
   critique: (id: string) => req<Application>('POST', `/applications/${id}/critique`),
-  reveal: (id: string) => req<void>('POST', `/applications/${id}/reveal`),
+  reveal: (id: string, snapshot?: string) =>
+    req<void>('POST', `/applications/${id}/reveal${snapshot ? `?snapshot=${encodeURIComponent(snapshot)}` : ''}`),
+  freeze: (id: string, opts: { build?: boolean; markApplied?: boolean } = {}) =>
+    req<Application>('POST', `/applications/${id}/freeze?build=${!!opts.build}&mark_applied=${!!opts.markApplied}`),
+  sentFileUrl: (id: string, snapshot: string, name: string, download = false) =>
+    `/api/applications/${id}/sent/${encodeURIComponent(snapshot)}/${encodeURIComponent(name)}${download ? '?download=true' : ''}`,
+  history: (kind: HistoryKind) => req<HistoryEntry[]>('GET', `/history/${kind}`),
+  historyDiff: (kind: HistoryKind, id: string) => req<HistoryDiff>('GET', `/history/${kind}/${encodeURIComponent(id)}`),
+  restore: (kind: HistoryKind, id: string) => req<unknown>('POST', `/history/${kind}/${encodeURIComponent(id)}/restore`),
   saveCritiqueDecisions: (id: string, decisions: Record<string, 'accepted' | 'rejected'>) =>
     req<Critique>('PUT', `/applications/${id}/critique/decisions`, { decisions }),
   suggestPreferences: (id: string) =>

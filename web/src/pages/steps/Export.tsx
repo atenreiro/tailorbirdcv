@@ -1,4 +1,5 @@
-import { api } from '../../api'
+import { api, ApiError } from '../../api'
+import { fmtDate } from '../../ui'
 import { Section, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
@@ -19,6 +20,18 @@ export default function Export({ app, setApp, go, run, memo }: StepProps) {
       'Converting to PDF through Microsoft Word…',
       'Counting pages…',
     ], async () => setApp(await api.build(app.id)), false)
+
+  const freezeCopy = () =>
+    run('Freezing a copy', ['Saving a read-only copy of exactly these files…'], async () => {
+      try {
+        setApp(await api.freeze(app.id))
+      } catch (e) {
+        if (!(e instanceof ApiError) || e.code !== 'needs_build') throw e
+        if (window.confirm(`${e.message}\n\nBuild a fresh PDF now and freeze that? (Word will open briefly.)`)) {
+          setApp(await api.freeze(app.id, { build: true }))
+        }
+      }
+    }, false)
 
   const trim = () =>
     run('Trimming to 2 pages', [
@@ -73,6 +86,35 @@ export default function Export({ app, setApp, go, run, memo }: StepProps) {
             <button className="btn" onClick={() => go('review')}>Back to review</button>
           </div>
         </Section>
+
+        {(docx || app.sent.length > 0) && (
+          <div className="sheet animate-rise rounded p-5 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="eyebrow">Sent copies</p>
+              <button className="btn btn-ghost px-2 py-1 text-xs text-rust" disabled={!ok || unsaved} onClick={freezeCopy}
+                title="Save a read-only copy of exactly these files, e.g. when you send an updated version">
+                + Freeze a copy
+              </button>
+            </div>
+            {app.sent.length === 0 ? (
+              <p className="mt-2 text-muted">When you mark this application <strong>applied</strong>, AutoCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {app.sent.map((c) => (
+                  <li key={c.id} className="rounded border border-rule p-2">
+                    <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} pages` : ''}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
+                        <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-rust-soft hover:text-rust">↓ {f.split('.').pop()}</a>
+                      ))}
+                      <button className="chip hover:bg-rust-soft hover:text-rust" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {docx && <StyleCoach app={app} />}
 

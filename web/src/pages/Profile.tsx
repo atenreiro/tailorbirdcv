@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Evidence, type Profile as P, type Track } from '../api'
 import { AnswersPanel, PreferencesPanel } from './Memory'
+import { HistoryPanel } from './History'
 import { setUnsaved } from '../unsaved'
 import { cx, ErrorNote, Spinner } from '../ui'
 
-const TABS = ['Experience', 'Skills', 'Headlines', 'Summary & highlights', 'Projects & more', 'Synonyms', 'Answers & gaps', 'Style preferences', 'YAML'] as const
+const TABS = ['Experience', 'Skills', 'Headlines', 'Summary & highlights', 'Projects & more', 'Synonyms', 'Answers & gaps', 'Style preferences', 'History', 'YAML'] as const
 type Tab = (typeof TABS)[number]
 const TRACKS: Track[] = ['manager', 'ic', 'hybrid']
 
@@ -64,7 +65,7 @@ export default function Profile() {
   const [saved, setSaved] = useState<P | null>(null)
   const [p, setP] = useState<P | null>(null)
   const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>(params.get('tab') === 'prefs' ? 'Style preferences' : params.get('tab') === 'answers' ? 'Answers & gaps' : 'Experience')
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'prefs' ? 'Style preferences' : params.get('tab') === 'answers' ? 'Answers & gaps' : params.get('tab') === 'history' ? 'History' : 'Experience')
   const [yaml, setYaml] = useState('')
   const [savedYaml, setSavedYaml] = useState('')
   const [version, setVersion] = useState('')
@@ -306,6 +307,7 @@ export default function Profile() {
 
       {tab === 'Answers & gaps' && <AnswersPanel />}
       {tab === 'Style preferences' && <PreferencesPanel />}
+      {tab === 'History' && <HistoryPanel hasUnsaved={dirty} onRestored={() => { void load() }} />}
 
       {tab === 'YAML' && (
         <div>

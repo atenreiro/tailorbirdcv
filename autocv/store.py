@@ -40,6 +40,10 @@ class Conflict(Exception):
     """The file changed since the client loaded it (another tab, or a background save)."""
 
 
+class NeedsBuild(Exception):
+    """The PDF is missing or out of date, so there's nothing trustworthy to freeze."""
+
+
 def file_version(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.exists() else "none"
 
@@ -55,6 +59,24 @@ def _write_json_atomic(path: Path, data: dict) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _parse(raw: bytes):
+    import yaml
+    try:
+        return yaml.safe_load(raw.decode("utf-8", errors="replace"))
+    except yaml.YAMLError:
+        return None
+
+
+def _same_content(kind: str, old, new: dict) -> bool:
+    """Equal after validation (defaults filled in), so layout or default-only differences
+    don't create history entries."""
+    model = MasterProfile if kind == "profile" else Knowledge
+    try:
+        return model.model_validate(old).model_dump(exclude_none=True) == model.model_validate(new).model_dump(exclude_none=True)
+    except Exception:  # noqa: BLE001 — an unparsable old version is definitely worth keeping
+        return False
 
 
 def next_id(prefix: str, taken: set[str]) -> str:
@@ -104,9 +126,10 @@ class Store:
     def profile_version(self) -> str:
         return file_version(self.profile_path)
 
-    def save_profile(self, data: dict, base_version: str | None = None) -> MasterProfile:
-        """Validate and save. Ids that disappear are retired so they're never reused.
-        With `base_version`, refuse to overwrite a profile that changed since it was read."""
+    def save_profile(self, data: dict, base_version: str | None = None, cause: str = "edit") -> MasterProfile:
+        """Validate and save. Ids that disappear are retired so they're never reused. The
+        previous version is kept in history (labelled with `cause`). With `base_version`,
+        refuse to overwrite a profile that changed since it was read."""
         with _LOCK:
             if base_version is not None and base_version != self.profile_version():
                 raise Conflict("Your profile changed since this page loaded (another tab or an approval). "
@@ -114,18 +137,71 @@ class Store:
             profile = MasterProfile.model_validate(data)  # raises on invalid
             if self.profile_path.exists():
                 old = self.profile()
-                retired = set(old.retired_ids) | (set(old.all_ids()) - set(profile.all_ids()))
-                profile.retired_ids = sorted(retired | set(profile.retired_ids))
-            dump_yaml(profile.model_dump(exclude_none=True), self.profile_path)
+                live = set(profile.all_ids())
+                retired = set(old.retired_ids) | set(profile.retired_ids) | (set(old.all_ids()) - live)
+                profile.retired_ids = sorted(retired - live)
+            self._write_with_history("profile", self.profile_path, profile.model_dump(exclude_none=True), cause)
             return profile
 
     @contextmanager
-    def editing_profile(self):
+    def editing_profile(self, cause: str = "edit"):
         """Read-modify-write the profile under the lock: `with store.editing_profile() as data: ...`"""
         with _LOCK:
             data = self.profile().model_dump(exclude_none=True)
             yield data
-            self.save_profile(data)
+            self.save_profile(data, cause=cause)
+
+    # -- history (profile + knowledge) ------------------------------------------------------
+    HISTORY_KINDS = ("profile", "knowledge")
+
+    def history_dir(self, kind: str) -> Path:
+        if kind not in self.HISTORY_KINDS:
+            raise KeyError(kind)
+        return self.private / "history" / kind
+
+    def _write_with_history(self, kind: str, path: Path, data: dict, cause: str) -> None:
+        """Write `data` atomically; if that changes the file, keep the previous version."""
+        old = path.read_bytes() if path.exists() else None
+        dump_yaml(data, path)
+        if old is not None and old != path.read_bytes() and not _same_content(kind, _parse(old), data):
+            folder = self.history_dir(kind)
+            folder.mkdir(parents=True, exist_ok=True)
+            stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            (folder / f"{stamp}__{slug(cause) or 'edit'}.yaml").write_bytes(old)
+
+    def history(self, kind: str) -> list[dict]:
+        """Saved previous versions, newest first. Each is the state *before* `cause`."""
+        folder = self.history_dir(kind)
+        if not folder.exists():
+            return []
+        out = []
+        for f in sorted(folder.glob("*.yaml"), reverse=True):
+            stamp, _, cause = f.stem.partition("__")
+            when = dt.datetime.strptime(stamp, "%Y%m%d-%H%M%S-%f")
+            out.append({"id": f.stem, "time": when.isoformat(timespec="seconds"),
+                        "cause": cause.replace("-", " "), "size": f.stat().st_size})
+        return out
+
+    def history_text(self, kind: str, snapshot_id: str) -> str:
+        folder = self.history_dir(kind)
+        path = (folder / f"{snapshot_id}.yaml").resolve()
+        if path.parent != folder.resolve() or not path.exists():
+            raise KeyError(snapshot_id)
+        return path.read_text(encoding="utf-8")
+
+    def restore(self, kind: str, snapshot_id: str):
+        """Restore a previous version. The current one goes to history first (undoable);
+        retired ids are merged so a deleted id can never come back and collide."""
+        import yaml as _yaml
+        data = _yaml.safe_load(self.history_text(kind, snapshot_id)) or {}
+        with _LOCK:
+            if kind == "profile":
+                current = self.profile()
+                data["retired_ids"] = sorted(set(data.get("retired_ids", [])) | set(current.retired_ids))
+                return self.save_profile(data, cause=f"restore {snapshot_id[:15]}")
+            current = self.knowledge()
+            data["retired_ids"] = sorted(set(data.get("retired_ids", [])) | set(current.retired_ids))
+            return self.save_knowledge(Knowledge.model_validate(data), cause=f"restore {snapshot_id[:15]}")
 
     def base_tailored(self) -> TailoredResume | None:
         p = self.base_tailored_path
@@ -297,7 +373,7 @@ class Store:
     def knowledge_version(self) -> str:
         return file_version(self.knowledge_path)
 
-    def save_knowledge(self, knowledge: Knowledge, base_version: str | None = None) -> Knowledge:
+    def save_knowledge(self, knowledge: Knowledge, base_version: str | None = None, cause: str = "edit") -> Knowledge:
         with _LOCK:
             if base_version is not None and base_version != self.knowledge_version():
                 raise Conflict("Your answers/preferences changed since this page loaded. Reload, then retry.")
@@ -305,17 +381,17 @@ class Store:
             if self.knowledge_path.exists():
                 old = self.knowledge()
                 old_ids = {x.id for x in [*old.answers, *old.preferences]}
-                new_ids = {x.id for x in [*knowledge.answers, *knowledge.preferences]}
-                knowledge.retired_ids = sorted(set(old.retired_ids) | set(knowledge.retired_ids) | (old_ids - new_ids))
-            dump_yaml(knowledge.model_dump(exclude_none=True), self.knowledge_path)
+                live = {x.id for x in [*knowledge.answers, *knowledge.preferences]}
+                knowledge.retired_ids = sorted((set(old.retired_ids) | set(knowledge.retired_ids) | (old_ids - live)) - live)
+            self._write_with_history("knowledge", self.knowledge_path, knowledge.model_dump(exclude_none=True), cause)
             return knowledge
 
     @contextmanager
-    def editing_knowledge(self):
+    def editing_knowledge(self, cause: str = "edit"):
         with _LOCK:
             knowledge = self.knowledge()
             yield knowledge
-            self.save_knowledge(knowledge)
+            self.save_knowledge(knowledge, cause=cause)
 
     def _remember(self, app_id: str, answers: list[AppAnswer]) -> None:
         """Upsert finalized answers into the knowledge base; drafts are forgotten.
@@ -361,7 +437,63 @@ class Store:
                     knowledge.answers = kept
                     changed = True
         if changed:
-            self.save_knowledge(knowledge)
+            self.save_knowledge(knowledge, cause="gap answer")
+
+    # -- sent copies (frozen when applying) ------------------------------------------------
+    def sent_dir(self, app_id: str) -> Path:
+        return self.app_path(app_id) / "sent"
+
+    def freeze_problem(self, app_id: str) -> str | None:
+        if not any(f.endswith(".pdf") for f in self.files(app_id)):
+            return "There's no PDF for this application yet."
+        if self.outputs_stale(app_id):
+            return "The PDF is out of date: the resume changed after it was built."
+        return None
+
+    def freeze(self, app_id: str, reason: str) -> dict:
+        """Copy exactly what is being sent (PDF, DOCX, job description, resume data) into a
+        dated, read-only snapshot. Never overwrites an earlier snapshot."""
+        import shutil
+        with _LOCK:
+            problem = self.freeze_problem(app_id)
+            if problem:
+                raise NeedsBuild(problem)
+            src = self.app_path(app_id)
+            stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            dest, n = self.sent_dir(app_id) / stamp, 2
+            while dest.exists():
+                dest, n = self.sent_dir(app_id) / f"{stamp}-{n}", n + 1
+            dest.mkdir(parents=True)
+            copied = []
+            for name in [*self.files(app_id), "jd.md", "tailored.yaml", "analysis.yaml"]:
+                if (src / name).exists():
+                    shutil.copy2(src / name, dest / name)
+                    copied.append(name)
+            meta = self.meta(app_id)
+            record = {"id": dest.name, "created": dt.datetime.now().isoformat(timespec="seconds"), "reason": reason,
+                      "company": meta.get("company"), "role": meta.get("role"), "pages": meta.get("pages"),
+                      "tailored_hash": self.tailored_hash(app_id), "files": copied}
+            (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+            for f in dest.iterdir():
+                f.chmod(0o444)  # read-only: this is the record of what was sent
+            return record
+
+    def sent_copies(self, app_id: str) -> list[dict]:
+        folder = self.sent_dir(app_id)
+        if not folder.exists():
+            return []
+        out = []
+        for d in sorted(folder.iterdir(), reverse=True):
+            if (d / "sent.json").exists():
+                out.append(json.loads((d / "sent.json").read_text(encoding="utf-8")))
+        return out
+
+    def sent_file(self, app_id: str, snapshot: str, name: str) -> Path:
+        folder = self.sent_dir(app_id).resolve()
+        path = (folder / snapshot / name).resolve()
+        if path.parent.parent != folder or not path.is_file() or path.suffix not in (".pdf", ".docx", ".md"):
+            raise KeyError(name)
+        return path
 
     def files(self, app_id: str) -> list[str]:
         path = self.app_path(app_id)

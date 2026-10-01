@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Proposal, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
+import { changeStatus } from '../status'
 import { cx, ErrorNote, fmtDate, Spinner, StatusPill, Working } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
@@ -114,9 +115,15 @@ export default function Workspace() {
   }
 
   async function setStatus(status: string) {
+    setError(null)
     try {
-      const meta = await api.patch(app!.id, { status })
-      setApp({ ...app!, meta })
+      const r = await changeStatus(app!.id, status, (on) => setWorking(on ? {
+        title: 'Building & freezing the copy you send', ai: false,
+        lines: ['Rendering your resume…', 'Converting to PDF through Microsoft Word…', 'Saving a read-only sent copy…'],
+      } : null))
+      if (!r) return
+      // reload: applying freezes a sent copy, which the status response doesn't include
+      setApp('app' in r ? r.app : await api.get(app!.id))
     } catch (e) {
       setError((e as Error).message)
     }

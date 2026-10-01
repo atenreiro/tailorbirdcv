@@ -21,7 +21,7 @@ from pathlib import Path
 from . import ats, factcheck
 from .ingest import ingest
 from .render import docx_text, render
-from .schema import dump_yaml, load_profile, load_tailored, load_yaml
+from .schema import MasterProfile, dump_yaml, load_profile, load_tailored, load_yaml
 
 from .store import Store
 
@@ -60,7 +60,9 @@ def cmd_ingest(args) -> int:
     if PROFILE.exists() and not args.force:
         sys.exit(f"{PROFILE} exists — it is the curated source of truth. Use --force to overwrite.")
     profile, base = ingest(SOURCE_DOCX)
-    dump_yaml(profile, PROFILE)
+    MasterProfile.model_validate(profile)  # never write an invalid source of truth
+    with STORE.lock:  # --force keeps the old profile in history (Master profile → History)
+        STORE._write_with_history("profile", PROFILE, profile, "ingest force")
     dump_yaml(base, BASE_TAILORED)
     p = load_profile(PROFILE)
     n = sum(len(r.achievements) for r in p.roles)

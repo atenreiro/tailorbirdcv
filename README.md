@@ -13,6 +13,7 @@ JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► 
 - **AI engine**: `claude -p` fully isolated (no tools, MCP servers, plugins, hooks, skills or saved sessions), run from an empty folder, with output constrained to a JSON schema whose citable ids are limited to ids in your profile. Fact-check failures are fed back to the model automatically, for up to 3 repair rounds.
 - **Memory** (`private/knowledge.yaml`): every finalized gap answer is remembered. Known gaps aren't asked again, and similar questions are pre-filled. Style preferences are learned from your Review edits and guidance, and applied only once you approve them. Manage both under Master profile → "Answers & gaps" / "Style preferences". Memory steers questions and style; it is never resume evidence.
 - **Hiring-manager review**: on demand in Review, the AI reads the draft as the role's hiring manager and a recruiter skimming the top third would. You get a verdict, scores, and specific fixes pinned to lines. Every suggested rewrite is fact-checked before you see it, and you accept or reject each one.
+- **Sent copies and history**: marking an application *applied* freezes a read-only copy of exactly what you sent. Every change to your profile and answers is kept in Master profile → History, with a diff and one-click (undoable) restore.
 - **Rendering**: reproduces the original resume's formatting exactly (verified pixel-identical via `autocv baseline`).
 
 ## Setup (once)

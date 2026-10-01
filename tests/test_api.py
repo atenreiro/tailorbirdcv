@@ -90,6 +90,9 @@ def test_full_flow(env):
     assert data["files"] == ["Jane_Example_Resume.docx"]
     assert client.get(f"/api/applications/{app_id}/files/{data['files'][0]}").status_code == 200
 
+    # applying freezes the sent files, so it needs a PDF (builds here skip Word)
+    assert client.patch(f"/api/applications/{app_id}", json={"status": "applied"}).status_code == 409
+    (store.app_path(app_id) / "Jane_Example_Resume.pdf").write_bytes(b"%PDF-1.4 stand-in")
     assert client.patch(f"/api/applications/{app_id}", json={"status": "applied"}).json()["status"] == "applied"
     assert client.get("/api/applications").json()[0]["status"] == "applied"
 

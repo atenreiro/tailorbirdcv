@@ -249,6 +249,12 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* ---------------------------------------------------------------- the sheet */}
       <article className="sheet animate-rise min-w-0 rounded px-5 py-7 text-[14.5px] text-body sm:px-10 sm:py-9">
+        {app.sent.length > 0 && (
+          <p className="-mt-2 mb-5 rounded bg-ok-soft px-3 py-2 text-xs text-ok">
+            You sent a frozen copy on {new Date(app.sent[0].created).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}.
+            Edits here won’t change it. Find it under Export → Sent copies.
+          </p>
+        )}
         <p className="font-serif text-4xl font-semibold text-ink">{p.contact.name}</p>
         <select
           aria-label="Headline"

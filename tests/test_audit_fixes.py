@@ -187,6 +187,8 @@ def test_status_only_moves_forward_and_respects_user_status(env):
     client, store, _ = env
     app_id = composed_app(client)
     assert store.meta(app_id)["status"] == "composed"
+    client.post(f"/api/applications/{app_id}/build?pdf=false")
+    (store.app_path(app_id) / "Jane_Example_Resume.pdf").write_bytes(b"%PDF-1.4 stand-in")
     client.patch(f"/api/applications/{app_id}", json={"status": "applied"})
     client.post(f"/api/applications/{app_id}/analyze")
     client.post(f"/api/applications/{app_id}/compose", json={})

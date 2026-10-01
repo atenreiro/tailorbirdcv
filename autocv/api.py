@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import difflib
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -24,7 +25,7 @@ from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import AppAnswer, Knowledge, Preference, TailoredResume
-from .store import ROOT, STATUSES, Conflict, Store, next_id
+from .store import ROOT, STATUSES, Conflict, NeedsBuild, Store, next_id
 
 MAX_PAGES = 2
 
@@ -103,6 +104,44 @@ def _safe_ats(store: Store, app_id: str, tailored: TailoredResume) -> dict | Non
         return None
 
 
+def history_summary(kind: str, old_text: str, new_text: str) -> list[str]:
+    """Human summary of what changed from a saved version to the current one."""
+    old, new = yaml.safe_load(old_text) or {}, yaml.safe_load(new_text) or {}
+    lines: list[str] = []
+    if kind == "profile":
+        from .schema import MasterProfile
+        try:
+            a, b = factcheck.evidence_index(MasterProfile.model_validate(old)), \
+                factcheck.evidence_index(MasterProfile.model_validate(new))
+        except ValidationError:
+            return ["(can't summarise: one version doesn't validate)"]
+        added, removed = sorted(set(b) - set(a)), sorted(set(a) - set(b))
+        changed = sorted(k for k in set(a) & set(b) if a[k] != b[k])
+        skills_a = {i for g in old.get("skills", []) for i in g.get("items", [])}
+        skills_b = {i for g in new.get("skills", []) for i in g.get("items", [])}
+        heads_a = {h["text"] for h in old.get("headlines", [])}
+        heads_b = {h["text"] for h in new.get("headlines", [])}
+        for label, items in (("evidence added since", added), ("evidence removed since", removed),
+                             ("evidence edited since", changed)):
+            if items:
+                lines.append(f"{len(items)} {label}: {', '.join(items[:6])}{'…' if len(items) > 6 else ''}")
+        if skills_b - skills_a:
+            lines.append(f"skills added since: {', '.join(sorted(skills_b - skills_a))}")
+        if skills_a - skills_b:
+            lines.append(f"skills removed since: {', '.join(sorted(skills_a - skills_b))}")
+        if heads_a != heads_b:
+            lines.append("headlines changed")
+    else:
+        for key, label in (("answers", "answer"), ("preferences", "preference")):
+            a = {x["id"]: x for x in old.get(key, [])}
+            b = {x["id"]: x for x in new.get(key, [])}
+            for verb, ids in (("added since", set(b) - set(a)), ("removed since", set(a) - set(b)),
+                              ("changed since", {k for k in set(a) & set(b) if a[k] != b[k]})):
+                if ids:
+                    lines.append(f"{len(ids)} {label}{'s' if len(ids) > 1 else ''} {verb}")
+    return lines or ["no content changes (formatting only)"]
+
+
 def _engine_call(exc: EngineError) -> HTTPException:
     return HTTPException(503, f"AI engine error: {exc}")
 
@@ -168,7 +207,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def put_profile(data: dict, if_match: str | None = Header(default=None)):
         need_profile()
         try:
-            profile = store.save_profile(data, base_version=if_match)
+            profile = store.save_profile(data, base_version=if_match, cause="profile editor")
         except Conflict as e:
             raise HTTPException(409, str(e))
         except ValidationError as e:
@@ -185,7 +224,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         need_profile()
         try:
             data = yaml.safe_load(body.yaml)
-            store.save_profile(data, base_version=if_match)
+            store.save_profile(data, base_version=if_match, cause="yaml edit")
         except Conflict as e:
             raise HTTPException(409, str(e))
         except (yaml.YAMLError, ValidationError, TypeError) as e:
@@ -200,7 +239,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 profile, new_id = ai.add_evidence(store.profile(), body.target, body.text, body.skills, body.note)
             except KeyError:
                 raise HTTPException(422, f"unknown role '{body.target}'")
-            store.save_profile(profile.model_dump(exclude_none=True))
+            store.save_profile(profile.model_dump(exclude_none=True), cause="evidence approved")
         return {"id": new_id, "evidence": factcheck.evidence_index(profile)}
 
     # -- applications ------------------------------------------------------------------
@@ -210,8 +249,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         for a in apps:
             try:
                 a["outputs_stale"] = store.outputs_stale(a["id"])
+                sent = store.sent_copies(a["id"])
+                a["sent"] = sent[0] if sent else None
             except KeyError:
-                a["outputs_stale"] = False
+                a["outputs_stale"], a["sent"] = False, None
         return apps
 
     @api.post("/applications", status_code=201)
@@ -240,7 +281,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "outputs_stale": store.outputs_stale(app_id),
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
                "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
-               "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id)}
+               "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id),
+               "sent": store.sent_copies(app_id)}
         ai_draft = store.ai_tailored(app_id)
         if ai_draft and tailored:
             out["edits"] = len(ai.edited_claims(ai_draft, tailored))
@@ -295,6 +337,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.patch("/applications/{app_id}")
     def patch_application(app_id: str, body: MetaPatch):
         need_app(app_id)
+        if body.status == "applied" and store.meta(app_id).get("status") != "applied":
+            # Applying freezes the exact files sent. If they're missing or stale, the UI
+            # offers "Build & freeze" instead of recording a version that doesn't match.
+            try:
+                store.freeze(app_id, "applied")
+            except NeedsBuild as e:
+                raise HTTPException(409, {"code": "needs_build", "message": str(e)})
         return store.update_meta(app_id, **body.model_dump(exclude_none=True))
 
     @api.delete("/applications/{app_id}", status_code=204)
@@ -385,9 +434,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         store.save_tailored(app_id, tailored)
         return get_application(app_id)
 
-    @api.post("/applications/{app_id}/build")
-    async def build(app_id: str, pdf: bool = True):
-        need_app(app_id)
+    async def do_build(app_id: str, pdf: bool = True) -> int | None:
         tailored = store.tailored(app_id)
         if not tailored:
             raise HTTPException(409, "Nothing to build yet.")
@@ -408,9 +455,81 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 raise HTTPException(500, f"DOCX built, but PDF conversion via Word failed: {e}")
         store.update_meta(app_id, built_hash=built_hash, pages=pages)
         store.advance_status(app_id, "built")
+        return pages
+
+    @api.post("/applications/{app_id}/build")
+    async def build(app_id: str, pdf: bool = True):
+        need_app(app_id)
+        pages = await do_build(app_id, pdf)
         out = get_application(app_id)
         out["build"] = {"pages": pages, "too_long": bool(pages and pages > MAX_PAGES)}
         return out
+
+    @api.post("/applications/{app_id}/freeze")
+    async def freeze(app_id: str, build: bool = False, mark_applied: bool = False):
+        """Freeze a read-only copy of what's being sent. `build=true` rebuilds first
+        ("Build & freeze"); `mark_applied=true` then records the application as applied."""
+        need_app(app_id)
+        if build:
+            pages = await do_build(app_id, pdf=True)
+            if pages and pages > MAX_PAGES:
+                raise HTTPException(409, {"code": "too_long", "message":
+                                          f"The PDF is {pages} pages — trim it before sending. Nothing was frozen."})
+        try:
+            store.freeze(app_id, "applied" if mark_applied else "manual copy")
+        except NeedsBuild as e:
+            raise HTTPException(409, {"code": "needs_build", "message": str(e)})
+        if mark_applied:
+            store.update_meta(app_id, status="applied")
+        return get_application(app_id)
+
+    @api.get("/applications/{app_id}/sent/{snapshot}/{name}")
+    def get_sent_file(app_id: str, snapshot: str, name: str, download: bool = False):
+        need_app(app_id)
+        try:
+            path = store.sent_file(app_id, snapshot, name)
+        except KeyError:
+            raise HTTPException(404, "file not found")
+        media = {".pdf": "application/pdf", ".md": "text/markdown"}.get(
+            path.suffix, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        return FileResponse(path, media_type=media, filename=name,
+                            content_disposition_type="attachment" if download else "inline")
+
+    # -- profile / knowledge history ----------------------------------------------------------
+    def need_kind(kind: str) -> str:
+        if kind not in store.HISTORY_KINDS:
+            raise HTTPException(404, "unknown history")
+        return kind
+
+    @api.get("/history/{kind}")
+    def list_history(kind: str):
+        return store.history(need_kind(kind))
+
+    @api.get("/history/{kind}/{snapshot_id}")
+    def history_diff(kind: str, snapshot_id: str):
+        need_kind(kind)
+        try:
+            old_text = store.history_text(kind, snapshot_id)
+        except KeyError:
+            raise HTTPException(404, "snapshot not found")
+        path = store.profile_path if kind == "profile" else store.knowledge_path
+        current_text = path.read_text(encoding="utf-8") if path.exists() else ""
+        return {"id": snapshot_id, "yaml": old_text,
+                "summary": history_summary(kind, old_text, current_text),
+                "diff": "".join(difflib.unified_diff(old_text.splitlines(keepends=True),
+                                                     current_text.splitlines(keepends=True),
+                                                     "this version", "current", n=2))}
+
+    @api.post("/history/{kind}/{snapshot_id}/restore")
+    def restore_history(kind: str, snapshot_id: str):
+        need_kind(kind)
+        try:
+            store.restore(kind, snapshot_id)
+        except KeyError:
+            raise HTTPException(404, "snapshot not found")
+        except ValidationError as e:
+            raise HTTPException(422, f"That version can't be restored (it no longer validates): {e}")
+        return profile_payload() if kind == "profile" else knowledge_payload()
 
     # -- gap answers + memory -------------------------------------------------------------
     @api.put("/applications/{app_id}/answers")
@@ -427,7 +546,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def put_knowledge(data: dict, if_match: str | None = Header(default=None)):
         data = {k: v for k, v in data.items() if k != "version"}
         try:
-            return knowledge_payload(store.save_knowledge(Knowledge.model_validate(data), base_version=if_match))
+            return knowledge_payload(store.save_knowledge(Knowledge.model_validate(data), base_version=if_match,
+                                                          cause="answers & preferences editor"))
         except Conflict as e:
             raise HTTPException(409, str(e))
         except ValidationError as e:
@@ -451,7 +571,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except EngineError as e:
             raise _engine_call(e)
         today = f"{dt.date.today():%Y-%m-%d}"
-        with store.editing_knowledge() as knowledge:  # fresh copy: the AI call may have taken minutes
+        with store.editing_knowledge(cause="preferences suggested") as knowledge:  # fresh copy after the AI call
             for prop in proposals:
                 taken = {x.id for x in knowledge.preferences} | set(knowledge.retired_ids)
                 knowledge.preferences.append(Preference(
@@ -460,14 +580,22 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return {"edits": len(edits), "proposed": len(proposals), "knowledge": knowledge_payload()}
 
     @api.post("/applications/{app_id}/reveal", status_code=204)
-    def reveal(app_id: str):
-        """Open the application folder in Finder (PDF selected), so the exact file can be
-        uploaded from there — no "(1)" duplicates from the Downloads folder."""
+    def reveal(app_id: str, snapshot: str | None = None):
+        """Open the application folder (or a sent copy) in Finder with the PDF selected, so
+        the exact file can be uploaded from there — no "(1)" duplicates from Downloads."""
         import subprocess
         import sys
         path = store.app_path(need_app(app_id))
-        pdf = next((path / f for f in store.files(app_id) if f.endswith(".pdf")), None)
-        target = pdf or next((path / f for f in store.files(app_id)), None)
+        if snapshot:
+            sent = next((c for c in store.sent_copies(app_id) if c["id"] == snapshot), None)
+            if not sent:
+                raise HTTPException(404, "sent copy not found")
+            path = store.sent_dir(app_id) / snapshot
+            files = sent["files"]
+        else:
+            files = store.files(app_id)
+        pdf = next((path / f for f in files if f.endswith(".pdf")), None)
+        target = pdf or next((path / f for f in files if f.endswith(".docx")), None)
         if sys.platform == "darwin":
             cmd = ["open", "-R", str(target)] if target else ["open", str(path)]
         elif sys.platform.startswith("win"):

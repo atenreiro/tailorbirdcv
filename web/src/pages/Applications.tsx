@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, STATUSES, type AppSummary } from '../api'
 import { cx, ErrorNote, fmtDate, Spinner, StatusPill } from '../ui'
+import { changeStatus } from '../status'
 
 const PIPELINE = ['built', 'applied', 'interview', 'offer']
 
@@ -22,10 +23,14 @@ export default function Applications() {
 
   const shown = (apps ?? []).filter((a) => filter === 'all' || a.status === filter)
 
+  const [busy, setBusy] = useState<string | null>(null)
+
   async function setStatus(id: string, status: string) {
+    setError(null)
     try {
-      await api.patch(id, { status })
-      setApps((prev) => prev?.map((a) => (a.id === id ? { ...a, status } : a)) ?? null)
+      const r = await changeStatus(id, status, (on) => setBusy(on ? id : null))
+      if (!r) return
+      setApps(await api.applications())  // refreshes status and the sent copy
     } catch (e) {
       setError((e as Error).message)
     }
@@ -96,6 +101,7 @@ export default function Applications() {
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-muted">{fmtDate(a.created)}</td>
                   <td className="px-3 py-4">
+                    {busy === a.id && <span className="mr-2 inline-flex items-center gap-1 text-xs text-muted"><Spinner /> building…</span>}
                     <label className="relative inline-flex items-center">
                       <StatusPill status={a.status} />
                       <select
@@ -117,6 +123,12 @@ export default function Applications() {
                         </a>
                       ))}
                       {a.outputs_stale && <span className="text-[11px] text-warn">rebuild</span>}
+                      {a.sent && a.sent.files.some((f) => f.endsWith('.pdf')) && (
+                        <a href={api.sentFileUrl(a.id, a.sent.id, a.sent.files.find((f) => f.endsWith('.pdf'))!, true)}
+                          title={`Exact copy sent on ${fmtDate(a.sent.created)}`} className="chip bg-ok-soft text-ok hover:bg-ok hover:text-sheet">
+                          ✓ sent
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>
