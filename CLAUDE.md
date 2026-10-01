@@ -16,7 +16,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - `templates/base.docx` — theme/page setup with empty body, no PII.
 - `.claude/skills/profile` (`/profile`) and `.claude/skills/tailor` (`/tailor`).
 - `private/` — `profile.yaml` (source of truth), `source/`, `applications/<date>_<company>_<role>/` (each with `meta.json`).
-- Web UI: `autocv/api.py` (FastAPI), `autocv/ai.py` (prompts + fact-check repair loop), `autocv/engine.py` (headless `claude -p`, tools disabled — uses the Claude subscription, no API key), `autocv/store.py`, `web/` (React + Vite + Tailwind). The model never writes to the profile: gap answers become *proposals* the user approves in the UI.
+- Web UI: `autocv/api.py` (FastAPI), `autocv/ai.py` (prompts + fact-check repair loop), `autocv/engine.py` (headless `claude -p`, tools disabled — uses the Claude subscription, no API key), `autocv/store.py`, `autocv/jobfetch.py` (JD from URL: ATS APIs → JSON-LD → text → Playwright fallback, SSRF-guarded on every hop), `web/` (React + Vite + Tailwind). The model never writes to the profile: gap answers become *proposals* the user approves in the UI.
 
 ## Commands
 ```

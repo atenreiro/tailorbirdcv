@@ -7,8 +7,8 @@ import httpx
 import pytest
 
 from autocv import jobfetch
-from autocv.jobfetch import (FetchError, ashby_ref, fetch_job, format_lever, from_json_ld, greenhouse_ref,
-                             html_to_text, lever_ref)
+from autocv.jobfetch import (BlockedURL, FetchError, Rendered, ashby_ref, fetch_job, format_lever, from_json_ld,
+                             greenhouse_ref, html_to_text, lever_ref)
 
 JOB_ID = "01e7966a-9873-461c-ad17-771fd7c0be9a"
 
@@ -98,18 +98,58 @@ def test_fetch_follows_redirects_and_rechecks_each_hop(monkeypatch):
     async def check(url):
         checked.append(url)
         if "169.254" in url:
-            raise FetchError("That URL points to a private or local network address, so AutoCV won't fetch it.")
+            raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
     monkeypatch.setattr(jobfetch, "check_public_url", check)
+    monkeypatch.setattr(jobfetch, "render_page", _no_browser)
     client = _client({"https://jobs.example.com/1": httpx.Response(302, headers={"location": "http://169.254.169.254/"})})
     with pytest.raises(FetchError, match="private or local"):
         asyncio.run(fetch_job("https://jobs.example.com/1", client))
     assert checked == ["https://jobs.example.com/1", "http://169.254.169.254/"]
 
 
-def test_fetch_js_only_page_explains(public_dns):
+async def _no_browser(url):
+    raise AssertionError("the browser fallback must not run here")
+
+
+def test_js_only_page_falls_back_to_browser(public_dns, monkeypatch):
+    rendered = []
+
+    async def fake_render(url):
+        rendered.append(url)
+        return Rendered(html="<html></html>", text="Detection Lead\n\n" + "Own detection engineering. " * 20,
+                        url=url, blocked=[])
+    monkeypatch.setattr(jobfetch, "render_page", fake_render)
     client = _client({"https://jobs.example.com/2": httpx.Response(200, text="<html><body><div id=root></div></body></html>")})
-    with pytest.raises(FetchError, match="JavaScript"):
-        asyncio.run(fetch_job("https://jobs.example.com/2", client))
+    job = asyncio.run(fetch_job("https://jobs.example.com/2", client))
+    assert job.source == "browser" and job.text.startswith("Detection Lead")
+    assert rendered == ["https://jobs.example.com/2"]
+
+
+def test_bot_blocked_page_falls_back_to_browser(public_dns, monkeypatch):
+    async def fake_render(url):
+        return Rendered(html="", text="x " * 400, url=url, blocked=[])
+    monkeypatch.setattr(jobfetch, "render_page", fake_render)
+    client = _client({"https://jobs.example.com/3": httpx.Response(403)})
+    assert asyncio.run(fetch_job("https://jobs.example.com/3", client)).source == "browser"
+
+
+def test_login_walled_page_explains(public_dns, monkeypatch):
+    async def fake_render(url):
+        return Rendered(html="", text="Sign in", url=url, blocked=[])
+    monkeypatch.setattr(jobfetch, "render_page", fake_render)
+    client = _client({"https://jobs.example.com/4": httpx.Response(200, text="<html><body>Please enable JavaScript</body></html>")})
+    with pytest.raises(FetchError, match="headless browser"):
+        asyncio.run(fetch_job("https://jobs.example.com/4", client))
+
+
+def test_404_and_blocked_urls_never_reach_the_browser(public_dns, monkeypatch):
+    monkeypatch.setattr(jobfetch, "render_page", _no_browser)
+    with pytest.raises(FetchError, match="404"):
+        asyncio.run(fetch_job("https://jobs.example.com/missing", _client({})))
+    monkeypatch.undo()
+    monkeypatch.setattr(jobfetch, "render_page", _no_browser)
+    with pytest.raises(BlockedURL):
+        asyncio.run(fetch_job("http://127.0.0.1:9/job"))
 
 
 def test_check_public_url_blocks_private_addresses():

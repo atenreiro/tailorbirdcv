@@ -17,6 +17,7 @@ JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► 
 ```bash
 uv sync
 npm --prefix web install && npm --prefix web run build
+uv run playwright install chromium   # headless browser for JavaScript-only job pages (~95 MB)
 cp "<your resume>.docx" private/source/base_resume.docx
 uv run autocv ingest && uv run autocv baseline
 claude          # in a terminal, then /login, so the CLI has a valid session
@@ -28,6 +29,7 @@ uv run autocv serve        # → http://127.0.0.1:8000
 ```
 - Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).
 - Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001`.
+- Job URLs: Lever/Greenhouse/Ashby APIs → embedded JobPosting data → page text → headless Chromium fallback (`AUTOCV_BROWSER_FALLBACK=0` disables it). Every request, browser ones included, is limited to public addresses.
 - `AUTOCV_MODEL` picks the model (e.g. `opus`); the default is the CLI's own default.
 
 The Claude Code skills `/tailor` and `/profile` still work and share the same data.

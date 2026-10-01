@@ -6,9 +6,13 @@ falling back to visible text, try (in order):
      careers, which is backed by Lever), Greenhouse, Ashby
   2. schema.org JobPosting JSON-LD embedded in the page (used for Google Jobs)
   3. The page's visible text
+  4. Fallback: render the page in headless Chromium (Playwright) and read the result
+     — for JavaScript-only career sites (Workday, SuccessFactors, custom apps…)
 
-Every request goes through `safe_get`, which only allows http(s) to public addresses
-and re-checks each redirect hop (SSRF guard).
+SSRF guard: every request — including each redirect hop, and every request the
+headless browser makes (scripts, XHR/fetch, redirects) — must target a public
+address. WebSockets and service workers are disabled in the browser.
+Set AUTOCV_BROWSER_FALLBACK=0 to disable step 4.
 """
 
 from __future__ import annotations
@@ -17,10 +21,11 @@ import asyncio
 import html as htmllib
 import ipaddress
 import json
+import os
 import re
 import socket
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -33,6 +38,14 @@ UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 class FetchError(Exception):
     """A user-facing reason the URL could not be turned into a job description."""
+
+
+class BlockedURL(FetchError):
+    """The URL targets a non-public address or scheme — never retried another way."""
+
+
+class NotFound(FetchError):
+    """The posting does not exist (404) — rendering it won't help."""
 
 
 @dataclass
@@ -49,7 +62,7 @@ class Job:
 async def check_public_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise FetchError("The URL must start with http:// or https://")
+        raise BlockedURL("The URL must start with http:// or https://")
     try:
         infos = await asyncio.to_thread(socket.getaddrinfo, parsed.hostname, parsed.port or None)
     except socket.gaierror:
@@ -57,7 +70,7 @@ async def check_public_url(url: str) -> None:
     for *_, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0].split("%")[0])
         if not ip.is_global or ip.is_multicast:
-            raise FetchError("That URL points to a private or local network address, so AutoCV won't fetch it.")
+            raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
 
 
 async def safe_get(client: httpx.AsyncClient, url: str) -> str:
@@ -69,7 +82,7 @@ async def safe_get(client: httpx.AsyncClient, url: str) -> str:
                 url = str(resp.url.join(resp.headers.get("location", "")))
                 continue
             if resp.status_code == 404:
-                raise FetchError("The job posting was not found (404). It may have been closed.")
+                raise NotFound("The job posting was not found (404). It may have been closed.")
             resp.raise_for_status()
             body = b""
             async for chunk in resp.aiter_bytes():
@@ -251,7 +264,112 @@ def from_page(page: str) -> Job | None:
     for tag in soup(["script", "style", "nav", "header", "footer", "noscript", "svg"]):
         tag.decompose()
     text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
-    return Job(text) if len(text) >= MIN_TEXT else None
+    if len(text) < MIN_TEXT or (len(text) < 1500 and re.search(r"enable javascript|javascript (is )?required", text, re.I)):
+        return None
+    return Job(text)
+
+
+# --------------------------------------------------------------------------- headless browser
+
+
+BROWSER_FALLBACK = os.environ.get("AUTOCV_BROWSER_FALLBACK", "1") != "0"
+RENDER_TIMEOUT_MS = 30_000
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+_VISIBLE_TEXT_JS = """() => {
+  document.querySelectorAll('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], '
+    + '[id*="cookie" i], [class*="cookie" i]').forEach(e => e.remove());
+  return document.body ? document.body.innerText : '';
+}"""
+
+
+@dataclass
+class Rendered:
+    html: str
+    text: str
+    url: str
+    blocked: list[str]
+
+
+async def render_page(url: str) -> Rendered:
+    """Load `url` in headless Chromium with every request SSRF-checked."""
+    try:
+        from playwright.async_api import Error as PWError
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise FetchError("The headless-browser fallback isn't installed (run `uv sync`).")
+
+    await check_public_url(url)
+    blocked: list[str] = []
+
+    async def guard(route):
+        request = route.request
+        scheme = urlparse(request.url).scheme
+        if scheme in ("data", "blob"):
+            return await route.continue_()
+        if request.resource_type in ("image", "media", "font"):
+            return await route.abort()
+        # Follow redirects here, checking every hop: if the browser followed a 3xx
+        # itself, the next hop would NOT pass through this route handler.
+        target, method = request.url, request.method
+        for _ in range(MAX_REDIRECTS + 1):
+            try:
+                await check_public_url(target)
+            except FetchError:
+                blocked.append(target)
+                return await route.abort("blockedbyclient")
+            try:
+                response = await route.fetch(url=target, method=method, max_redirects=0, timeout=15_000)
+            except PWError:
+                return await route.abort()
+            location = response.headers.get("location")
+            if response.status in (301, 302, 303, 307, 308) and location:
+                target = urljoin(target, location)
+                if response.status == 303 or (response.status in (301, 302) and method == "POST"):
+                    method = "GET"
+                continue
+            return await route.fulfill(response=response)
+        blocked.append(target)
+        return await route.abort("blockedbyclient")
+
+    async def no_websockets(ws):
+        await ws.close()
+
+    async with async_playwright() as p:
+        try:
+            browser = await p.chromium.launch(headless=True)
+        except PWError:
+            raise FetchError("The headless browser isn't installed — run `uv run playwright install chromium`.")
+        try:
+            context = await browser.new_context(user_agent=BROWSER_UA, service_workers="block", locale="en-US")
+            await context.route("**/*", guard)
+            await context.route_web_socket("**/*", no_websockets)
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=RENDER_TIMEOUT_MS)
+            except PWError as e:
+                raise FetchError(f"The headless browser could not load the page ({str(e).splitlines()[0][:120]}).")
+            for wait in (page.wait_for_load_state("networkidle", timeout=8_000),
+                         page.wait_for_function(f"document.body && document.body.innerText.length > {MIN_TEXT}",
+                                                timeout=5_000)):
+                try:
+                    await wait
+                except PWError:
+                    pass  # best effort: some pages never go idle
+            html = await page.content()
+            text = await page.evaluate(_VISIBLE_TEXT_JS)
+            return Rendered(html, text, page.url, blocked)
+        finally:
+            await browser.close()
+
+
+def from_rendered(r: Rendered) -> Job | None:
+    if job := from_json_ld(r.html):
+        job.source = "browser+json-ld"
+        return job
+    lines = [" ".join(line.split()) for line in r.text.splitlines()]
+    text = "\n".join(line for line in lines if line)
+    return Job(text, source="browser") if len(text) >= MIN_TEXT else None
 
 
 # --------------------------------------------------------------------------- entry point
@@ -274,11 +392,19 @@ async def fetch_job(url: str, client: httpx.AsyncClient | None = None) -> Job:
             board = json.loads(await safe_get(client, f"https://api.ashbyhq.com/posting-api/job-board/{org}"))
             if job := format_ashby(board, org, job_id):
                 return job
-        page = await safe_get(client, url)
-        job = from_json_ld(page) or from_page(page)
-        if not job:
-            raise FetchError("The page returned too little text (it likely needs JavaScript or a login).")
-        return job
+        try:
+            page = await safe_get(client, url)
+            if job := from_json_ld(page) or from_page(page):
+                return job
+        except (BlockedURL, NotFound):
+            raise
+        except (httpx.HTTPError, FetchError):
+            pass  # bot protection (403/429), TLS quirks… — a real browser may still get through
+        if BROWSER_FALLBACK:
+            if job := from_rendered(await render_page(url)):
+                return job
+        raise FetchError("The page returned too little text, even when rendered in a headless browser "
+                         "(it probably needs a login).")
     except httpx.HTTPError as e:
         raise FetchError(f"Could not fetch the URL ({e}).") from e
     except json.JSONDecodeError as e:

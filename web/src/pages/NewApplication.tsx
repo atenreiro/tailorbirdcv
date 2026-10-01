@@ -71,7 +71,7 @@ export default function NewApplication() {
                 onChange={(e) => setUrl(e.target.value)}
                 autoFocus
               />
-              <p className="text-sm text-muted">Reads Lever, Greenhouse and Ashby postings (Binance careers included) and most public career pages. LinkedIn and sites behind a login block fetching, so paste the text for those.</p>
+              <p className="text-sm text-muted">Reads Lever, Greenhouse and Ashby postings (Binance careers included) directly. Other career sites are rendered in a headless browser if needed (can take ~15 s). Pages behind a login, like LinkedIn, can’t be fetched, so paste the text for those.</p>
             </div>
           )}
         </div>
@@ -80,7 +80,7 @@ export default function NewApplication() {
 
         <div className="flex items-center gap-4">
           <button className="btn btn-primary" disabled={!ready || busy} onClick={submit}>
-            {busy ? <><Spinner /> Saving…</> : 'Analyze this role →'}
+            {busy ? <><Spinner /> {mode === 'url' ? 'Fetching the posting…' : 'Saving…'}</> : 'Analyze this role →'}
           </button>
           <span className="text-sm text-muted">Company and title are detected automatically.</span>
         </div>
