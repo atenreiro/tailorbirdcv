@@ -147,3 +147,10 @@ def test_url_fetch_refuses_non_public_targets(env, url):
 def test_foreign_host_header_is_rejected(env):
     client, _, _ = env
     assert client.get("/api/engine", headers={"host": "evil.example.com"}).status_code == 400
+
+
+@pytest.mark.skipif(not (Path(__file__).parents[1] / "web" / "dist" / "index.html").exists(), reason="web UI not built")
+def test_ui_page_is_never_served_stale(env):
+    client, _, _ = env
+    res = client.get("/profile")
+    assert res.status_code == 200 and res.headers["cache-control"] == "no-cache"

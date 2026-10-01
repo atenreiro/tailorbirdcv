@@ -26,7 +26,11 @@ function Grow({ value, onChange, className, label }: { value: string; onChange: 
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
-    if (el) { el.style.height = '0px'; el.style.height = `${el.scrollHeight + 2}px` }
+    if (!el) return
+    const fit = () => { el.style.height = '0px'; el.style.height = `${el.scrollHeight + 2}px` }
+    fit()
+    window.addEventListener('resize', fit)  // re-wrap when the window narrows or widens
+    return () => window.removeEventListener('resize', fit)
   }, [value])
   return <textarea ref={ref} rows={1} aria-label={label} className={cx('field resize-none overflow-hidden py-[7px] text-sm leading-[1.45]', className)} value={value} onChange={(e) => onChange(e.target.value)} />
 }
@@ -76,8 +80,9 @@ function EvidenceRow({ e, scope, idCol, onChange, onDelete }: {
   )
 }
 
-const ROLE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] sm:grid-cols-[120px_minmax(0,1fr)_28px]'
-const SIDE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] sm:grid-cols-[100px_minmax(0,1fr)_24px]'
+// wide enough for real ids like first-harbor-bank.scope on one line
+const ROLE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[150px_minmax(0,1fr)_28px]'
+const SIDE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[110px_minmax(0,1fr)_24px]'
 
 function initialTab(param: string | null): Tab {
   return TABS.includes(param as Tab) ? (param as Tab) : 'experience'
@@ -200,12 +205,12 @@ export default function Profile() {
           onChange={(e) => setQuery(e.target.value)} />
       </div>
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-8">
         <nav aria-label="Profile sections"
-          className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] lg:sticky lg:top-[84px] lg:mx-0 lg:w-[200px] lg:flex-none lg:flex-col lg:gap-[18px] lg:overflow-visible lg:p-0">
+          className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:sticky md:top-[84px] md:mx-0 md:w-[200px] md:flex-none md:flex-col md:gap-[18px] md:overflow-visible md:p-0">
           {SECTIONS.map(([title, items]) => (
-            <div key={title} className="flex gap-1 lg:flex-col lg:gap-0.5">
-              <p className="hidden px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint lg:block">{title}</p>
+            <div key={title} className="flex gap-1 md:flex-col md:gap-0.5">
+              <p className="hidden px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint md:block">{title}</p>
               {items.map(([key, name]) => {
                 const on = view === key
                 const count = String(counts[key])
@@ -241,7 +246,7 @@ export default function Profile() {
 
           {view === 'experience' && roles.map(({ r, ri, scope, achievements, subRoles, count }, i) => (
             <section key={r.id} className="sheet animate-rise flex flex-col gap-3.5 rounded px-4 py-5 sm:px-6" style={{ animationDelay: `${i * 50}ms` }}>
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
                 {([['employer', 'Employer'], ['location', 'Location'], ['dates', 'Dates']] as const).map(([key, name]) => (
                   <label key={key} className="flex flex-col gap-1 text-xs text-muted">{name}
                     <input className="field py-[7px] text-sm text-ink" value={r[key]} onChange={(e) => edit((d) => { d.roles[ri][key] = e.target.value })} />

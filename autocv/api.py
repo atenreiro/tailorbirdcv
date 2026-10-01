@@ -637,6 +637,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             file = (dist / path).resolve()
             if path and file.is_file() and file.is_relative_to(dist):
                 return FileResponse(file)
-            return FileResponse(dist / "index.html")
+            # always revalidate the page so a rebuilt UI shows up after a restart (assets are hashed)
+            return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app
