@@ -59,7 +59,9 @@ def test_cross_site_post_without_header_is_refused(env):
     res = raw.post("/api/applications", json={"jd": JD})
     assert res.status_code == 403 and "cross-site" in res.json()["detail"]
     assert raw.get("/api/applications").status_code == 200          # reading is fine
-    assert raw.get("/api/applications").headers["X-Frame-Options"] == "DENY"
+    headers = raw.get("/api/applications").headers
+    assert headers["X-Frame-Options"] == "SAMEORIGIN"                 # own PDF preview may frame…
+    assert headers["Content-Security-Policy"] == "frame-ancestors 'self'"  # …other sites may not
     assert engine.calls == []
 
 

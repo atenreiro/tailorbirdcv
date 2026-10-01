@@ -127,8 +127,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 and request.headers.get("x-autocv") != "1":
             return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."}, status_code=403)
         response = await call_next(request)
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
+        # (the Export step previews the PDF in an iframe).
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
         return response
 
     api = APIRouter(prefix="/api")
