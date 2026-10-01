@@ -72,6 +72,24 @@ export interface Preference {
 }
 export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[]; retired_ids?: string[]; version?: string }
 export interface Issue { where: string; message: string }
+export type ScoreKey = 'fit' | 'impact' | 'clarity' | 'seniority'
+export interface CritiqueIssue {
+  id: string; where: string; kind: string; severity: 'high' | 'medium' | 'low'; problem: string
+  action: 'rewrite' | 'remove' | 'move_to_top' | 'advice'
+  rewrite: Claim | null; question: string | null; note_for: 'cover_letter' | 'interview' | null
+  original?: Claim; blocked?: string
+}
+export interface CritiqueResult {
+  verdict: { decision: 'interview' | 'borderline' | 'pass'; reason: string }
+  scores: Record<ScoreKey, { score: number; why: string }>
+  skim: { takeaway: string; lands: string[]; misses: string[] }
+  strengths: { where: string; why: string }[]
+  issues: CritiqueIssue[]
+}
+export interface Critique {
+  latest: CritiqueResult; created: string; previous_scores: CritiqueResult['scores'] | null
+  decisions: Record<string, 'accepted' | 'rejected'>; stale: boolean
+}
 export interface Report { ok: boolean; errors: Issue[]; warnings: Issue[] }
 export interface Ats {
   words: number
@@ -88,6 +106,7 @@ export interface Application {
   tailored: Tailored | null; report: Report | null; ats: Ats | null
   answers: AppAnswer[]; edits: number
   outputs_stale: boolean
+  critique: Critique | null
   length: { lines: number; budget: number } | null
   build?: { pages: number | null; too_long: boolean }
 }
@@ -155,6 +174,9 @@ export const api = {
   saveKnowledge: ({ version, ...k }: Knowledge) =>
     req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
   trim: (id: string) => req<Application>('POST', `/applications/${id}/trim`),
+  critique: (id: string) => req<Application>('POST', `/applications/${id}/critique`),
+  saveCritiqueDecisions: (id: string, decisions: Record<string, 'accepted' | 'rejected'>) =>
+    req<Critique>('PUT', `/applications/${id}/critique/decisions`, { decisions }),
   suggestPreferences: (id: string) =>
     req<{ edits: number; proposed: number; knowledge: Knowledge }>('POST', `/applications/${id}/preferences`),
   fileUrl: (id: string, name: string, download = false) =>

@@ -66,6 +66,47 @@ def _learn(prompt: str) -> dict:
                              "rationale": "demo (fake engine)"}]}
 
 
+def _critique(prompt: str) -> dict:
+    """Canned review built from the draft in the prompt (demo only; no AI involved)."""
+    import json as _json
+
+    from .factcheck import evidence_index
+    draft = _json.loads(prompt.split("DRAFT CLAIMS BY PATH:\n", 1)[1])
+    index = evidence_index(Store.default().profile())
+    issues = []
+    bullet = next((p for p in draft if p.startswith("experience[0].bullets[")), None)
+    if bullet:
+        src = draft[bullet]["sources"][0]
+        issues.append({"where": bullet, "kind": "duty_not_outcome", "severity": "high",
+                       "problem": "Demo: lead with the outcome rather than the activity.", "action": "rewrite",
+                       "rewrite": {"text": index[src].split("\n")[0], "sources": [src]},
+                       "question": None, "note_for": None})
+    if "highlights[1]" in draft:
+        issues.append({"where": "highlights[1]", "kind": "buried_must_have", "severity": "medium",
+                       "problem": "Demo: this is the strongest match for the role. Move it up.",
+                       "action": "move_to_top", "rewrite": None, "question": None, "note_for": None})
+    if "highlights[0]" in draft:
+        issues.append({"where": "highlights[0]", "kind": "weak_opening", "severity": "medium",
+                       "problem": "Demo: an invented rewrite, which the fact-check gate must block.", "action": "rewrite",
+                       "rewrite": {"text": "Cut alerts by 95% across 40 platforms.", "sources": draft["highlights[0]"]["sources"]},
+                       "question": None, "note_for": None})
+    second = next((p for p in draft if p.startswith("experience[0].bullets[") and p != bullet), None)
+    if second:
+        issues.append({"where": second, "kind": "duty_not_outcome", "severity": "low",
+                       "problem": "Demo: no measurable result.", "action": "advice", "rewrite": None,
+                       "question": "Did this work have a measurable result (time saved, incidents avoided, coverage)?",
+                       "note_for": None})
+    issues.append({"where": "length", "kind": "too_long", "severity": "low", "problem": "Demo: the Telco Co section is long.",
+                   "action": "advice", "rewrite": None, "question": None, "note_for": "interview"})
+    return {"verdict": {"decision": "borderline", "reason": "Demo verdict (fake engine)."},
+            "scores": {k: {"score": v, "why": "demo"} for k, v in
+                       {"fit": 7, "impact": 6, "clarity": 8, "seniority": 7}.items()},
+            "skim": {"takeaway": "Demo: senior cyber leader with banking depth.", "lands": ["Globex perimeter scale"],
+                     "misses": ["The AI/GenAI angle isn't visible in the top third"]},
+            "strengths": [{"where": "summary", "why": "Demo: clear seniority and scope."}],
+            "issues": issues}
+
+
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose, "learn_preferences": _learn})
+                       "repair": _compose, "learn_preferences": _learn, "critique": _critique})

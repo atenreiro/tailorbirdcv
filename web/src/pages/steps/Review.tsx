@@ -1,8 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, type Claim, type Issue, type Tailored } from '../../api'
+import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type Tailored } from '../../api'
 import { cx, ErrorNote, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import Cite from './Cite'
+import { applyIssue, findsTarget, issueTargets } from './critique'
+import { HiringManagerCard, openIssues, ReviewIssue, type ReviewActions } from './HiringManager'
 
 const clone = <T,>(x: T): T => structuredClone(x)
 function move<T>(list: T[], i: number, d: number): T[] {
@@ -61,6 +63,8 @@ interface Ctx {
   focus: string | null
   setFocus: (path: string) => void
   issuesAt: (path: string) => Issue[]
+  reviewFor: (claim: Claim) => CritiqueIssue[]
+  reviewActions: ReviewActions
 }
 
 function ClaimEditor({ ctx, path, claim, onChange, onRemove, onMove, roleId, className }: {
@@ -104,6 +108,7 @@ function ClaimEditor({ ctx, path, claim, onChange, onRemove, onMove, roleId, cla
         )}
       </div>
       <Issues list={issues} />
+      {ctx.reviewFor(claim).map((i) => <ReviewIssue key={i.id} issue={i} actions={ctx.reviewActions} />)}
     </div>
   )
 }
@@ -142,7 +147,7 @@ function H({ children }: { children: string }) {
   return <h3 className="rule-b mb-2 mt-6 pb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-rust">{children}</h3>
 }
 
-export default function Review({ app, profile, setApp, go, memo, setMemo }: StepProps) {
+export default function Review({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
@@ -180,7 +185,62 @@ export default function Review({ app, profile, setApp, go, memo, setMemo }: Step
     }
   }
 
-  const ctx: Ctx = { evidence, roleIds: p.roles.map((r) => r.id), focus, setFocus, issuesAt }
+  // ---- hiring-manager review -----------------------------------------------------------
+  const critique = app.critique
+  const open = openIssues(critique)
+  const reviewFor = (claim: Claim) => open.filter((i) => i.original && issueTargets(i, claim))
+  const isInline = (i: CritiqueIssue) => !!i.original && findsTarget(draft, i)
+
+  async function saveDecisions(decisions: Record<string, 'accepted' | 'rejected'>) {
+    try {
+      const c = await api.saveCritiqueDecisions(app.id, decisions)
+      setApp((prev) => ({ ...prev, critique: c }))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const reviewActions: ReviewActions = {
+    decide: (issue, decision) => {
+      if (decision === 'accepted' && issue.action !== 'advice') {
+        if (!findsTarget(draft, issue)) { setError('That line has changed since the review. Re-run the review.'); return }
+        update((d) => applyIssue(d, issue))
+      }
+      void saveDecisions({ [issue.id]: decision })
+    },
+    answer: async (issue) => {
+      const qid = `hm-${issue.id}`
+      const entry: AppAnswer = { question_id: qid, requirement: 'Hiring-manager review', question: issue.question!, answer: '', status: 'draft' }
+      try {
+        const saved = await api.saveAnswers(app.id, [...app.answers.filter((a) => a.question_id !== qid), entry])
+        setApp((prev) => ({ ...prev, answers: saved }))
+        setMemo((m) => ({ ...m, gaps: null }))  // re-seed Gaps so the new question shows
+        await saveDecisions({ [issue.id]: 'accepted' })
+        go('gaps')
+      } catch (e) {
+        setError((e as Error).message)
+      }
+    },
+  }
+
+  function acceptAll() {
+    const next = clone(draft)
+    const decided: Record<string, 'accepted'> = {}
+    for (const i of open.filter((x) => x.action !== 'advice')) {
+      if (findsTarget(next, i)) { applyIssue(next, i); decided[i.id] = 'accepted' }
+    }
+    setMemo((m) => ({ ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }))
+    void saveDecisions(decided)
+  }
+
+  const runReview = () =>
+    run('Reviewing as the hiring manager', [
+      'Reading it as the hiring manager for this role…',
+      'Skimming the top third like a recruiter…',
+      'Writing specific fixes and fact-checking each one…',
+    ], async () => setApp(await api.critique(app.id)))
+
+  const ctx: Ctx = { evidence, roleIds: p.roles.map((r) => r.id), focus, setFocus, issuesAt, reviewFor, reviewActions }
 
   const ats = app.ats
   const usedProjects = new Set(draft.projects.map((x) => x.id))
@@ -378,6 +438,9 @@ export default function Review({ app, profile, setApp, go, memo, setMemo }: Step
         </div>
 
         <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+        <HiringManagerCard critique={critique} dirty={dirty} canRun={!dirty && !!report?.ok}
+          onRun={runReview} onAcceptAll={acceptAll} actions={reviewActions} isInline={isInline} />
 
         <div className="sheet animate-rise rounded p-5" style={{ animationDelay: '140ms' }}>
           <p className="eyebrow">Marginalia</p>

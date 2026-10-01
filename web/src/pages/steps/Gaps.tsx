@@ -49,7 +49,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   // Analysis questions + known gaps the user reopened (persisted in answers.yaml).
   const questions: Question[] = useMemo(() => [
     ...(app.analysis?.questions ?? []),
-    ...Object.values(answers).filter((a) => a.question_id.startsWith(REOPENED))
+    ...Object.values(answers).filter((a) => a.question_id.startsWith(REOPENED) || a.question_id.startsWith('hm-'))
       .map((a) => ({ id: a.question_id, requirement: a.requirement, question: a.question })),
   ], [app.analysis, answers])
 

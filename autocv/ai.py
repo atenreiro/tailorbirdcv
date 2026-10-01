@@ -449,9 +449,11 @@ def preferences_schema() -> dict:
 
 
 async def learn_preferences(engine: Engine, edits: list[dict], guidance: list[str],
-                            existing: list[Preference]) -> list[dict]:
-    """Propose reusable writing-style preferences from the candidate's edits and guidance."""
-    if not edits and not any(g.strip() for g in guidance):
+                            existing: list[Preference], rejected: list[dict] | None = None) -> list[dict]:
+    """Propose reusable writing-style preferences from the candidate's edits, guidance and
+    the review suggestions they rejected."""
+    rejected = rejected or []
+    if not edits and not rejected and not any(g.strip() for g in guidance):
         return []
     prompt = f"""TASK: learn_preferences
 The candidate reviewed AI-written resume drafts. Below are their edits (AI draft → their version) and \
@@ -467,8 +469,10 @@ EXISTING PREFERENCES:
 {chr(10).join(f"- {p.text}" for p in existing) or "(none)"}
 GUIDANCE GIVEN:
 {chr(10).join(f"- {g}" for g in guidance if g.strip()) or "(none)"}
-EDITS:
+EDITS (accepted review fixes show up here too):
 {_yaml(edits) if edits else "(none)"}
+REVIEW SUGGESTIONS THE CANDIDATE REJECTED (learn what they DON'T want):
+{_yaml(rejected) if rejected else "(none)"}
 """
     result = await engine.complete(SYSTEM, prompt, preferences_schema())
     return [p for p in result.get("preferences", []) if p.get("text", "").strip()][:5]

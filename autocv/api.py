@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ValidationError
 
-from . import ai, ats, factcheck
+from . import ai, ats, critique as hm, factcheck
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
@@ -66,6 +66,10 @@ class ComposeIn(BaseModel):
 
 class ProfileYaml(BaseModel):
     yaml: str
+
+
+class Decisions(BaseModel):
+    decisions: dict[str, Literal["accepted", "rejected"]]
 
 
 # --------------------------------------------------------------------------- helpers
@@ -234,7 +238,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "outputs_stale": store.outputs_stale(app_id),
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
                "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
-               "edits": 0, "report": None, "ats": None, "length": None}
+               "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id)}
         ai_draft = store.ai_tailored(app_id)
         if ai_draft and tailored:
             out["edits"] = len(ai.edited_claims(ai_draft, tailored))
@@ -250,6 +254,41 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 except Exception:
                     pass
         return out
+
+    def critique_payload(app_id: str) -> dict | None:
+        data = store.critique(app_id)
+        if not data["runs"]:
+            return None
+        latest = data["runs"][-1]
+        return {"latest": latest["result"], "created": latest["created"],
+                "previous_scores": data["runs"][-2]["result"].get("scores") if len(data["runs"]) > 1 else None,
+                "decisions": data["decisions"], "stale": latest["tailored_hash"] != store.tailored_hash(app_id)}
+
+    @api.post("/applications/{app_id}/critique")
+    async def run_critique(app_id: str):
+        """Hiring-manager + recruiter review of the current draft (on demand)."""
+        need_app(app_id)
+        tailored = store.tailored(app_id)
+        if not tailored:
+            raise HTTPException(409, "Compose a resume first.")
+        profile = need_profile()
+        if not factcheck.check(profile, tailored).ok:
+            raise HTTPException(409, "Fix the fact-check errors first — the review assumes a valid draft.")
+        run_no = len(store.critique(app_id)["runs"]) + 1
+        try:
+            result = await hm.critique(engine, profile, tailored, store.analysis(app_id) or {}, store.knowledge(), run_no)
+        except EngineError as e:
+            raise _engine_call(e)
+        except ValidationError as e:
+            raise HTTPException(502, f"The model returned an invalid review: {e}")
+        store.add_critique_run(app_id, result)
+        return get_application(app_id)
+
+    @api.put("/applications/{app_id}/critique/decisions")
+    def put_critique_decisions(app_id: str, body: Decisions):
+        need_app(app_id)
+        store.set_critique_decisions(app_id, body.decisions)
+        return critique_payload(app_id)
 
     @api.patch("/applications/{app_id}")
     def patch_application(app_id: str, body: MetaPatch):
@@ -400,8 +439,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         edits = ai.edited_claims(ai_draft, current) if ai_draft and current else []
         guidance = [store.meta(app_id).get("guidance") or ""]
         existing = [p for p in store.knowledge().preferences if p.status != "dismissed"]
+        review = store.critique(app_id)
+        rejected = [{"line": i.get("original", {}).get("text", i.get("where")), "suggested": i["rewrite"]["text"],
+                     "problem": i.get("problem", "")}
+                    for run in review["runs"] for i in run["result"].get("issues", [])
+                    if review["decisions"].get(i["id"]) == "rejected" and i.get("rewrite")]
         try:
-            proposals = await ai.learn_preferences(engine, edits, guidance, existing)
+            proposals = await ai.learn_preferences(engine, edits, guidance, existing, rejected)
         except EngineError as e:
             raise _engine_call(e)
         today = f"{dt.date.today():%Y-%m-%d}"

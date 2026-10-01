@@ -235,6 +235,28 @@ class Store:
     def save_ai_tailored(self, app_id: str, tailored: TailoredResume) -> None:
         dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.ai.yaml")
 
+    # -- hiring-manager review (per application) ---------------------------------------
+    def critique(self, app_id: str) -> dict:
+        p = self.app_path(app_id) / "review.yaml"
+        data = load_yaml(p) if p.exists() else {}
+        return {"runs": data.get("runs", []), "decisions": data.get("decisions", {})}
+
+    def add_critique_run(self, app_id: str, result: dict) -> dict:
+        with _LOCK:
+            data = self.critique(app_id)
+            data["runs"].append({"created": dt.datetime.now().isoformat(timespec="seconds"),
+                                 "tailored_hash": self.tailored_hash(app_id), "result": result})
+            data["runs"] = data["runs"][-5:]  # keep the last few for score deltas
+            dump_yaml(data, self.app_path(app_id) / "review.yaml")
+            return data
+
+    def set_critique_decisions(self, app_id: str, decisions: dict[str, str]) -> dict:
+        with _LOCK:
+            data = self.critique(app_id)
+            data["decisions"].update({k: v for k, v in decisions.items() if v in ("accepted", "rejected")})
+            dump_yaml(data, self.app_path(app_id) / "review.yaml")
+            return data
+
     # -- gap answers (per application) ---------------------------------------------------
     def answers(self, app_id: str) -> list[AppAnswer]:
         p = self.app_path(app_id) / "answers.yaml"
@@ -258,7 +280,7 @@ class Store:
                 q = by_text.get(" ".join(a.question.split()).lower())
                 if q:
                     kept.append(a.model_copy(update={"question_id": q["id"], "requirement": q.get("requirement", a.requirement)}))
-                elif a.question_id.startswith("kg-"):
+                elif a.question_id.startswith(("kg-", "hm-")):  # reopened gaps, review questions
                     kept.append(a)
             dump_yaml({"answers": [a.model_dump(exclude_none=True) for a in kept]},
                       self.app_path(app_id) / "answers.yaml")

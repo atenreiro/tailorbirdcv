@@ -24,6 +24,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - Deleted evidence/knowledge ids are retired (`retired_ids`) and never reused.
 - URL fetching goes through `jobfetch.pinned_client()` (PinnedBackend: resolve once, validate every address, connect to the validated one). The headless browser's requests are performed by that client too, never by Chromium's network stack.
 - The AI engine runs fully isolated (`engine.ISOLATION_ARGS`): no tools, MCP, user/local settings, plugins, hooks, skills or sessions.
+- Hiring-manager review (`autocv/critique.py`): on-demand verdict/scores/skim + issues pinned to claims by their original text; every suggested rewrite is fact-checked before it's shown (failures become advice); fixes needing new info become `hm-` questions in Gaps; accepted/rejected decisions live in `review.yaml` and feed style learning.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands
