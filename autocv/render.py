@@ -9,6 +9,7 @@ empty body and no personal data.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -54,8 +55,15 @@ def _rpr(color: str, size: int, *, bold=False, italic=False, font="Calibri") -> 
     )
 
 
+_XML_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")  # e.g. form feeds from PDFs
+
+
+def clean_text(text: str) -> str:
+    return _XML_INVALID.sub(" ", text or "")
+
+
 def _run(text: str, color: str, size: int, **kw) -> str:
-    return f'<w:r>{_rpr(color, size, **kw)}<w:t xml:space="preserve">{escape(text)}</w:t></w:r>'
+    return f'<w:r>{_rpr(color, size, **kw)}<w:t xml:space="preserve">{escape(clean_text(text))}</w:t></w:r>'
 
 
 def _para(runs: str, *, before=0, after=30, rule=False, hang=False, tab=False) -> str:
@@ -149,10 +157,11 @@ def render(profile: MasterProfile, tailored: TailoredResume, out: Path,
         for h in tailored.highlights:
             b.bullet(h.text)
 
-    if tailored.competencies:
+    if any(c.items for c in tailored.competencies):
         b.section(SECTION_TITLES["competencies"])
         for comp in tailored.competencies:
-            b.lead_bullet(f"{comp.label}: ", SEP.join(comp.items))
+            if comp.items:  # an emptied group is simply left out
+                b.lead_bullet(f"{comp.label}: ", SEP.join(comp.items))
 
     if tailored.experience:
         b.section(SECTION_TITLES["experience"])
@@ -197,7 +206,7 @@ def docx_text(path: Path) -> list[str]:
     lines = []
     for p in doc.paragraphs:
         text = "".join(
-            node.text if node.tag.endswith("}t") else "\t"
+            (node.text or "") if node.tag.endswith("}t") else "\t"
             for node in p._p.iter()
             if node.tag.endswith("}t") or node.tag.endswith("}tab") and node.getparent().tag.endswith("}r")
         )

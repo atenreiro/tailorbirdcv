@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Evidence, type Profile as P, type Track } from '../api'
 import { AnswersPanel, PreferencesPanel } from './Memory'
+import { setUnsaved } from '../unsaved'
 import { cx, ErrorNote, Spinner } from '../ui'
 
 const TABS = ['Experience', 'Skills', 'Headlines', 'Summary & highlights', 'Projects & more', 'Synonyms', 'Answers & gaps', 'Style preferences', 'YAML'] as const
@@ -29,7 +30,19 @@ function allIds(p: P) {
   p.roles.forEach((r) => { ids.add(r.id); if (r.scope) ids.add(r.scope.id); r.achievements.forEach((a) => ids.add(a.id)); r.sub_roles.forEach((s) => ids.add(s.id)) })
   p.projects.concat(p.education, p.extras).forEach((i) => ids.add(i.id))
   p.headlines.forEach((h) => ids.add(h.id))
+  ;(p.retired_ids ?? []).forEach((id) => ids.add(id))  // deleted ids are never reused
   return ids
+}
+
+/** Textarea for list-like values, parsed only on blur so typing (new lines, commas) isn't fought. */
+function RawListField({ value, parse, format, label }: { value: string[] | string[][]; parse: (t: string) => void; format: () => string; label: string }) {
+  const [text, setText] = useState<string | null>(null)
+  void value
+  return (
+    <textarea className="field min-h-[220px] font-mono text-sm" aria-label={label}
+      value={text ?? format()} onFocus={() => setText(format())} onChange={(e) => setText(e.target.value)}
+      onBlur={() => { if (text !== null) parse(text); setText(null) }} />
+  )
 }
 
 function EvidenceRow({ e, onChange, onDelete }: { e: Evidence; onChange: (e: Evidence) => void; onDelete: () => void }) {
@@ -53,35 +66,44 @@ export default function Profile() {
   const [params] = useSearchParams()
   const [tab, setTab] = useState<Tab>(params.get('tab') === 'prefs' ? 'Style preferences' : params.get('tab') === 'answers' ? 'Answers & gaps' : 'Experience')
   const [yaml, setYaml] = useState('')
+  const [savedYaml, setSavedYaml] = useState('')
+  const [version, setVersion] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
 
+  const load = () =>
+    api.profile().then((r) => { setSaved(r.profile); setP(structuredClone(r.profile)); setVersion(r.version); setConflict(false) })
+      .catch((e) => setError(e.message))
+  useEffect(() => { void load() }, [])
   useEffect(() => {
-    api.profile().then((r) => { setSaved(r.profile); setP(structuredClone(r.profile)) }).catch((e) => setError(e.message))
-  }, [])
-  useEffect(() => {
-    if (tab === 'YAML') api.profileYaml().then((r) => setYaml(r.yaml)).catch((e) => setError(e.message))
+    if (tab === 'YAML') api.profileYaml().then((r) => { setYaml(r.yaml); setSavedYaml(r.yaml); setVersion(r.version) }).catch((e) => setError(e.message))
   }, [tab])
+  const profileDirty = !!p && JSON.stringify(p) !== JSON.stringify(saved)
+  const yamlDirty = tab === 'YAML' && yaml !== savedYaml
+  useEffect(() => { setUnsaved('profile', profileDirty || yamlDirty) }, [profileDirty, yamlDirty])
+  useEffect(() => () => setUnsaved('profile', false), [])
 
   if (!p) return error ? <ErrorNote error={error} /> : <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>
 
-  const dirty = JSON.stringify(p) !== JSON.stringify(saved)
+  const dirty = profileDirty || yamlDirty
   const edit = (fn: (d: P) => void) => setP((prev) => { const next = structuredClone(prev!); fn(next); return next })
 
   async function save() {
     setBusy(true); setError(null)
     try {
       if (tab === 'YAML') {
-        await api.saveProfileYaml(yaml)
-        const r = await api.profile()
-        setSaved(r.profile); setP(structuredClone(r.profile))
+        const r = await api.saveProfileYaml(yaml, version)
+        setYaml(r.yaml); setSavedYaml(r.yaml)
+        await load()
       } else {
-        const r = await api.saveProfile(p!)
-        setSaved(r.profile); setP(structuredClone(r.profile))
+        const r = await api.saveProfile(p!, version)
+        setSaved(r.profile); setP(structuredClone(r.profile)); setVersion(r.version)
       }
       setFlash('Saved'); setTimeout(() => setFlash(null), 2000)
     } catch (e) {
+      if ((e as { status?: number }).status === 409) setConflict(true)
       setError((e as Error).message)
     } finally {
       setBusy(false)
@@ -105,7 +127,7 @@ export default function Profile() {
           {flash && <span className="animate-rise text-sm text-ok">✓ {flash}</span>}
           {(dirty || tab === 'YAML') && (
             <>
-              {dirty && tab !== 'YAML' && <button className="btn" onClick={() => setP(structuredClone(saved!))}>Discard</button>}
+              {profileDirty && tab !== 'YAML' && <button className="btn" onClick={() => setP(structuredClone(saved!))}>Discard</button>}
               <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? <><Spinner /> Saving…</> : 'Save profile'}</button>
             </>
           )}
@@ -118,7 +140,7 @@ export default function Profile() {
             key={t}
             role="tab"
             aria-selected={tab === t}
-            disabled={dirty && t !== tab && (t === 'YAML' || tab === 'YAML')}
+            disabled={t !== tab && (yamlDirty || (profileDirty && t === 'YAML'))}
             onClick={() => setTab(t)}
             className={cx('-mb-px border-b-2 px-3 py-2 text-sm transition disabled:opacity-40', tab === t ? 'border-rust text-ink' : 'border-transparent text-muted hover:text-ink')}
           >
@@ -128,6 +150,12 @@ export default function Profile() {
       </div>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
+      {conflict && (
+        <div className="flex flex-wrap items-center gap-3 rounded border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-warn">
+          Your profile changed elsewhere (another tab, or evidence approved during a tailoring).
+          <button className="btn py-1" onClick={() => { if (!dirty || window.confirm('Reload and discard your unsaved edits here?')) void load() }}>Reload latest</button>
+        </div>
+      )}
 
       {tab === 'Experience' && (
         <div className="space-y-8">
@@ -264,16 +292,14 @@ export default function Profile() {
           <section className="sheet rounded p-5">
             <p className="eyebrow mb-1">Synonym groups</p>
             <p className="mb-3 text-sm text-muted">Interchangeable terms, one group per line, comma-separated. Example: <span className="font-mono text-xs">WAF, Web Application Firewall</span></p>
-            <textarea className="field min-h-[220px] font-mono text-sm" aria-label="Synonym groups"
-              value={p.synonyms.map((g) => g.join(', ')).join('\n')}
-              onChange={(e) => edit((d) => { d.synonyms = e.target.value.split('\n').map((l) => l.split(',').map((s) => s.trim()).filter(Boolean)).filter((g) => g.length) })} />
+            <RawListField label="Synonym groups" value={p.synonyms} format={() => p.synonyms.map((g) => g.join(', ')).join('\n')}
+              parse={(t) => edit((d) => { d.synonyms = t.split('\n').map((l) => l.split(',').map((x) => x.trim()).filter(Boolean)).filter((g) => g.length) })} />
           </section>
           <section className="sheet rounded p-5">
             <p className="eyebrow mb-1">Approved vocabulary</p>
             <p className="mb-3 text-sm text-muted">Proper nouns allowed in any claim (e.g. Singapore, APAC), one per line. Keep this short.</p>
-            <textarea className="field min-h-[220px] font-mono text-sm" aria-label="Vocabulary"
-              value={p.vocabulary.join('\n')}
-              onChange={(e) => edit((d) => { d.vocabulary = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })} />
+            <RawListField label="Vocabulary" value={p.vocabulary} format={() => p.vocabulary.join('\n')}
+              parse={(t) => edit((d) => { d.vocabulary = t.split('\n').map((x) => x.trim()).filter(Boolean) })} />
           </section>
         </div>
       )}

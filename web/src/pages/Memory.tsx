@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Knowledge, type KnowledgeAnswer, type Preference } from '../api'
 import { cx, ErrorNote, fmtDate, Spinner } from '../ui'
+import { setUnsaved } from '../unsaved'
 
 function useKnowledge() {
   const [saved, setSaved] = useState<Knowledge | null>(null)
@@ -12,9 +13,18 @@ function useKnowledge() {
     api.knowledge().then((x) => { setSaved(x); setK(structuredClone(x)) }).catch((e) => setError(e.message))
   }, [])
   const dirty = JSON.stringify(k) !== JSON.stringify(saved)
+  useEffect(() => { setUnsaved('knowledge', dirty) }, [dirty])
+  useEffect(() => () => setUnsaved('knowledge', false), [])
+  const reload = () => api.knowledge().then((x) => { setSaved(x); setK(structuredClone(x)) })
   const save = async () => {
     setBusy(true); setError(null)
-    try { const x = await api.saveKnowledge(k!); setSaved(x); setK(structuredClone(x)) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+    try {
+      const x = await api.saveKnowledge(k!); setSaved(x); setK(structuredClone(x))
+    } catch (e) {
+      const conflict = (e as { status?: number }).status === 409
+      setError(conflict ? 'Your answers/preferences changed elsewhere since this page loaded. Reload the page to get the latest, then re-apply your edit.' : (e as Error).message)
+      if (conflict && window.confirm('Reload the latest answers/preferences now? Unsaved edits here will be discarded.')) void reload()
+    } finally { setBusy(false) }
   }
   return { k, setK, dirty, save, busy, error, setError, discard: () => setK(structuredClone(saved)) }
 }
@@ -108,7 +118,7 @@ export function PreferencesPanel() {
   const order = { proposed: 0, active: 1, dismissed: 2 }
   const prefs = [...k.preferences].sort((a, b) => order[a.status] - order[b.status])
   const add = () => {
-    const taken = new Set(k.preferences.map((p) => p.id))
+    const taken = new Set([...k.preferences.map((p) => p.id), ...(k.retired_ids ?? [])])
     let n = 1
     while (taken.has(`p${n}`)) n++
     setK({ ...k, preferences: [...k.preferences, { id: `p${n}`, text: newText.trim(), rationale: 'Added by you', status: 'active', date: new Date().toISOString().slice(0, 10) }] })

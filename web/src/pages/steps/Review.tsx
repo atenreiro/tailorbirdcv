@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type Claim, type Issue, type Tailored } from '../../api'
 import { cx, ErrorNote, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
@@ -13,8 +13,8 @@ function move<T>(list: T[], i: number, d: number): T[] {
   return out
 }
 
-function AutoText({ value, onChange, onFocus, className, ariaLabel }: {
-  value: string; onChange: (v: string) => void; onFocus?: () => void; className?: string; ariaLabel: string
+function AutoText({ value, onChange, onFocus, onBlur, className, ariaLabel }: {
+  value: string; onChange: (v: string) => void; onFocus?: () => void; onBlur?: () => void; className?: string; ariaLabel: string
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
@@ -28,6 +28,7 @@ function AutoText({ value, onChange, onFocus, className, ariaLabel }: {
       aria-label={ariaLabel}
       value={value}
       onFocus={onFocus}
+      onBlur={onBlur}
       onChange={(e) => onChange(e.target.value)}
       className={cx('block w-full resize-none overflow-hidden rounded-sm border border-transparent bg-transparent px-1 -mx-1 leading-relaxed transition hover:border-rule focus:border-rust focus:bg-sheet focus:outline-none', className)}
     />
@@ -116,37 +117,62 @@ function AddFromEvidence({ evidence, ids, onAdd, label }: { evidence: Record<str
   )
 }
 
+/** Free-typing field for "a · b · c" lists: parsed only on blur, so typing isn't fought. */
+function ItemsField({ items, onCommit, ariaLabel }: { items: string[]; onCommit: (items: string[]) => void; ariaLabel: string }) {
+  const joined = items.join(' · ')
+  const [text, setText] = useState(joined)
+  const [editing, setEditing] = useState(false)
+  const value = editing ? text : joined
+  return (
+    <AutoText
+      ariaLabel={ariaLabel}
+      value={value}
+      onFocus={() => { setText(joined); setEditing(true) }}
+      onChange={setText}
+      onBlur={() => {
+        setEditing(false)
+        const next = text.split('·').map((x) => x.trim()).filter(Boolean)
+        if (next.join(' · ') !== joined) onCommit(next)
+      }}
+    />
+  )
+}
+
 function H({ children }: { children: string }) {
   return <h3 className="rule-b mb-2 mt-6 pb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-rust">{children}</h3>
 }
 
-export default function Review({ app, profile, setApp, go }: StepProps) {
-  const [draft, setDraft] = useState<Tailored>(() => clone(app.tailored!))
-  const [dirty, setDirty] = useState(false)
+export default function Review({ app, profile, setApp, go, memo, setMemo }: StepProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
 
-  useEffect(() => { setDraft(clone(app.tailored!)); setDirty(false) }, [app.tailored])
+  // Local edits live in Workspace (memo.review) so they survive switching steps.
+  const draft: Tailored = memo.review?.draft ?? app.tailored!
+  const dirty = !!memo.review
 
   const p = profile.profile
   const evidence = profile.evidence
   const report = app.report
   const issuesAt = (path: string) => (dirty ? [] : report?.errors.filter((e) => e.where === path) ?? [])
 
-  const update = (fn: (d: Tailored) => void) => {
-    setDraft((prev) => { const next = clone(prev); fn(next); return next })
-    setDirty(true)
-  }
+  const update = (fn: (d: Tailored) => void) =>
+    setMemo((m) => {
+      const next = clone(m.review?.draft ?? app.tailored!)
+      fn(next)
+      return { ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }
+    })
 
   const focusedClaim = useMemo(() => (focus ? claimAt(draft, focus) : null), [focus, draft])
 
   async function save() {
+    const sentRev = memo.review?.rev
     setSaving(true)
     setError(null)
     try {
       setApp(await api.saveTailored(app.id, draft))
-      setDirty(false)
+      // Keep anything typed while the save was in flight.
+      setMemo((m) => (m.review && m.review.rev === sentRev ? { ...m, review: null } : m))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -170,6 +196,7 @@ export default function Review({ app, profile, setApp, go }: StepProps) {
           value={draft.headline}
           onChange={(e) => update((d) => { d.headline = e.target.value })}
         >
+          {!p.headlines.some((h) => h.id === draft.headline) && <option value={draft.headline} disabled>Choose a headline…</option>}
           {p.headlines.map((h) => <option key={h.id} value={h.id}>{h.text} ({h.tracks.join(', ')})</option>)}
         </select>
         <Issues list={issuesAt('headline')} />
@@ -206,26 +233,26 @@ export default function Review({ app, profile, setApp, go }: StepProps) {
         <H>Core competencies</H>
         <div className="space-y-2">
           {draft.competencies.map((g, i) => {
-            const issues = draft.competencies[i].items.flatMap((_, j) => issuesAt(`competencies[${i}].items[${j}]`))
+            const issues = g.items.flatMap((_, j) => issuesAt(`competencies[${i}].items[${j}]`))
             return (
               <div key={i} className={cx('group/claim flex gap-2 rounded-sm', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-bad/30')}>
                 <span className="pt-0.5 text-rust">•</span>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2 sm:flex-nowrap">
                     <input aria-label={`Competency group ${i + 1}`} style={{ width: `${Math.max(g.label.length, 6) + 1}ch` }} className="shrink-0 rounded-sm border border-transparent bg-transparent font-semibold text-ink hover:border-rule focus:border-rust focus:outline-none" value={g.label} onChange={(e) => update((d) => { d.competencies[i].label = e.target.value })} />
-                    <AutoText ariaLabel={`Competency items ${i + 1}`} value={g.items.join(' · ')} onChange={(v) => update((d) => { d.competencies[i].items = v.split('·').map((s) => s.trim()).filter(Boolean) })} />
+                    <ItemsField ariaLabel={`Competency items ${i + 1}`} items={g.items} onCommit={(items) => update((d) => { d.competencies[i].items = items })} />
                     <div className="flex shrink-0 opacity-0 group-hover/claim:opacity-100">
                       <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, -1) })} aria-label="Move up">↑</button>
                       <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, 1) })} aria-label="Move down">↓</button>
                     </div>
                   </div>
-                  <Issues list={issues} />
+                  <Issues list={[...issuesAt(`competencies[${i}].label`), ...issuesAt(`competencies[${i}]`), ...issues]} />
                 </div>
               </div>
             )
           })}
         </div>
-        <p className="mt-1 text-xs text-faint">Separate items with “·”. Every item must be a skill from your profile.</p>
+        <p className="mt-1 text-xs text-faint">Separate items with “·”. Every item must be a skill from your profile. Remove a group by clearing its items.</p>
 
         <H>Professional experience</H>
         {draft.experience.map((tr, i) => {
@@ -330,6 +357,11 @@ export default function Review({ app, profile, setApp, go }: StepProps) {
           <p className="mt-3 text-sm text-muted">
             {dirty ? 'Save to re-run the fact-check.' : report?.ok ? 'Every claim traces to your profile.' : 'Fix the highlighted claims: cite the right evidence, reword to match it, or remove them.'}
           </p>
+          {!dirty && report && report.errors.length > 0 && (
+            <ul className="mt-3 max-h-56 space-y-1 overflow-auto border-t border-rule pt-3 text-xs text-bad">
+              {report.errors.map((e, i) => <li key={i}><span className="font-mono text-[10px] text-faint">{e.where}</span> {e.message}</li>)}
+            </ul>
+          )}
           {!dirty && report && report.warnings.length > 0 && (
             <ul className="mt-3 space-y-1 border-t border-rule pt-3 text-xs text-warn">
               {report.warnings.map((w, i) => <li key={i}>{w.message}</li>)}
@@ -339,7 +371,7 @@ export default function Review({ app, profile, setApp, go }: StepProps) {
             <button className="btn btn-primary flex-1 justify-center" disabled={!dirty || saving} onClick={save}>
               {saving ? <><Spinner /> Checking…</> : 'Save & re-check'}
             </button>
-            {dirty && <button className="btn" onClick={() => { setDraft(clone(app.tailored!)); setDirty(false) }}>Discard</button>}
+            {dirty && <button className="btn" onClick={() => setMemo((m) => ({ ...m, review: null }))}>Discard</button>}
           </div>
           <button className="btn mt-2 w-full justify-center" disabled={dirty || !report?.ok} onClick={() => go('export')}>Continue to export →</button>
           {app.meta.repair_rounds ? <p className="mt-2 text-xs text-faint">The AI self-repaired {app.meta.repair_rounds} fact-check round{app.meta.repair_rounds > 1 ? 's' : ''}.</p> : null}

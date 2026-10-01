@@ -38,6 +38,8 @@ def _app_dir(arg: str) -> Path:
     path = Path(arg)
     if not path.exists() and (APPS / arg).exists():
         path = APPS / arg
+    if path.resolve().parent != APPS.resolve():
+        sys.exit(f"{path} is not an application folder under {APPS}")
     if not (path / "tailored.yaml").exists():
         sys.exit(f"no tailored.yaml in {path}")
     return path
@@ -127,6 +129,8 @@ def cmd_build(args) -> int:
     if not (app / "meta.json").exists():
         STORE.save_meta(app.name, {"company": analysis.get("company") or app.name.split("_")[1],
                                    "role": analysis.get("role", ""), "status": "draft"})
+    STORE.clear_outputs(app.name)  # never leave an older .docx/.pdf around
+    built_hash = STORE.tailored_hash(app.name)
     docx = render(profile, tailored, app / f"{STORE.output_stem(app.name)}.docx")
     print(f"docx: {docx}")
     pages = None
@@ -138,7 +142,8 @@ def cmd_build(args) -> int:
         if pages > args.max_pages:
             print(f"TOO LONG: {pages} pages > {args.max_pages} — trim lowest-relevance content and rebuild")
             return 2
-    STORE.update_meta(app.name, status="built", pages=pages)
+    STORE.update_meta(app.name, built_hash=built_hash, pages=pages)
+    STORE.advance_status(app.name, "built")
     return 0
 
 

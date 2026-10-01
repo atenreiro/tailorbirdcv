@@ -14,9 +14,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 import re
+import tempfile
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +29,32 @@ from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, Tailo
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "rejected", "withdrawn"]
+PIPELINE = ["draft", "analyzed", "composed", "built"]  # set by the tool; the rest are set by the user
+
+# One lock for every read-modify-write of private data. FastAPI runs sync endpoints in
+# a thread pool, so concurrent requests are real. Never hold it across an AI call.
+_LOCK = threading.RLock()
+
+
+class Conflict(Exception):
+    """The file changed since the client loaded it (another tab, or a background save)."""
+
+
+def file_version(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.exists() else "none"
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def next_id(prefix: str, taken: set[str]) -> str:
@@ -67,10 +97,35 @@ class Store:
     def profile(self) -> MasterProfile:
         return load_profile(self.profile_path)
 
-    def save_profile(self, data: dict) -> MasterProfile:
-        profile = MasterProfile.model_validate(data)  # raises on invalid
-        dump_yaml(profile.model_dump(exclude_none=True), self.profile_path)
-        return profile
+    @property
+    def lock(self) -> threading.RLock:
+        return _LOCK
+
+    def profile_version(self) -> str:
+        return file_version(self.profile_path)
+
+    def save_profile(self, data: dict, base_version: str | None = None) -> MasterProfile:
+        """Validate and save. Ids that disappear are retired so they're never reused.
+        With `base_version`, refuse to overwrite a profile that changed since it was read."""
+        with _LOCK:
+            if base_version is not None and base_version != self.profile_version():
+                raise Conflict("Your profile changed since this page loaded (another tab or an approval). "
+                               "Reload, then re-apply your edits.")
+            profile = MasterProfile.model_validate(data)  # raises on invalid
+            if self.profile_path.exists():
+                old = self.profile()
+                retired = set(old.retired_ids) | (set(old.all_ids()) - set(profile.all_ids()))
+                profile.retired_ids = sorted(retired | set(profile.retired_ids))
+            dump_yaml(profile.model_dump(exclude_none=True), self.profile_path)
+            return profile
+
+    @contextmanager
+    def editing_profile(self):
+        """Read-modify-write the profile under the lock: `with store.editing_profile() as data: ...`"""
+        with _LOCK:
+            data = self.profile().model_dump(exclude_none=True)
+            yield data
+            self.save_profile(data)
 
     def base_tailored(self) -> TailoredResume | None:
         p = self.base_tailored_path
@@ -113,11 +168,35 @@ class Store:
 
     def save_meta(self, app_id: str, meta: dict) -> dict:
         meta = {**meta, "updated": dt.datetime.now().isoformat(timespec="seconds")}
-        (self.apps_dir / app_id / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        _write_json_atomic(self.apps_dir / app_id / "meta.json", meta)
         return meta
 
     def update_meta(self, app_id: str, **changes) -> dict:
-        return self.save_meta(app_id, {**self.meta(app_id), **changes})
+        with _LOCK:
+            return self.save_meta(app_id, {**self.meta(app_id), **changes})
+
+    def advance_status(self, app_id: str, status: str) -> dict:
+        """Pipeline steps only move the status forward, and never override a status
+        the user set (applied, interview, offer…)."""
+        with _LOCK:
+            current = self.meta(app_id).get("status", "draft")
+            if current in PIPELINE and PIPELINE.index(status) > PIPELINE.index(current):
+                return self.update_meta(app_id, status=status)
+            return self.meta(app_id)
+
+    # -- outputs ---------------------------------------------------------------------------
+    def tailored_hash(self, app_id: str) -> str:
+        return file_version(self.app_path(app_id) / "tailored.yaml")
+
+    def clear_outputs(self, app_id: str) -> None:
+        for f in self.app_path(app_id).iterdir():
+            if f.suffix in (".docx", ".pdf"):
+                f.unlink()
+
+    def outputs_stale(self, app_id: str) -> bool:
+        """Built files exist but the tailored resume changed after they were built."""
+        built = self.meta(app_id).get("built_hash")
+        return bool(self.files(app_id)) and built != self.tailored_hash(app_id)
 
     def list_apps(self) -> list[dict]:
         if not self.apps_dir.exists():
@@ -163,9 +242,26 @@ class Store:
         return [AppAnswer.model_validate(a) for a in data.get("answers", [])]
 
     def save_answers(self, app_id: str, answers: list[AppAnswer]) -> None:
-        dump_yaml({"answers": [a.model_dump(exclude_none=True) for a in answers]},
-                  self.app_path(app_id) / "answers.yaml")
-        self._remember(app_id, answers)
+        with _LOCK:
+            dump_yaml({"answers": [a.model_dump(exclude_none=True) for a in answers]},
+                      self.app_path(app_id) / "answers.yaml")
+            self._remember(app_id, answers)
+
+    def remap_answers(self, app_id: str, questions: list[dict]) -> None:
+        """After (re-)analysis, keep only answers that still match a question — by its
+        text, since question ids (q1, q2…) are renumbered — plus reopened known gaps.
+        Finalized answers are already in the knowledge base, so nothing is lost."""
+        with _LOCK:
+            by_text = {" ".join(q["question"].split()).lower(): q for q in questions}
+            kept = []
+            for a in self.answers(app_id):
+                q = by_text.get(" ".join(a.question.split()).lower())
+                if q:
+                    kept.append(a.model_copy(update={"question_id": q["id"], "requirement": q.get("requirement", a.requirement)}))
+                elif a.question_id.startswith("kg-"):
+                    kept.append(a)
+            dump_yaml({"answers": [a.model_dump(exclude_none=True) for a in kept]},
+                      self.app_path(app_id) / "answers.yaml")
 
     # -- knowledge (across applications) -------------------------------------------------
     @property
@@ -176,10 +272,28 @@ class Store:
         p = self.knowledge_path
         return Knowledge.model_validate(load_yaml(p)) if p.exists() else Knowledge()
 
-    def save_knowledge(self, knowledge: Knowledge) -> Knowledge:
-        knowledge = Knowledge.model_validate(knowledge.model_dump())
-        dump_yaml(knowledge.model_dump(exclude_none=True), self.knowledge_path)
-        return knowledge
+    def knowledge_version(self) -> str:
+        return file_version(self.knowledge_path)
+
+    def save_knowledge(self, knowledge: Knowledge, base_version: str | None = None) -> Knowledge:
+        with _LOCK:
+            if base_version is not None and base_version != self.knowledge_version():
+                raise Conflict("Your answers/preferences changed since this page loaded. Reload, then retry.")
+            knowledge = Knowledge.model_validate(knowledge.model_dump())
+            if self.knowledge_path.exists():
+                old = self.knowledge()
+                old_ids = {x.id for x in [*old.answers, *old.preferences]}
+                new_ids = {x.id for x in [*knowledge.answers, *knowledge.preferences]}
+                knowledge.retired_ids = sorted(set(old.retired_ids) | set(knowledge.retired_ids) | (old_ids - new_ids))
+            dump_yaml(knowledge.model_dump(exclude_none=True), self.knowledge_path)
+            return knowledge
+
+    @contextmanager
+    def editing_knowledge(self):
+        with _LOCK:
+            knowledge = self.knowledge()
+            yield knowledge
+            self.save_knowledge(knowledge)
 
     def _remember(self, app_id: str, answers: list[AppAnswer]) -> None:
         """Upsert finalized answers into the knowledge base; drafts are forgotten.
@@ -187,7 +301,7 @@ class Store:
         no_experience → a known gap. approved → experience (backed by profile evidence).
         rejected → the answer is kept for pre-filling, but is never evidence.
         """
-        knowledge = self.knowledge()
+        knowledge = self.knowledge()  # caller holds _LOCK
         company = self.meta(app_id).get("company")
         today = f"{dt.date.today():%Y-%m-%d}"
         by_key = {(k.app_id, k.question): k for k in knowledge.answers}
@@ -212,7 +326,8 @@ class Store:
                     existing.date = today
                     changed = True
             else:
-                knowledge.answers.append(KnowledgeAnswer(id=next_id("k", {k.id for k in knowledge.answers}),
+                taken = {k.id for k in knowledge.answers} | set(knowledge.retired_ids)
+                knowledge.answers.append(KnowledgeAnswer(id=next_id("k", taken),
                                                          date=today, **fields))
                 changed = True
         # A finalized answer to a reopened known gap ("kg-<id>") replaces the old entry.

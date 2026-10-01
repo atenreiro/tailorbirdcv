@@ -11,6 +11,8 @@ from the profile by id, so they cannot drift.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -102,6 +104,9 @@ class MasterProfile(_Model):
     synonyms: list[list[str]] = Field(default_factory=list)
     # Extra proper nouns the candidate approved for use anywhere (e.g. "Singapore").
     vocabulary: list[str] = Field(default_factory=list)
+    # Ids of deleted evidence. Never reused, so old resumes can't silently re-attach
+    # their claims to a different fact.
+    retired_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_ids(self) -> MasterProfile:
@@ -236,6 +241,7 @@ class Preference(_Model):
 class Knowledge(_Model):
     answers: list[KnowledgeAnswer] = Field(default_factory=list)
     preferences: list[Preference] = Field(default_factory=list)
+    retired_ids: list[str] = Field(default_factory=list)  # deleted k/p ids, never reused
 
     def active_preferences(self) -> list[Preference]:
         return [p for p in self.preferences if p.status == "active"]
@@ -262,9 +268,19 @@ def load_yaml(path: Path) -> dict:
 
 
 def dump_yaml(data: dict, path: Path) -> None:
+    """Atomic write: a crash or a concurrent writer can never leave a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=100)
+    text = yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=100)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def load_profile(path: Path) -> MasterProfile:

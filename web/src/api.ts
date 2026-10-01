@@ -42,8 +42,9 @@ export interface Profile {
   extras: LeadItem[]
   synonyms: string[][]
   vocabulary: string[]
+  retired_ids?: string[]
 }
-export interface ProfileResponse { profile: Profile; evidence: Record<string, string> }
+export interface ProfileResponse { profile: Profile; evidence: Record<string, string>; version: string }
 
 export interface Requirement {
   text: string; priority: 'must' | 'nice'; status: 'strong' | 'partial' | 'gap'; evidence: string[]; note: string
@@ -69,7 +70,7 @@ export interface Preference {
   id: string; text: string; rationale: string; status: 'proposed' | 'active' | 'dismissed'
   source_app?: string | null; date: string
 }
-export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[] }
+export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[]; retired_ids?: string[]; version?: string }
 export interface Issue { where: string; message: string }
 export interface Report { ok: boolean; errors: Issue[]; warnings: Issue[] }
 export interface Ats {
@@ -80,15 +81,17 @@ export interface Ats {
 export interface Meta {
   company: string; role: string; url?: string | null; status: string
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
-  guidance?: string
+  guidance?: string; trim_rounds?: number; built_hash?: string
 }
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
   tailored: Tailored | null; report: Report | null; ats: Ats | null
   answers: AppAnswer[]; edits: number
+  outputs_stale: boolean
+  length: { lines: number; budget: number } | null
   build?: { pages: number | null; too_long: boolean }
 }
-export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[] }
+export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
@@ -104,12 +107,16 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+async function req<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const headers: Record<string, string> = { ...extraHeaders }
+  if (method !== 'GET') headers['X-AutoCV'] = '1'  // required by the server's cross-site guard
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  } catch {
+    throw new ApiError(0, 'Can’t reach the AutoCV server. Is `uv run autocv serve` still running? Your inputs are kept, so retry once it’s back.')
+  }
   if (!res.ok) {
     let msg = res.statusText
     try {
@@ -124,9 +131,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export const api = {
   engine: () => req<EngineStatus>('GET', '/engine'),
   profile: () => req<ProfileResponse>('GET', '/profile'),
-  saveProfile: (p: Profile) => req<ProfileResponse>('PUT', '/profile', p),
-  profileYaml: () => req<{ yaml: string }>('GET', '/profile/yaml'),
-  saveProfileYaml: (yaml: string) => req<{ yaml: string }>('PUT', '/profile/yaml', { yaml }),
+  saveProfile: (p: Profile, version: string) => req<ProfileResponse>('PUT', '/profile', p, { 'If-Match': version }),
+  profileYaml: () => req<{ yaml: string; version: string }>('GET', '/profile/yaml'),
+  saveProfileYaml: (yaml: string, version: string) =>
+    req<{ yaml: string; version: string }>('PUT', '/profile/yaml', { yaml }, { 'If-Match': version }),
   addEvidence: (e: { target: string; text: string; skills: Proposal['skills']; note?: string }) =>
     req<{ id: string; evidence: Record<string, string> }>('POST', '/profile/evidence', e),
 
@@ -144,7 +152,9 @@ export const api = {
   build: (id: string) => req<Application>('POST', `/applications/${id}/build`),
   saveAnswers: (id: string, answers: AppAnswer[]) => req<AppAnswer[]>('PUT', `/applications/${id}/answers`, answers),
   knowledge: () => req<Knowledge>('GET', '/knowledge'),
-  saveKnowledge: (k: Knowledge) => req<Knowledge>('PUT', '/knowledge', k),
+  saveKnowledge: ({ version, ...k }: Knowledge) =>
+    req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
+  trim: (id: string) => req<Application>('POST', `/applications/${id}/trim`),
   suggestPreferences: (id: string) =>
     req<{ edits: number; proposed: number; knowledge: Knowledge }>('POST', `/applications/${id}/preferences`),
   fileUrl: (id: string, name: string, download = false) =>

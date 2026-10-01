@@ -7,7 +7,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 2. **Locked fields never change**: contact, employer, location, job title, dates, education, certifications, awards, languages. The renderer pulls them from the profile by id — never retype them.
 3. **The profile changes only with the user's explicit confirmation of the exact wording.** New evidence gets `source: interview` or `source: prep_guide` and `in_base_resume: false`.
 4. **Rephrasing is allowed** (reorder, merge, trim, mirror JD vocabulary) as long as the meaning, numbers and entities are unchanged and each claim cites its `sources`. Don't upgrade verbs ("contributed to" → "led") or scope ("team" → "organization").
-5. `uv run autocv check` must PASS before `build`. Fix violations by citing the right evidence or rewording; never by adding vocabulary or synonyms without the user's approval.
+5. `uv run autocv check` must PASS before `build`. Bullets may only cite their own role's evidence; role header ids aren't citable. Fix violations by citing the right evidence or rewording; never by adding vocabulary or synonyms without the user's approval.
 6. Personal data lives only in `private/` (gitignored). Never commit it, never paste it into tests — tests use `tests/fixtures/` (fictional).
 
 ## Layout
@@ -17,6 +17,12 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - `.claude/skills/profile` (`/profile`) and `.claude/skills/tailor` (`/tailor`).
 - `private/` — `profile.yaml` (source of truth), `knowledge.yaml` (memory: past gap answers + approved style preferences, **never citable**), `source/`, `applications/<date>_<company>_<role>/` (`meta.json`, `answers.yaml`, `tailored.ai.yaml` = AI draft, `tailored.yaml` = edited).
 - Web UI: `autocv/api.py` (FastAPI), `autocv/ai.py` (prompts + fact-check repair loop), `autocv/engine.py` (headless `claude -p`, tools disabled — uses the Claude subscription, no API key), `autocv/store.py`, `autocv/jobfetch.py` (JD from URL: ATS APIs → JSON-LD → text → Playwright fallback, SSRF-guarded on every hop), `web/` (React + Vite + Tailwind). The model never writes to the profile: gap answers become *proposals* the user approves in the UI.
+
+## Web API conventions
+- Every non-GET `/api/*` request must send `X-AutoCV: 1` (cross-site guard). Profile/knowledge PUTs send `If-Match: <version>`; 409 means reload.
+- Private files are written atomically under a process-wide lock (`store.lock`); never hold it across an AI call.
+- Deleted evidence/knowledge ids are retired (`retired_ids`) and never reused.
+- Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands
 ```

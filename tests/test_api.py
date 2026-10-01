@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
+from conftest import client_for
 
 from autocv.api import create_app
 from autocv.engine import FakeEngine
@@ -54,7 +54,7 @@ def env(tmp_path):
         "repair": TAILORED,
     })
     store = Store(private)
-    return TestClient(create_app(store, engine)), store, engine
+    return client_for(create_app(store, engine)), store, engine
 
 
 def test_full_flow(env):

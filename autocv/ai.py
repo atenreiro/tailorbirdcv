@@ -10,18 +10,24 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from . import factcheck
 from .engine import Engine
+from .render import docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
 ROOT = Path(__file__).resolve().parent.parent
 INDUSTRIES = ["banking", "tech", "quant", "fintech", "telco", "consulting"]
 TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
+MAX_TRIM_ROUNDS = 2
+LINE_CHARS = 100          # rough characters per rendered line (calibrated on the base resume)
+DEFAULT_BUDGET = 110      # estimated lines for 2 pages when there's no base resume to measure
 
 SYSTEM = """You are AutoCV, a meticulous resume strategist for a senior cybersecurity professional \
 (targets: senior IC and manager roles in banking, tech, quant/trading, fintech; Singapore/APAC).
@@ -201,7 +207,7 @@ def add_evidence(profile: MasterProfile, target: str, text: str,
     item = {"text": text.strip(), "source": "interview", "in_base_resume": False}
     if note:
         item["note"] = note
-    existing = set(profile.all_ids())
+    existing = set(profile.all_ids()) | set(profile.retired_ids)  # never reuse a deleted id
     if target == "general":
         n = 1
         while f"summary.s{n}" in existing:
@@ -251,8 +257,27 @@ def tailored_schema(profile: MasterProfile, track: str | None) -> dict:
     return schema
 
 
+def estimate_lines(profile: MasterProfile, tailored: TailoredResume) -> int:
+    """Approximate rendered line count — a fast proxy for page count (Word is the truth)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        lines = docx_text(render(profile, tailored, Path(tmp) / "r.docx"))
+    return sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
+
+
+def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
+    """The candidate's own 2-page resume sets the budget."""
+    if base is None:
+        return {"lines": DEFAULT_BUDGET, "words": 1000}
+    with tempfile.TemporaryDirectory() as tmp:
+        lines = docx_text(render(profile, base, Path(tmp) / "r.docx"))
+    est = sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
+    return {"lines": est, "words": len(" ".join(lines).split())}
+
+
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,
-                    guidance: str, preferences: list[Preference] | None = None) -> str:
+                    guidance: str, preferences: list[Preference] | None = None,
+                    budget: dict | None = None) -> str:
+    budget = budget or {"lines": DEFAULT_BUDGET, "words": 1000}
     industry, track = analysis.get("industry"), analysis.get("track")
     lens = _config("industries.yaml").get(industry, {})
     track_rules = _config("tracks.yaml").get(track, {})
@@ -272,7 +297,9 @@ skills (exact text, an approved synonym, or a sub-phrase of one skill). Group la
 job's vocabulary where meaning is identical, merge or drop weak ones; you may surface evidence with \
 in_base_resume: false. Older roles get fewer bullets. Keep the scope line for each role (cite it).
 - projects, education, extras: choose and order ids (education/extras are rendered verbatim).
-- Length: must fit 2 pages — stay at or below the base resume's total length (≈1,000 words).
+- Length: HARD LIMIT of 2 pages — at most {budget["words"] - 60} words in total (the base resume is \
+{budget["words"]} words and already fills 2 pages). Prefer fewer, stronger bullets: 3-4 highlights, \
+4-5 bullets for the current role, fewer for older roles.
 - Every claim's sources must cover every number, tool, framework and proper noun in it.
 
 INDUSTRY LENS ({industry}) — emphasis only, never facts:
@@ -295,8 +322,9 @@ BASE RESUME LAYOUT (the candidate's current resume, for format and default conte
 def _repair_prompt(profile: MasterProfile, tailored: dict, report: factcheck.Report) -> str:
     errors = "\n".join(f"- {e}" for e in report.errors)
     return f"""TASK: repair
-The tailored resume below failed the fact-check. Fix every error by citing the right evidence, \
-rewording to match the source, or removing the claim. Never add facts. Keep everything else as is.
+The tailored resume below failed the fact-check. Fix every error by rewording the claim to match its \
+cited evidence, or removing the unsupported part (or the whole claim). Never add facts. Never cite evidence \
+from a different role to make a bullet pass. Keep everything else as is.
 
 ERRORS:
 {errors}
@@ -307,19 +335,71 @@ TAILORED RESUME:
 """
 
 
-async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
-                  base: TailoredResume | None = None, guidance: str = "",
-                  preferences: list[Preference] | None = None) -> dict:
-    schema = tailored_schema(profile, analysis.get("track"))
-    raw = await engine.complete(SYSTEM, _compose_prompt(profile, analysis, base, guidance, preferences), schema)
+def _trim_prompt(profile: MasterProfile, tailored: dict, lines: int, budget: int, analysis: dict) -> str:
+    over = lines - budget
+    return f"""TASK: trim
+This tailored resume is too long for 2 pages: about {lines} lines against a budget of {budget}. Cut at \
+least {over + 4} lines. In order of preference: drop the least relevant bullets of the OLDEST roles, merge \
+overlapping bullets, shorten long bullets, cut highlights to 3, shorten the summary to 2 sentences. Keep \
+every role (a scope line is enough for old roles) and the facts that match the job's must-haves. Only \
+remove or shorten — never add facts or sources. Keep each remaining claim's sources accurate.
+
+JOB MUST-HAVES:
+{_yaml([r["text"] for r in analysis.get("requirements", []) if r.get("priority") == "must"])}
+TAILORED RESUME:
+{json.dumps(tailored, indent=1, ensure_ascii=False)}
+"""
+
+
+async def _validated(engine: Engine, profile: MasterProfile, schema: dict, raw) -> tuple[TailoredResume, factcheck.Report, int]:
+    """Validate + fact-check, asking the model to repair up to MAX_REPAIR_ROUNDS times."""
     rounds = 0
     while True:
         tailored = TailoredResume.model_validate(raw)
         report = factcheck.check(profile, tailored)
         if report.ok or rounds >= MAX_REPAIR_ROUNDS:
-            return {"tailored": tailored, "report": report, "repair_rounds": rounds}
+            return tailored, report, rounds
         rounds += 1
         raw = await engine.complete(SYSTEM, _repair_prompt(profile, raw, report), schema)
+
+
+async def fit_to_length(engine: Engine, profile: MasterProfile, tailored: TailoredResume, analysis: dict,
+                        budget: int, max_rounds: int = MAX_TRIM_ROUNDS) -> dict:
+    """Trim until the estimate fits the budget. A trim that breaks the fact-check is discarded."""
+    schema = tailored_schema(profile, analysis.get("track"))
+    lines, trims, rounds = estimate_lines(profile, tailored), 0, 0
+    while lines > budget and trims < max_rounds:
+        trims += 1
+        raw = await engine.complete(SYSTEM, _trim_prompt(profile, tailored.model_dump(exclude_none=True), lines,
+                                                         budget, analysis), schema)
+        try:
+            candidate, report, r = await _validated(engine, profile, schema, raw)
+        except ValidationError:
+            break
+        rounds += r
+        if not report.ok:
+            break  # keep the last version that passed
+        tailored, lines = candidate, estimate_lines(profile, candidate)
+    return {"tailored": tailored, "trim_rounds": trims, "repair_rounds": rounds,
+            "length": {"lines": lines, "budget": budget, "fits": lines <= budget}}
+
+
+async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
+                  base: TailoredResume | None = None, guidance: str = "",
+                  preferences: list[Preference] | None = None) -> dict:
+    schema = tailored_schema(profile, analysis.get("track"))
+    budget = length_budget(profile, base)
+    raw = await engine.complete(SYSTEM, _compose_prompt(profile, analysis, base, guidance, preferences, budget),
+                                schema)
+    tailored, report, rounds = await _validated(engine, profile, schema, raw)
+    result = {"tailored": tailored, "report": report, "repair_rounds": rounds, "trim_rounds": 0,
+              "length": {"lines": estimate_lines(profile, tailored), "budget": budget["lines"]}}
+    if report.ok:
+        fitted = await fit_to_length(engine, profile, tailored, analysis, budget["lines"])
+        result.update(tailored=fitted["tailored"], trim_rounds=fitted["trim_rounds"], length=fitted["length"],
+                      repair_rounds=rounds + fitted["repair_rounds"],
+                      report=factcheck.check(profile, fitted["tailored"]))
+    return result
 
 
 # --------------------------------------------------------------------------- learn style preferences

@@ -33,8 +33,11 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT) ->
             f"Word didn't finish within {int(timeout)} s. It may be waiting on a dialog (e.g. "
             "“Grant File Access” or permission to be controlled). Switch to Word, answer it, then rebuild.")
     if not pdf.exists():
-        detail = err.decode(errors="replace").strip().splitlines()[-1:] if err else []
-        raise RuntimeError(f"Word did not produce the PDF{': ' + detail[0] if detail else ''}")
+        # docx2pdf prints a progress bar on stderr; keep only real error lines
+        lines = [ln for ln in (err or b"").decode(errors="replace").splitlines() if ln.strip() and "it/s]" not in ln]
+        detail = lines[-1].strip() if lines else ("Word may be showing a dialog (e.g. “Grant File Access”). "
+                                                  "Switch to Word, answer it, then rebuild.")
+        raise RuntimeError(f"Word did not produce the PDF: {detail}")
     return pdf
 
 

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, STATUSES, type Application, type ProfileResponse } from '../api'
+import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Proposal, type Tailored } from '../api'
+import { confirmLeave, setUnsaved } from '../unsaved'
 import { cx, ErrorNote, fmtDate, Spinner, StatusPill, Working } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
@@ -15,25 +16,48 @@ const STEPS = [
 ] as const
 type Step = (typeof STEPS)[number]['key']
 
+export type Draft = Proposal & { state: 'pending' | 'approved' | 'rejected'; id?: string }
+
+/** Work in progress that must survive switching steps (each step unmounts when hidden). */
+export interface StepMemo {
+  review: { draft: Tailored; rev: number } | null  // unsaved Review edits
+  gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
+}
+
 export interface StepProps {
   app: Application
   profile: ProfileResponse
-  setApp: (a: Application) => void
+  setApp: (a: Application | ((prev: Application) => Application)) => void
   reloadProfile: () => Promise<void>
   go: (s: Step) => void
   run: (title: string, lines: string[], fn: () => Promise<void>, ai?: boolean) => Promise<void>
+  memo: StepMemo
+  setMemo: (fn: (m: StepMemo) => StepMemo) => void
 }
 
 export default function Workspace() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
   const nav = useNavigate()
-  const [app, setApp] = useState<Application | null>(null)
+  const [app, setAppState] = useState<Application | null>(null)
+  const setApp = useCallback((a: Application | ((prev: Application) => Application)) =>
+    setAppState((prev) => (typeof a === 'function' ? (prev ? a(prev) : prev) : a)), [])
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [step, setStep] = useState<Step>('brief')
   const [working, setWorking] = useState<{ title: string; lines: string[]; ai: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null })
   const autoRan = useRef(false)
+
+  const setMemo = useCallback((fn: (m: StepMemo) => StepMemo) => setMemoState(fn), [])
+
+  // Unsaved Review edits guard navigation away from the workspace and closing the tab.
+  useEffect(() => { setUnsaved('review', !!memo.review) }, [memo.review])
+  useEffect(() => () => setUnsaved('review', false), [])
+
+  // A new analysis renumbers the gap questions: re-seed the Gaps step from the server.
+  const questionsKey = useMemo(() => JSON.stringify(app?.analysis?.questions ?? []), [app?.analysis])
+  useEffect(() => { setMemoState((m) => ({ ...m, gaps: null })) }, [questionsKey])
 
   const reloadProfile = useCallback(async () => setProfile(await api.profile()), [])
 
@@ -76,7 +100,7 @@ export default function Workspace() {
       setApp(next)
       if (next.id !== app.id) nav(`/a/${next.id}`, { replace: true })
     })
-  }, [app, params, setParams, run, nav])
+  }, [app, params, setParams, run, nav, setApp])
 
   if (!app || !profile) {
     return error ? <ErrorNote error={error} /> : <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>
@@ -90,17 +114,21 @@ export default function Workspace() {
   }
 
   async function setStatus(status: string) {
-    const meta = await api.patch(app!.id, { status })
-    setApp({ ...app!, meta })
+    try {
+      const meta = await api.patch(app!.id, { status })
+      setApp({ ...app!, meta })
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
-  const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run }
+  const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run, memo, setMemo }
 
   return (
     <div className="space-y-8">
       <div className="animate-rise flex flex-wrap items-start justify-between gap-6">
         <div>
-          <Link to="/" className="text-sm text-muted hover:text-rust">← Applications</Link>
+          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="text-sm text-muted hover:text-rust">← Applications</Link>
           <h1 className="mt-2 font-serif text-5xl leading-none text-ink">{app.meta.company}</h1>
           <p className="mt-2 text-lg text-muted">{app.meta.role}</p>
         </div>
@@ -128,7 +156,10 @@ export default function Workspace() {
             >
               <span className={cx('font-serif text-2xl italic', step === s.key ? 'text-rust' : 'text-faint')}>{i + 1}</span>
               <span>
-                <span className="block font-medium">{s.label}</span>
+                <span className="block font-medium">
+                  {s.label}
+                  {s.key === 'review' && memo.review && <span className="ml-1 text-warn" title="Unsaved edits">•</span>}
+                </span>
                 <span className="hidden text-xs text-faint sm:block">{s.hint}</span>
               </span>
             </button>

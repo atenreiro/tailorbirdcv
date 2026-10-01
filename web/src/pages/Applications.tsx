@@ -111,10 +111,12 @@ export default function Applications() {
                   <td className="px-5 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       {a.files.map((f) => (
-                        <a key={f} href={api.fileUrl(a.id, f, true)} className="chip hover:bg-rust-soft hover:text-rust">
+                        <a key={f} href={api.fileUrl(a.id, f, true)} title={a.outputs_stale ? 'Outdated: the resume changed after this was built' : f}
+                          className={cx('chip hover:bg-rust-soft hover:text-rust', a.outputs_stale && 'line-through opacity-60')}>
                           ↓ {f.split('.').pop()}
                         </a>
                       ))}
+                      {a.outputs_stale && <span className="text-[11px] text-warn">rebuild</span>}
                     </div>
                   </td>
                 </tr>
