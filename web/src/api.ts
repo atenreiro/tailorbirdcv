@@ -175,6 +175,7 @@ export const api = {
     req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
   trim: (id: string) => req<Application>('POST', `/applications/${id}/trim`),
   critique: (id: string) => req<Application>('POST', `/applications/${id}/critique`),
+  reveal: (id: string) => req<void>('POST', `/applications/${id}/reveal`),
   saveCritiqueDecisions: (id: string, decisions: Record<string, 'accepted' | 'rejected'>) =>
     req<Critique>('PUT', `/applications/${id}/critique/decisions`, { decisions }),
   suggestPreferences: (id: string) =>

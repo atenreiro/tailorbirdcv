@@ -200,7 +200,7 @@ def test_build_replaces_old_files_and_edits_mark_them_stale(env):
     client.post(f"/api/applications/{app_id}/build?pdf=false")
     client.patch(f"/api/applications/{app_id}", json={"company": "Renamed Co"})
     data = client.post(f"/api/applications/{app_id}/build?pdf=false").json()
-    assert data["files"] == ["Jane_Example_Resume_Renamed_Co.docx"] and not data["outputs_stale"]
+    assert data["files"] == ["Jane_Example_Resume.docx"] and not data["outputs_stale"]
 
     t = data["tailored"]
     t["highlights"][0]["text"] = "Cut false positives by over 65%."
@@ -261,3 +261,24 @@ def test_trim_endpoint_shortens_the_current_resume(env):
     before = client.get(f"/api/applications/{app_id}").json()["length"]["lines"]
     after = client.post(f"/api/applications/{app_id}/trim").json()["length"]["lines"]
     assert after < before
+
+
+
+def test_file_name_never_includes_the_company(env):
+    client, store, _ = env
+    app_id = composed_app(client)
+    files = client.post(f"/api/applications/{app_id}/build?pdf=false").json()["files"]
+    assert files == ["Jane_Example_Resume.docx"]
+
+
+def test_reveal_opens_only_this_applications_folder(env, monkeypatch):
+    import subprocess
+    client, store, _ = env
+    app_id = composed_app(client)
+    client.post(f"/api/applications/{app_id}/build?pdf=false")
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    assert client.post(f"/api/applications/{app_id}/reveal").status_code == 204
+    assert str(store.app_path(app_id)) in calls[0][-1]
+    assert client.post("/api/applications/..%2F..%2Fetc/reveal").status_code == 404
+    assert calls[1:] == []

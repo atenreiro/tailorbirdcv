@@ -8,7 +8,7 @@
         meta.json  jd.md  analysis.yaml  answers.yaml
         tailored.ai.yaml    the AI's composed draft (to learn from the user's edits)
         tailored.yaml       the current, user-edited version
-        <Name>_Resume_<Company>.docx/.pdf
+        <Name>_Resume.docx/.pdf   (company-neutral: the folder says which company)
 """
 
 from __future__ import annotations
@@ -368,7 +368,8 @@ class Store:
         return sorted(p.name for p in path.iterdir() if p.suffix in (".docx", ".pdf"))
 
     def output_stem(self, app_id: str) -> str:
-        meta = self.meta(app_id)
-        company = meta.get("company") or app_id.split("_")[1]
-        name = self.profile().contact.name.replace(" ", "_")
-        return f"{name}_Resume_{re.sub(r'[^A-Za-z0-9]+', '_', company).strip('_')}"
+        """The file name recruiters see: the candidate's name only. Never the company —
+        CVs get forwarded and resubmitted, and a wrong-company filename is a visible
+        mistake. The application folder already says which company it's for."""
+        name = re.sub(r"[^A-Za-z0-9]+", "_", self.profile().contact.name).strip("_") or "Resume"
+        return f"{name}_Resume"

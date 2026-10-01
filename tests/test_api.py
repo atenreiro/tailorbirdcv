@@ -87,7 +87,7 @@ def test_full_flow(env):
     client.put(f"/api/applications/{app_id}/tailored", json=edited)
     data = client.post(f"/api/applications/{app_id}/build?pdf=false").json()
     assert data["meta"]["status"] == "built"
-    assert data["files"] == ["Jane_Example_Resume_Example_Capital.docx"]
+    assert data["files"] == ["Jane_Example_Resume.docx"]
     assert client.get(f"/api/applications/{app_id}/files/{data['files'][0]}").status_code == 200
 
     assert client.patch(f"/api/applications/{app_id}", json={"status": "applied"}).json()["status"] == "applied"

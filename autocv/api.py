@@ -457,6 +457,26 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                     status="proposed", source_app=app_id, date=today))
         return {"edits": len(edits), "proposed": len(proposals), "knowledge": knowledge_payload()}
 
+    @api.post("/applications/{app_id}/reveal", status_code=204)
+    def reveal(app_id: str):
+        """Open the application folder in Finder (PDF selected), so the exact file can be
+        uploaded from there — no "(1)" duplicates from the Downloads folder."""
+        import subprocess
+        import sys
+        path = store.app_path(need_app(app_id))
+        pdf = next((path / f for f in store.files(app_id) if f.endswith(".pdf")), None)
+        target = pdf or next((path / f for f in store.files(app_id)), None)
+        if sys.platform == "darwin":
+            cmd = ["open", "-R", str(target)] if target else ["open", str(path)]
+        elif sys.platform.startswith("win"):
+            cmd = ["explorer", f"/select,{target}"] if target else ["explorer", str(path)]
+        else:
+            cmd = ["xdg-open", str(path)]
+        try:
+            subprocess.run(cmd, check=False, timeout=10)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise HTTPException(500, f"Couldn't open the folder: {e}")
+
     @api.get("/applications/{app_id}/files/{name}")
     def get_file(app_id: str, name: str, download: bool = False):
         path = store.app_path(need_app(app_id))
@@ -468,6 +488,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                             content_disposition_type="attachment" if download else "inline", filename=name)
 
     app.include_router(api)
+
+    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+    def unknown_api(path: str):
+        # Otherwise these fall through to the page route and surface as a cryptic
+        # "405 Method Not Allowed" — typically a server started before an update.
+        raise HTTPException(404, "Unknown AutoCV endpoint. If you just updated AutoCV, restart the server "
+                                 "(Ctrl+C, then `uv run autocv serve`).")
 
     dist = ROOT / "web" / "dist"
     if dist.exists():

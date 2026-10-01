@@ -59,7 +59,12 @@ export default function Export({ app, setApp, go, run, memo }: StepProps) {
                     <span aria-hidden>↓</span>
                   </a>
                 ))}
+                <button className="btn justify-between" onClick={() => api.reveal(app.id).catch(() => {})}
+                  title="Opens this application's folder with the PDF selected, so you upload exactly this file">
+                  <span>Show in Finder</span><span aria-hidden>↗</span>
+                </button>
               </div>
+              <p className="text-xs text-faint">Tip: upload from Finder. Repeated downloads get “(1)” added to the name.</p>
             </div>
           )}
           <div className="mt-6 flex flex-wrap gap-2">
