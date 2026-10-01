@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AutoCV — personal data never leaves this folder
+private/
+~$*.docx
+/*.docx
+/*.pdf

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "autocv",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "autocv", "serve", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "autocv-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["AUTOCV_ENGINE=fake", "uv", "run", "autocv", "serve", "--port", "8001"],
+      "port": 8001
+    },
+    {
+      "name": "autocv-web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

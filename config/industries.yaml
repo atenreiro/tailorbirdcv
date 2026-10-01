@@ -1,0 +1,45 @@
+# Industry lenses — EMPHASIS heuristics for /tailor. These are never facts: they only
+# decide what to surface first and which vocabulary to mirror when the profile already
+# has the evidence. Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, financial institution, 1LoD, 2LoD, MAS, HKMA, PRA, regulator, TRM, operational resilience]
+  lead_with: [control ownership & governance, regulatory engagement, threat assessment & modeling, operating-model design, incident response at scale]
+  mirror_terms: [first line of defense, control framework, operational resilience, risk appetite, regulatory inspection, audit]
+  surface: [regulatory frameworks (MAS TRM, HKMA, PRA), control procedures, C-suite briefings, audit outcomes]
+  tone: measured, risk-and-control language; quantify risk reduction and assurance outcomes
+
+tech:
+  signals: [SaaS, platform, product security, cloud-native, engineering org, scale, SRE, developer]
+  lead_with: [hands-on engineering & automation, detection engineering, cloud (AWS), measurable fidelity/efficiency gains, open source]
+  mirror_terms: [automation, detection-as-code, tooling, scale, signal-to-noise, ownership]
+  surface: [Python/LLM tooling, GitHub Actions, ToolX, false-positive reduction, edge platforms]
+  tone: builder voice; concrete systems shipped and their impact; lighter on governance
+
+quant:
+  signals: [hedge fund, trading, market maker, proprietary, quantitative, low latency, HFT, alpha]
+  lead_with: [small high-calibre team leadership, hands-on depth, edge/perimeter & DDoS resilience, threat modeling, pragmatic delivery]
+  mirror_terms: [pragmatic, high-trust, small team, protect IP, availability, resilience]
+  surface: [engineering impact with no added headcount, automation, incident leadership, state-sponsored response]
+  tone: crisp and technical; avoid bureaucratic/process-heavy framing; emphasize judgment and speed
+
+fintech:
+  signals: [payments, wallet, mobile money, digital bank, crypto, exchange, fraud, KYC]
+  lead_with: [fraud controls, payments platform security, building functions from zero, regulatory + engineering blend]
+  mirror_terms: [fraud prevention, payment security, account takeover, transaction monitoring]
+  surface: [mobile money scale, account-takeover anti-fraud platform, banking-sector adoption]
+  tone: growth-stage builder; outcomes in users, volume and fraud loss
+
+telco:
+  signals: [telecom, operator, mobile network, carrier, 5G]
+  lead_with: [network & perimeter security, building the function, operator-scale operations]
+  mirror_terms: [network security, core network, operator, carrier-grade]
+  surface: [operator tenure, IP networks & security, GSMA, national CERT]
+  tone: operational scale and resilience
+
+consulting:
+  signals: [advisory, consulting, Big Four, client-facing, engagements]
+  lead_with: [executive communication, frameworks, assessments, stakeholder management]
+  mirror_terms: [advisory, client, assessment, roadmap, transformation]
+  surface: [threat assessment methodology, C-suite briefings, regulatory work, speaking]
+  tone: structured, outcome-oriented, client-ready

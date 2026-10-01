@@ -1,0 +1,35 @@
+headline: h.engineer
+summary:
+  text: Security VP with 15 years across banking and telecom.
+  sources: [summary.s1]
+highlights:
+- text: Cut false-positive alert volume by over 65% (to ~9/month) with no added headcount.
+  sources: [highlight.h1]
+competencies:
+- label: Security
+  items: [Detection engineering, WAF, Perimeter & edge security]
+- label: Platforms
+  items: [Splunk, AWS]
+experience:
+- role: acme-bank
+  scope:
+    text: Led a team of 5 engineers protecting 20M+ customers.
+    sources: [acme-bank.scope]
+  bullets:
+  - text: Rebuilt Splunk detection logic, cutting false positives by over 65% to roughly nine a month.
+    sources: [acme-bank.a1]
+  - text: Own vendor spend across five platforms, including Fastly and AWS WAF.
+    sources: [acme-bank.a2]
+  sub_roles:
+  - id: acme-bank.sub1
+- role: telco
+  scope:
+    text: Ran IT for a 4,500-employee operator.
+    sources: [telco.scope]
+  bullets:
+  - text: Saved US$1.7M in one year through vendor contract negotiation.
+    sources: [telco.a1]
+projects:
+- id: project.toolx
+education: [edu.bsc]
+extras: [extra.languages]

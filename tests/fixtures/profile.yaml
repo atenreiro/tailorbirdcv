@@ -1,0 +1,72 @@
+# Synthetic profile — fictional person, used only by tests.
+contact:
+  name: Jane Example
+  location: Singapore
+  phone: +65 0000 0000
+  email: jane@example.com
+  links:
+  - text: github.com/jane-example
+    url: https://github.com/jane-example
+headlines:
+- id: h.leader
+  text: Security Leader | Detection Strategist
+  tracks: [manager, hybrid]
+- id: h.engineer
+  text: Detection & Response Engineering Lead
+  tracks: [ic]
+summary_facts:
+- id: summary.s1
+  text: Security VP with 15 years across banking and telecom.
+highlights:
+- id: highlight.h1
+  text: Cut false-positive alert volume by over 65% (to ~9/month) with no added headcount.
+skills:
+- category: Security
+  items: [Perimeter & edge security, "WAF, DDoS & bot mitigation", Detection engineering]
+- category: Platforms
+  items: [Fastly, Splunk, AWS, Python]
+roles:
+- id: acme-bank
+  employer: Acme Bank
+  location: Singapore
+  title: Vice President | Detection Lead
+  dates: Jan 2022 – Present
+  scope:
+    id: acme-bank.scope
+    text: Led a team of 5 engineers protecting 20M+ customers.
+  achievements:
+  - id: acme-bank.a1
+    text: Cut false-positive alert volume by over 65%, to roughly nine per month, by rebuilding detection logic in Splunk.
+  - id: acme-bank.a2
+    text: Own vendor spend across five platforms (Fastly, AWS WAF, Imperva).
+  sub_roles:
+  - id: acme-bank.sub1
+    label: Analyst
+    text: (2020 – 2021) — Triaged alerts.
+- id: telco
+  employer: Telco Co
+  location: Leeds, United Kingdom
+  title: Head of Security
+  dates: Jan 2012 – Dec 2021
+  scope:
+    id: telco.scope
+    text: Ran IT for a 4,500-employee operator.
+    italic: false
+  achievements:
+  - id: telco.a1
+    text: Negotiated vendor contracts saving US$1.7M in a single year.
+projects:
+- id: project.toolx
+  label: ToolX
+  text: — Open-source threat-intel tool (400+ GitHub stars).
+education:
+- id: edu.bsc
+  label: BSc, Computer Science
+  text: — Example University (2011)
+extras:
+- id: extra.languages
+  label: Languages
+  text: — English (fluent)
+synonyms:
+- [WAF, Web Application Firewall]
+vocabulary: [APAC]
