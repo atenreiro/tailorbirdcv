@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import './index.css'
 import Applications from './pages/Applications'
 import NewApplication from './pages/NewApplication'
@@ -9,13 +9,22 @@ import Workspace from './pages/Workspace'
 import { cx, EngineBadge } from './ui'
 import { confirmLeave } from './unsaved'
 
+// v2 screens use a wider 1440px frame; the rest keep the original width until they're redesigned.
+const V2_ROUTES = ['/profile']
+function useFrame() {
+  const { pathname } = useLocation()
+  const wide = V2_ROUTES.some((r) => pathname.startsWith(r))
+  return wide ? 'max-w-[1440px] px-4 sm:px-7' : 'max-w-6xl px-4 sm:px-6'
+}
+
 function Masthead() {
+  const frame = useFrame()
   const guard = (e: { preventDefault(): void }) => { if (!confirmLeave()) e.preventDefault() }
   const link = ({ isActive }: { isActive: boolean }) =>
     cx('relative shrink-0 py-1 text-sm transition-colors', isActive ? 'text-ink after:absolute after:inset-x-0 after:-bottom-[13px] after:h-0.5 after:bg-rust' : 'text-muted hover:text-ink')
   return (
     <header className="sticky top-0 z-30 border-b border-rule bg-paper/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 sm:gap-8 sm:px-6">
+      <div className={cx('mx-auto flex items-center gap-4 py-3 sm:gap-8', frame)}>
         <NavLink to="/" onClick={guard} className="flex items-baseline gap-2">
           <span className="font-serif text-2xl italic text-ink">AutoCV</span>
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-faint lg:inline">fact-locked tailoring</span>
@@ -31,11 +40,12 @@ function Masthead() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
+function Shell() {
+  const frame = useFrame()
+  return (
+    <>
       <Masthead />
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-10 sm:px-6">
+      <main className={cx('mx-auto pb-24 pt-10', frame)}>
         <Routes>
           <Route path="/" element={<Applications />} />
           <Route path="/new" element={<NewApplication />} />
@@ -43,6 +53,14 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/profile" element={<Profile />} />
         </Routes>
       </main>
+    </>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <Shell />
     </BrowserRouter>
   </StrictMode>,
 )

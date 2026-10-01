@@ -135,3 +135,24 @@ export function fmtDate(iso?: string) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+/** Floating "unsaved changes" dock, bottom-centre; turns into a brief "✓ Saved" toast. */
+export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabel = 'Save' }: {
+  dirty: boolean; text: string; busy: boolean; flash: string | null
+  onSave: () => void; onDiscard: () => void; saveLabel?: string
+}) {
+  const dock = 'fixed bottom-5 left-1/2 z-40 -translate-x-1/2 animate-rise'
+  if (flash && !dirty) {
+    return <div className={cx(dock, 'rounded-md border border-ok/30 bg-ok-soft px-4 py-2 text-[13px] text-ok')} role="status">✓ {flash}</div>
+  }
+  if (!dirty) return null
+  return (
+    <div className={cx(dock, 'flex max-w-[calc(100vw-32px)] items-center gap-3.5 rounded-md bg-ink py-2.5 pl-[18px] pr-3 text-sheet shadow-[0_12px_32px_-12px_rgb(23_23_23/0.5)]')} role="region" aria-label="Unsaved changes">
+      <span className="text-[13px]">{text}</span>
+      <button className="shrink-0 cursor-pointer rounded border border-muted px-3 py-1.5 text-[13px] hover:border-sheet" onClick={onDiscard} disabled={busy}>Discard</button>
+      <button className="flex shrink-0 cursor-pointer items-center gap-2 rounded border border-rust bg-rust px-3.5 py-1.5 text-[13px] font-medium hover:bg-[#63230d] disabled:opacity-60" onClick={onSave} disabled={busy}>
+        {busy && <Spinner />}{busy ? 'Saving…' : saveLabel}
+      </button>
+    </div>
+  )
+}
