@@ -37,23 +37,23 @@ export default function StyleCoach({ app }: { app: Application }) {
   }
 
   return (
-    <div className="sheet animate-rise rounded p-5 text-sm">
-      <p className="eyebrow">Teach AutoCV your style</p>
-      <p className="mt-2 text-muted">
+    <section className="animate-rise flex flex-col gap-2.5 rounded border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rust">Teach AutoCV your style</p>
+      <p className="text-muted">
         You changed {app.edits} claim{app.edits === 1 ? '' : 's'} from the AI draft{guidance ? ' and gave guidance' : ''}.
         AutoCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
       </p>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {proposals === null ? (
-        <button className="btn mt-3" disabled={busy} onClick={suggest}>{busy ? <><Spinner /> Studying your edits…</> : 'Suggest preferences'}</button>
+        <button className="btn self-start px-3.5 py-1.5 text-[13px]" disabled={busy} onClick={suggest}>{busy ? <><Spinner /> Studying your edits…</> : 'Suggest preferences'}</button>
       ) : (
-        <ul className="mt-3 space-y-3">
+        <ul className="flex flex-col gap-2">
           {proposals.map((p) => <ProposalRow key={p.id} p={p} onDecide={decide} />)}
           {note && <li className="text-muted">{note}</li>}
         </ul>
       )}
-      <Link to="/profile?tab=prefs" className="mt-3 inline-block text-xs text-muted hover:text-rust">Manage all preferences →</Link>
-    </div>
+      <Link to="/profile?tab=prefs" className="self-start text-xs text-muted hover:text-rust">Manage all preferences →</Link>
+    </section>
   )
 }
 
@@ -61,15 +61,21 @@ function ProposalRow({ p, onDecide }: { p: Preference; onDecide: (p: Preference,
   const [text, setText] = useState(p.text)
   const active = p.status === 'active'
   return (
-    <li className={cx('rounded border p-3', active ? 'border-ok/40 bg-ok-soft/40' : 'border-rule')}>
-      <input aria-label="Preference" className="field py-1 text-sm" disabled={active} value={text} onChange={(e) => setText(e.target.value)} />
-      {p.rationale && <p className="mt-1 text-xs text-faint">{p.rationale}</p>}
+    <li className={cx('flex flex-col gap-1.5 rounded border p-2.5', active ? 'border-ok/40 bg-ok-soft/40' : 'border-rule bg-sheet')}>
       {active ? (
-        <p className="mt-2 text-xs text-ok">✓ Active. Applied to future drafts.</p>
+        <p className="text-ink">{text}</p>
       ) : (
-        <div className="mt-2 flex gap-2">
-          <button className="btn btn-primary py-1" disabled={!text.trim()} onClick={() => onDecide(p, 'active', text.trim())}>Approve</button>
-          <button className="btn py-1" onClick={() => onDecide(p, 'dismissed')}>Dismiss</button>
+        <textarea aria-label="Preference" title="Edit the wording before approving" rows={Math.max(2, Math.ceil(text.length / 36))}
+          className="field resize-none border-transparent bg-transparent px-1.5 py-1 text-[13px] leading-[1.4] text-ink hover:border-rule focus:border-rust"
+          value={text} onChange={(e) => setText(e.target.value)} />
+      )}
+      {p.rationale && <p className="text-[11px] text-faint">{p.rationale}</p>}
+      {active ? (
+        <p className="text-xs text-ok">✓ Active. Applied to future drafts.</p>
+      ) : (
+        <div className="flex gap-1.5">
+          <button className="btn btn-primary px-2.5 py-[3px] text-xs" disabled={!text.trim()} onClick={() => onDecide(p, 'active', text.trim())}>Approve</button>
+          <button className="btn px-2.5 py-[3px] text-xs" onClick={() => onDecide(p, 'dismissed')}>Dismiss</button>
         </div>
       )}
     </li>

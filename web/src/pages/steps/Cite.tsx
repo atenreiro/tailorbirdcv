@@ -4,7 +4,7 @@ import { cx } from '../../ui'
 export default function Cite({ id, text, onRemove, n }: { id: string; text?: string; onRemove?: () => void; n?: number }) {
   return (
     <span className="group/cite relative inline-flex">
-      <span tabIndex={0} className={cx('chip cursor-help', !text && 'border-bad/40 bg-bad-soft text-bad')}>
+      <span tabIndex={0} className={cx('chip cursor-help transition-colors', text ? 'hover:bg-rust-soft hover:text-rust' : 'border-bad/40 bg-bad-soft text-bad')}>
         {n !== undefined && <sup className="font-serif text-[10px] text-rust">{n}</sup>}
         {id}
         {onRemove && (

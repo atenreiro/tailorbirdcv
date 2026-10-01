@@ -1,10 +1,13 @@
-import { api, ApiError } from '../../api'
-import { fmtDate } from '../../ui'
-import { Section, Stamp } from '../../ui'
+import { api, ApiError, type Profile, type Tailored } from '../../api'
+import { cx, fmtDate, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
 
-export default function Export({ app, setApp, go, run, memo }: StepProps) {
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
+const card = 'rounded border border-rule bg-sheet'
+const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
+
+export default function Export({ app, profile, setApp, go, run, memo }: StepProps) {
   const pdf = app.files.find((f) => f.endsWith('.pdf'))
   const docx = app.files.find((f) => f.endsWith('.docx'))
   const pages = app.build?.pages ?? app.meta.pages
@@ -40,109 +43,169 @@ export default function Export({ app, setApp, go, run, memo }: StepProps) {
     ], async () => setApp(await api.trim(app.id)))
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <div className="space-y-6">
-        <Section eyebrow="Export" title={docx && !stale ? 'Ready to send' : 'Build the files'}>
-          {unsaved && <p className="mb-3 rounded bg-warn-soft px-3 py-2 text-sm text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
-          {!ok && <p className="text-sm text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
-          {ok && !docx && <p className="text-sm text-muted">Renders your resume in its original design, then converts it to PDF with Microsoft Word. The first run may ask macOS for permission to control Word.</p>}
+    <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <aside className="flex min-w-0 flex-col gap-[18px]">
+        <section className="animate-rise flex flex-col gap-3.5">
+          <div className="border-b border-rule pb-2">
+            <p className={label}>Export</p>
+            <h2 className="font-serif text-2xl text-ink">{docx && !stale ? 'Ready to send' : 'Build the files'}</h2>
+          </div>
+          {unsaved && <p className="rounded bg-warn-soft px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
+          {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
+          {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF with Microsoft Word. The first run may ask macOS for permission to control Word.</p>}
           {ok && !docx && overBudget && (
-            <p className="mt-2 text-sm text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
+            <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
           {docx && stale && (
-            <p className="mb-3 rounded bg-warn-soft px-3 py-2 text-sm text-warn">
+            <p className="rounded bg-warn-soft px-3 py-2 text-[13px] text-warn">
               These files are out of date: the resume changed after they were built. Rebuild before sending.
             </p>
           )}
+          {docx && !stale && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Stamp ok={!tooLong}>{pages ? `${pages} page${pages > 1 ? 's' : ''}` : 'docx only'}</Stamp>
+              {tooLong && <span className="text-[13px] text-bad">Over the 2-page limit</span>}
+            </div>
+          )}
+          {tooLong && (
+            <p className="text-[13px] text-muted">Let the AI cut the least relevant content (oldest roles first, facts locked), or trim it yourself in Review. Then rebuild.</p>
+          )}
           {docx && (
-            <div className="space-y-4">
-              {!stale && (
-                <div className="flex items-center gap-3">
-                  <Stamp ok={!tooLong}>{pages ? `${pages} page${pages > 1 ? 's' : ''}` : 'docx only'}</Stamp>
-                  {tooLong && <span className="text-sm text-bad">Over the 2-page limit</span>}
-                </div>
-              )}
-              {tooLong && (
-                <p className="text-sm text-muted">Let the AI cut the least relevant content (oldest roles first, facts locked), or trim it yourself in Review. Then rebuild.</p>
-              )}
-              <div className={stale ? 'flex flex-col gap-2 opacity-50' : 'flex flex-col gap-2'}>
+            <>
+              <div className={cx('flex flex-col gap-2', stale && 'opacity-50')}>
                 {[docx, pdf].filter(Boolean).map((f) => (
-                  <a key={f} href={api.fileUrl(app.id, f!, true)} className="btn justify-between" title={f}>
+                  <a key={f} href={api.fileUrl(app.id, f!, true)} className={fileLink} title={f}>
                     <span>{f!.endsWith('.pdf') ? 'PDF' : 'Word document'} <span className="font-mono text-xs text-muted">.{f!.split('.').pop()}{stale ? ' · outdated' : ''}</span></span>
                     <span aria-hidden>↓</span>
                   </a>
                 ))}
-                <button className="btn justify-between" onClick={() => api.reveal(app.id).catch(() => {})}
+                <button className={fileLink} onClick={() => api.reveal(app.id).catch(() => {})}
                   title="Opens this application's folder with the PDF selected, so you upload exactly this file">
                   <span>Show in Finder</span><span aria-hidden>↗</span>
                 </button>
               </div>
               <p className="text-xs text-faint">Tip: upload from Finder. Repeated downloads get “(1)” added to the name.</p>
-            </div>
+            </>
           )}
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary" disabled={!ok || unsaved} onClick={build}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
             {(tooLong || (overBudget && !docx)) && <button className="btn" disabled={!ok || unsaved} onClick={trim}>Trim with AI</button>}
             <button className="btn" onClick={() => go('review')}>Back to review</button>
           </div>
-        </Section>
+        </section>
 
-        {(docx || app.sent.length > 0) && (
-          <div className="sheet animate-rise rounded p-5 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="eyebrow">Sent copies</p>
-              <button className="btn btn-ghost px-2 py-1 text-xs text-rust" disabled={!ok || unsaved} onClick={freezeCopy}
-                title="Save a read-only copy of exactly these files, e.g. when you send an updated version">
-                + Freeze a copy
-              </button>
-            </div>
-            {app.sent.length === 0 ? (
-              <p className="mt-2 text-muted">When you mark this application <strong>applied</strong>, AutoCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {app.sent.map((c) => (
-                  <li key={c.id} className="rounded border border-rule p-2">
-                    <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} pages` : ''}</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
-                        <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-rust-soft hover:text-rust">↓ {f.split('.').pop()}</a>
-                      ))}
-                      <button className="chip hover:bg-rust-soft hover:text-rust" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+        <section className={cx(card, 'animate-rise flex flex-col gap-2.5 px-[18px] py-4 text-[13px]')} style={{ animationDelay: '60ms' }}>
+          <div className="flex items-center justify-between gap-3">
+            <p className={label}>Sent copies</p>
+            <button className="cursor-pointer text-xs text-rust hover:text-[#63230d] disabled:cursor-not-allowed disabled:opacity-45" disabled={!ok || unsaved} onClick={freezeCopy}
+              title="Save a read-only copy of exactly these files, e.g. when you send an updated version">
+              + Freeze a copy
+            </button>
           </div>
-        )}
+          {app.sent.length === 0 ? (
+            <p className="text-muted">When you mark this application <strong>applied</strong>, AutoCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
+          ) : (
+            app.sent.map((c) => (
+              <div key={c.id} className="flex flex-col gap-1.5 rounded border border-rule px-2.5 py-2">
+                <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} page${c.pages > 1 ? 's' : ''}` : ''}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
+                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-rust-soft hover:text-rust">↓ {f.split('.').pop()}</a>
+                  ))}
+                  <button className="chip cursor-pointer hover:bg-rust-soft hover:text-rust" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
+                </div>
+              </div>
+            ))
+          )}
+        </section>
 
         {docx && <StyleCoach app={app} />}
 
         {docx && (
-          <div className="animate-rise rounded border border-rule bg-wash/60 p-4 text-sm text-muted">
+          <div className="animate-rise flex flex-col gap-1 rounded border border-rule bg-wash/60 px-4 py-3.5 text-[13px] text-muted">
             <p className="font-medium text-ink">Before you send it</p>
-            <p className="mt-1">Read it once, end to end. The fact-check guarantees numbers and names, but only you can confirm the emphasis sounds like you.</p>
+            <p>Read it once, end to end. The fact-check guarantees numbers and names, but only you can confirm the emphasis sounds like you.</p>
           </div>
         )}
-      </div>
+      </aside>
 
-      <div className="animate-rise">
-        {pdf && (
-          <a href={api.fileUrl(app.id, pdf)} target="_blank" rel="noreferrer" className="mb-2 inline-block text-sm text-muted hover:text-rust">Open the PDF in a new tab ↗</a>
-        )}
+      <div className="animate-rise flex min-w-0 flex-col gap-2" style={{ animationDelay: '80ms' }}>
         {pdf ? (
-          <iframe
-            key={app.meta.updated}
-            title="PDF preview"
-            src={api.fileUrl(app.id, pdf)}
-            className="sheet h-[1100px] w-full rounded"
-          />
+          <a href={api.fileUrl(app.id, pdf)} target="_blank" rel="noreferrer" className="self-start text-[13px] text-muted hover:text-rust">Open the PDF in a new tab ↗</a>
         ) : (
-          <div className="sheet flex h-[600px] items-center justify-center rounded">
-            <p className="font-serif text-xl italic text-faint">The PDF preview appears here.</p>
-          </div>
+          <p className="text-[13px] text-muted">{app.tailored ? 'An approximate preview. Build to see the exact PDF.' : ''}</p>
         )}
+        <div className="flex justify-center rounded border border-rule bg-wash p-3 sm:p-7">
+          {pdf ? (
+            <iframe
+              key={app.meta.updated}
+              title="PDF preview"
+              src={api.fileUrl(app.id, pdf)}
+              className={cx('aspect-[1/1.414] w-full max-w-[760px] bg-white shadow-[0_8px_24px_-12px_rgb(60_40_20/0.4)] transition-opacity', stale && 'opacity-55')}
+            />
+          ) : app.tailored ? (
+            <PagePreview t={app.tailored} p={profile.profile} />
+          ) : (
+            <p className="py-24 font-serif text-xl italic text-faint">The PDF preview appears here.</p>
+          )}
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** Read-only page mock of the saved tailored resume, shown until a PDF exists. */
+function PagePreview({ t, p }: { t: Tailored; p: Profile }) {
+  const headline = p.headlines.find((h) => h.id === t.headline)?.text
+  const h = (s: string) => <p className="border-b border-ink pb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">{s}</p>
+  const li = (key: string | number, text: string, italic = false, bullet = true) => (
+    <p key={key} className="flex gap-1.5 text-[11px] leading-[1.4] text-body">
+      {bullet && <span className="text-faint">•</span>}<span className={cx(italic && 'italic text-muted')}>{text}</span>
+    </p>
+  )
+  const items = (key: 'projects' | 'education' | 'extras', ids: { id: string; text?: string }[]) =>
+    ids.map(({ id, text }) => {
+      const x = p[key].find((y) => y.id === id)
+      return x && <p key={id} className="flex gap-1.5 text-[11px] leading-[1.4] text-body"><span className="text-faint">•</span><span><span className="font-semibold">{x.label}</span> {text ?? x.text}</span></p>
+    })
+  return (
+    <div className="flex w-full max-w-[640px] flex-col gap-3 bg-white px-5 py-7 shadow-[0_8px_24px_-12px_rgb(60_40_20/0.4)] sm:px-12 sm:py-11"
+      style={{ fontFamily: "Calibri, Carlito, 'IBM Plex Sans', sans-serif" }} aria-label="Approximate resume preview">
+      <div className="flex flex-col gap-0.5 text-center">
+        <p className="text-lg font-semibold uppercase tracking-[0.04em] text-ink">{p.contact.name}</p>
+        <p className="text-[10px] text-muted">{[p.contact.location, p.contact.phone, p.contact.email, ...p.contact.links.map((l) => l.text)].filter(Boolean).join(' · ')}</p>
+        {headline && <p className="mt-1 text-[11px] font-semibold text-rust">{headline}</p>}
+      </div>
+      {t.summary && <div className="flex flex-col gap-[3px]">{h('Summary')}{li('s', t.summary.text, false, false)}</div>}
+      {t.highlights.length > 0 && <div className="flex flex-col gap-[3px]">{h('Career highlights')}{t.highlights.map((c, i) => li(i, c.text))}</div>}
+      {t.competencies.length > 0 && (
+        <div className="flex flex-col gap-[3px]">
+          {h('Core competencies')}
+          {t.competencies.map((g, i) => <p key={i} className="text-[11px] leading-[1.4] text-body"><span className="font-semibold">{g.label}:</span> {g.items.join(' · ')}</p>)}
+        </div>
+      )}
+      <div className="flex flex-col gap-[3px]">
+        {h('Professional experience')}
+        {t.experience.map((tr) => {
+          const role = p.roles.find((r) => r.id === tr.role)
+          if (!role) return null
+          return (
+            <div key={tr.role} className="flex flex-col gap-px">
+              <div className="mt-[3px] flex justify-between gap-2 text-[11px] text-ink"><span><span className="font-semibold">{role.employer}</span> · {role.location}</span><span className="shrink-0 text-muted">{role.dates}</span></div>
+              <p className="text-[11px] font-semibold text-rust">{role.title}</p>
+              {tr.scope && li('scope', tr.scope.text, role.scope?.italic !== false, false)}
+              {tr.bullets.map((b, j) => li(j, b.text))}
+              {tr.sub_roles.map((sr) => {
+                const item = role.sub_roles.find((s) => s.id === sr.id)
+                return <p key={sr.id} className="flex gap-1.5 text-[11px] leading-[1.4] text-body"><span className="text-faint">•</span><span><span className="font-semibold">{item?.label}</span> {sr.text?.text ?? item?.text}</span></p>
+              })}
+            </div>
+          )
+        })}
+      </div>
+      {t.projects.length > 0 && <div className="flex flex-col gap-[3px]">{h('Projects & community leadership')}{items('projects', t.projects.map((x) => ({ id: x.id, text: x.text?.text })))}</div>}
+      {t.education.length > 0 && <div className="flex flex-col gap-[3px]">{h('Education & certifications')}{items('education', t.education.map((id) => ({ id })))}</div>}
+      {t.extras.length > 0 && <div className="flex flex-col gap-[3px]">{h('Awards & languages')}{items('extras', t.extras.map((id) => ({ id })))}</div>}
     </div>
   )
 }

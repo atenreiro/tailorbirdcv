@@ -1,28 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Proposal, type Tailored } from '../api'
+import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
 import { changeStatus } from '../status'
-import { cx, ErrorNote, fmtDate, Spinner, StatusPill, Working } from '../ui'
+import { cx, ErrorNote, fmtDate, Spinner, statusStyle, Working } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
 import Review from './steps/Review'
+import { openIssues } from './steps/HiringManager'
+import { gapQuestions, openGaps, type Draft } from './steps/gapState'
+
+export type { Draft }
 
 const STEPS = [
-  { key: 'brief', label: 'Brief', hint: 'role analysis' },
-  { key: 'gaps', label: 'Gaps', hint: 'your answers' },
-  { key: 'review', label: 'Review', hint: 'claims & sources' },
-  { key: 'export', label: 'Export', hint: 'docx & pdf' },
+  { key: 'brief', label: 'Brief' },
+  { key: 'gaps', label: 'Gaps' },
+  { key: 'review', label: 'Review' },
+  { key: 'export', label: 'Export' },
 ] as const
-type Step = (typeof STEPS)[number]['key']
-
-export type Draft = Proposal & { state: 'pending' | 'approved' | 'rejected'; id?: string }
+export type Step = (typeof STEPS)[number]['key']
+const isStep = (s: string | null): s is Step => STEPS.some((x) => x.key === s)
 
 /** Work in progress that must survive switching steps (each step unmounts when hidden). */
 export interface StepMemo {
   review: { draft: Tailored; rev: number } | null  // unsaved Review edits
   gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
+  gapFocus: string | null  // the gap question open in Gaps (Brief and Review can point at one)
 }
 
 export interface StepProps {
@@ -36,6 +40,41 @@ export interface StepProps {
   setMemo: (fn: (m: StepMemo) => StepMemo) => void
 }
 
+const enabledSteps = (a: Application): Record<Step, boolean> => ({
+  brief: true,
+  gaps: !!a.analysis,
+  review: !!a.tailored,
+  export: !!a.tailored,
+})
+
+type Tone = 'ok' | 'warn' | 'bad' | 'rust' | 'none'
+const DOT: Record<Tone, string> = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-bad', rust: 'bg-rust', none: 'bg-faint' }
+
+/** One-line status under each step label, derived from the application. */
+function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone]> {
+  const a = app.analysis
+  const answers = memo.gaps?.answers ?? Object.fromEntries(app.answers.map((x) => [x.question_id, x]))
+  const questions = gapQuestions(a, answers)
+  const open = openGaps(questions, answers, memo.gaps?.proposals ?? []).length
+  const c = app.critique
+  const fixes = openIssues(c).length
+  const verdict = c ? { interview: 'would interview', borderline: 'borderline', pass: 'would pass' }[c.latest.verdict.decision] : ''
+  const errors = app.report?.errors.length ?? 0
+  const exts = app.files.map((f) => f.split('.').pop()!.toUpperCase()).sort().reverse()
+  return {
+    brief: a ? [`${a.requirements.length} requirement${a.requirements.length === 1 ? '' : 's'}`, 'ok'] : ['not analyzed', 'none'],
+    gaps: !a ? ['after analysis', 'none'] : !questions.length ? ['none to ask', 'ok'] : open ? [`${open} open`, 'warn'] : ['answered', 'ok'],
+    review: !app.tailored ? ['not drafted', 'none']
+      : memo.review ? ['unsaved edits', 'warn']
+      : errors ? [`${errors} to fix`, 'bad']
+      : c ? [`${verdict}${fixes ? ` · ${fixes} fix${fixes > 1 ? 'es' : ''}` : ''}`, fixes ? 'rust' : 'ok']
+      : ['verified', 'ok'],
+    export: !app.files.length ? [app.tailored ? 'not built' : 'not yet', 'none']
+      : app.outputs_stale ? ['outdated', 'warn']
+      : [exts.join(' · '), 'ok'],
+  }
+}
+
 export default function Workspace() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
@@ -47,7 +86,7 @@ export default function Workspace() {
   const [step, setStep] = useState<Step>('brief')
   const [working, setWorking] = useState<{ title: string; lines: string[]; ai: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null })
+  const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null, gapFocus: null })
   const autoRan = useRef(false)
 
   const setMemo = useCallback((fn: (m: StepMemo) => StepMemo) => setMemoState(fn), [])
@@ -59,6 +98,10 @@ export default function Workspace() {
   // A new analysis renumbers the gap questions: re-seed the Gaps step from the server.
   const questionsKey = useMemo(() => JSON.stringify(app?.analysis?.questions ?? []), [app?.analysis])
   useEffect(() => { setMemoState((m) => ({ ...m, gaps: null })) }, [questionsKey])
+
+  // Each step starts at the top (the previous one may have been scrolled far down).
+  const shown = working ? 'working' : step
+  useEffect(() => { if (window.scrollY > 240) window.scrollTo({ top: 0 }) }, [shown])
 
   const reloadProfile = useCallback(async () => setProfile(await api.profile()), [])
 
@@ -76,11 +119,14 @@ export default function Workspace() {
 
   useEffect(() => {
     if (app?.id === id) return  // already loaded (e.g. after a folder rename)
+    const want = params.get('step')  // e.g. /a/<id>?step=review from the Applications list
     Promise.all([api.get(id), api.profile()])
       .then(([a, p]) => {
         setApp(a)
         setProfile(p)
-        setStep(a.tailored ? (a.files.length ? 'export' : 'review') : a.analysis ? 'gaps' : 'brief')
+        setStep(isStep(want) && enabledSteps(a)[want] ? want
+          : a.tailored ? (a.files.length ? 'export' : 'review') : a.analysis ? 'gaps' : 'brief')
+        if (want !== null) setParams((prev) => { const next = new URLSearchParams(prev); next.delete('step'); return next }, { replace: true })
       })
       .catch((e) => setError(e.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,12 +153,8 @@ export default function Workspace() {
     return error ? <ErrorNote error={error} /> : <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>
   }
 
-  const enabled: Record<Step, boolean> = {
-    brief: true,
-    gaps: !!app.analysis,
-    review: !!app.tailored,
-    export: !!app.tailored,
-  }
+  const enabled = enabledSteps(app)
+  const notes = stepNotes(app, memo)
 
   async function setStatus(status: string) {
     setError(null)
@@ -132,18 +174,19 @@ export default function Workspace() {
   const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run, memo, setMemo }
 
   return (
-    <div className="space-y-8">
-      <div className="animate-rise flex flex-wrap items-start justify-between gap-6">
-        <div>
-          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="text-sm text-muted hover:text-rust">← Applications</Link>
-          <h1 className="mt-2 font-serif text-5xl leading-none text-ink">{app.meta.company}</h1>
-          <p className="mt-2 text-lg text-muted">{app.meta.role}</p>
+    <div className="flex flex-col gap-6">
+      <div className="animate-rise flex flex-wrap items-end justify-between gap-5">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="self-start text-[13px] text-muted hover:text-rust">← Applications</Link>
+          <h1 className="break-words font-serif text-[34px] leading-none text-ink sm:text-[44px]">{app.meta.company}</h1>
+          <p className="text-[17px] text-muted">{app.meta.role}</p>
         </div>
-        <div className="flex items-center gap-3 pt-7 text-sm text-muted">
+        <div className="flex items-center gap-3 text-[13px] text-muted">
           <span>{fmtDate(app.meta.created)}</span>
-          <label className="relative inline-flex">
-            <StatusPill status={app.meta.status} />
-            <select aria-label="Status" className="absolute inset-0 cursor-pointer opacity-0" value={app.meta.status} onChange={(e) => setStatus(e.target.value)}>
+          <label className={cx('relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-[3px] text-[11px] font-semibold uppercase tracking-[0.06em]', statusStyle(app.meta.status))}>
+            <span>{app.meta.status}</span><span className="text-[9px]" aria-hidden>▾</span>
+            <select aria-label="Status" className="absolute inset-0 cursor-pointer opacity-0" value={app.meta.status} disabled={!!working}
+              onChange={(e) => setStatus(e.target.value)}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
           </label>
@@ -151,28 +194,34 @@ export default function Workspace() {
       </div>
 
       <ol className="animate-rise grid grid-cols-4 border-y border-rule" style={{ animationDelay: '60ms' }}>
-        {STEPS.map((s, i) => (
-          <li key={s.key}>
-            <button
-              disabled={!enabled[s.key] || !!working}
-              onClick={() => setStep(s.key)}
-              className={cx(
-                'group flex w-full items-baseline gap-3 px-2 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40',
-                step === s.key ? 'text-ink' : 'text-muted hover:text-ink',
-              )}
-            >
-              <span className={cx('font-serif text-2xl italic', step === s.key ? 'text-rust' : 'text-faint')}>{i + 1}</span>
-              <span>
-                <span className="block font-medium">
-                  {s.label}
-                  {s.key === 'review' && memo.review && <span className="ml-1 text-warn" title="Unsaved edits">•</span>}
+        {STEPS.map((s, i) => {
+          const on = step === s.key
+          const [note, tone] = notes[s.key]
+          return (
+            <li key={s.key} className="flex min-w-0 flex-col">
+              <button
+                disabled={!enabled[s.key] || !!working}
+                onClick={() => setStep(s.key)}
+                aria-current={on ? 'step' : undefined}
+                className="group flex min-w-0 flex-1 cursor-pointer items-baseline gap-1.5 px-1 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 sm:gap-3 sm:px-2"
+              >
+                <span className={cx('font-serif text-xl italic sm:text-2xl', on ? 'text-rust' : 'text-faint')}>{i + 1}</span>
+                <span className="flex min-w-0 flex-col gap-px">
+                  <span className={cx('flex items-center gap-1.5 font-medium', on ? 'text-ink' : 'text-muted group-hover:text-ink')}>
+                    {s.label}
+                    <span className={cx('size-1.5 shrink-0 rounded-full sm:hidden', DOT[tone])} aria-hidden />
+                  </span>
+                  <span className="hidden min-w-0 items-center gap-1.5 text-xs text-muted sm:flex">
+                    <span className={cx('size-1.5 shrink-0 rounded-full', DOT[tone])} aria-hidden />
+                    <span className="truncate">{note}</span>
+                  </span>
+                  <span className="sr-only sm:hidden">{note}</span>
                 </span>
-                <span className="hidden text-xs text-faint sm:block">{s.hint}</span>
-              </span>
-            </button>
-            <div className={cx('h-0.5 transition-colors', step === s.key ? 'bg-rust' : 'bg-transparent')} />
-          </li>
-        ))}
+              </button>
+              <span className={cx('h-0.5 transition-colors', on ? 'bg-rust' : 'bg-transparent')} />
+            </li>
+          )
+        })}
       </ol>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />

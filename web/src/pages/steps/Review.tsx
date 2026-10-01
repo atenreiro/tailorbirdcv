@@ -1,8 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type Tailored } from '../../api'
-import { cx, ErrorNote, Spinner, Stamp } from '../../ui'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type Profile, type Tailored } from '../../api'
+import { cx, ErrorNote, SaveDock, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
-import Cite from './Cite'
 import { applyIssue, findsTarget, issueTargets } from './critique'
 import { HiringManagerCard, openIssues, ReviewIssue, type ReviewActions } from './HiringManager'
 
@@ -15,13 +14,23 @@ function move<T>(list: T[], i: number, d: number): T[] {
   return out
 }
 
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
+const card = 'rounded border border-rule bg-sheet'
+// The sheet reads like the real resume (Calibri), not like the app chrome.
+const SHEET_FONT: CSSProperties = { fontFamily: "Calibri, Carlito, 'IBM Plex Sans', sans-serif" }
+
+/** Textarea that grows with its content (and re-fits when the window resizes). */
 function AutoText({ value, onChange, onFocus, onBlur, className, ariaLabel }: {
   value: string; onChange: (v: string) => void; onFocus?: () => void; onBlur?: () => void; className?: string; ariaLabel: string
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
-    if (el) { el.style.height = '0px'; el.style.height = `${el.scrollHeight}px` }
+    if (!el) return
+    const fit = () => { el.style.height = '0px'; el.style.height = `${el.scrollHeight + 2}px` }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
   }, [value])
   return (
     <textarea
@@ -32,7 +41,7 @@ function AutoText({ value, onChange, onFocus, onBlur, className, ariaLabel }: {
       onFocus={onFocus}
       onBlur={onBlur}
       onChange={(e) => onChange(e.target.value)}
-      className={cx('block w-full resize-none overflow-hidden rounded-sm border border-transparent bg-transparent px-1 -mx-1 leading-relaxed transition hover:border-rule focus:border-rust focus:bg-sheet focus:outline-none', className)}
+      className={cx('block w-full resize-none overflow-hidden', className)}
     />
   )
 }
@@ -57,65 +66,99 @@ function claimAt(root: unknown, path: string): Claim | null {
   return cur && typeof cur === 'object' && 'sources' in cur ? (cur as Claim) : null
 }
 
-interface Ctx {
-  evidence: Record<string, string>
-  roleIds: string[]
-  focus: string | null
-  setFocus: (path: string) => void
-  issuesAt: (path: string) => Issue[]
-  reviewFor: (claim: Claim) => CritiqueIssue[]
-  reviewActions: ReviewActions
+/** An editable claim on the sheet: where it sits, and how to change it. */
+interface Line {
+  path: string
+  where: string
+  claim: Claim
+  roleId?: string
+  italic?: boolean
+  set: (d: Tailored, c: Claim) => void
+  remove?: (d: Tailored) => void
+  move?: (d: Tailored, dir: number) => void
+  index?: number
+  count?: number
 }
 
-function ClaimEditor({ ctx, path, claim, onChange, onRemove, onMove, roleId, className }: {
-  ctx: Ctx; path: string; claim: Claim; onChange: (c: Claim) => void
-  onRemove?: () => void; onMove?: (d: number) => void; roleId?: string; className?: string
+function linesOf(t: Tailored, p: Profile): Line[] {
+  const out: Line[] = []
+  if (t.summary) out.push({ path: 'summary', where: 'Summary', claim: t.summary, set: (d, c) => { d.summary = c } })
+  t.highlights.forEach((h, i) => out.push({
+    path: `highlights[${i}]`, where: `Career highlight ${i + 1}`, claim: h, index: i, count: t.highlights.length,
+    set: (d, c) => { d.highlights[i] = c },
+    remove: (d) => { d.highlights.splice(i, 1) },
+    move: (d, dir) => { d.highlights = move(d.highlights, i, dir) },
+  }))
+  t.experience.forEach((tr, i) => {
+    const role = p.roles.find((r) => r.id === tr.role)
+    const name = role?.employer ?? tr.role
+    if (tr.scope) out.push({
+      path: `experience[${i}].scope`, where: `${name} · scope`, claim: tr.scope, roleId: role?.id, italic: role?.scope?.italic !== false,
+      set: (d, c) => { d.experience[i].scope = c },
+      remove: (d) => { d.experience[i].scope = null },
+    })
+    tr.bullets.forEach((b, j) => out.push({
+      path: `experience[${i}].bullets[${j}]`, where: `${name} · bullet ${j + 1}`, claim: b, roleId: role?.id, index: j, count: tr.bullets.length,
+      set: (d, c) => { d.experience[i].bullets[j] = c },
+      remove: (d) => { d.experience[i].bullets.splice(j, 1) },
+      move: (d, dir) => { d.experience[i].bullets = move(d.experience[i].bullets, j, dir) },
+    }))
+  })
+  return out
+}
+
+const lineDomId = (path: string) => `line-${path.replace(/[^a-z0-9]+/gi, '-')}`
+const withIndex = (path: string, n: number) => path.replace(/\[\d+\]$/, `[${n}]`)
+
+/** The "Selected line" editor: the wording, the evidence it cites, its fact-check and review notes. */
+function LineEditor({ line, evidence, roleIds, issues, review, actions, onChange, onRemove, onMove }: {
+  line: Line; evidence: Record<string, string>; roleIds: string[]; issues: Issue[]
+  review: CritiqueIssue[]; actions: ReviewActions
+  onChange: (c: Claim) => void; onRemove?: () => void; onMove?: (dir: number) => void
 }) {
-  const { evidence, roleIds, focus, setFocus, issuesAt } = ctx
-  const issues = issuesAt(path)
-  const active = focus === path
+  const { claim, roleId } = line
   // A role's claims may cite that role's evidence or any non-role evidence (summary, highlights, projects…).
   const options = Object.keys(evidence).filter((id) =>
     !claim.sources.includes(id) && (!roleId || id.startsWith(roleId) || !roleIds.some((r) => id.startsWith(r))))
   return (
-    <div className={cx('group/claim relative rounded-sm', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-bad/30', className)}>
-      <div className="flex gap-2">
-        <div className="min-w-0 flex-1">
-          <AutoText ariaLabel={path} value={claim.text} onFocus={() => setFocus(path)} onChange={(text) => onChange({ ...claim, text })} />
+    <div className="flex flex-col gap-2.5">
+      <AutoText ariaLabel={`Edit ${line.where}`} value={claim.text} onChange={(text) => onChange({ ...claim, text })}
+        className={cx('field min-h-[76px] text-sm leading-[1.45]', line.italic && 'italic')} />
+      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">Cites</p>
+      {claim.sources.map((s) => (
+        <div key={s} className="grid grid-cols-[minmax(0,100px)_minmax(0,1fr)_14px] items-start gap-2.5 text-xs">
+          <span className={cx('break-all font-mono', evidence[s] ? 'text-rust' : 'text-bad')}>{s}</span>
+          <span className="text-body">{evidence[s]?.split('\n')[0] ?? 'Unknown evidence id'}</span>
+          <button className="cursor-pointer text-faint hover:text-bad" onClick={() => onChange({ ...claim, sources: claim.sources.filter((x) => x !== s) })}
+            aria-label={`Remove source ${s}`}>×</button>
         </div>
-        {(onMove || onRemove) && (
-          <div className="flex shrink-0 gap-0.5 opacity-0 transition group-hover/claim:opacity-100 group-focus-within/claim:opacity-100">
-            {onMove && <button className="px-1 text-faint hover:text-ink" onClick={() => onMove(-1)} aria-label="Move up">↑</button>}
-            {onMove && <button className="px-1 text-faint hover:text-ink" onClick={() => onMove(1)} aria-label="Move down">↓</button>}
-            {onRemove && <button className="px-1 text-faint hover:text-bad" onClick={onRemove} aria-label="Remove">✕</button>}
-          </div>
-        )}
-      </div>
-      <div className={cx('mt-0.5 flex flex-wrap items-center gap-1', !active && 'opacity-70')}>
-        {claim.sources.map((s, i) => (
-          <Cite key={s} id={s} n={i + 1} text={evidence[s]} onRemove={active ? () => onChange({ ...claim, sources: claim.sources.filter((x) => x !== s) }) : undefined} />
-        ))}
-        {active && (
-          <select
-            className="chip cursor-pointer border-dashed border-rule bg-transparent"
-            value=""
-            onChange={(e) => e.target.value && onChange({ ...claim, sources: [...claim.sources, e.target.value] })}
-            aria-label="Add a source"
-          >
-            <option value="">+ cite</option>
-            {options.map((id) => <option key={id} value={id}>{id}</option>)}
-          </select>
-        )}
-      </div>
+      ))}
+      {!claim.sources.length && <p className="text-xs text-bad">No sources: this claim can’t be verified.</p>}
+      <select
+        className="chip w-auto max-w-full cursor-pointer self-start border-dashed border-rule bg-transparent hover:border-rust hover:text-rust"
+        value=""
+        onChange={(e) => e.target.value && onChange({ ...claim, sources: [...claim.sources, e.target.value] })}
+        aria-label="Add a source"
+      >
+        <option value="">+ cite evidence</option>
+        {options.map((id) => <option key={id} value={id}>{id}: {(evidence[id] ?? '').split('\n')[0].slice(0, 70)}</option>)}
+      </select>
       <Issues list={issues} />
-      {ctx.reviewFor(claim).map((i) => <ReviewIssue key={i.id} issue={i} actions={ctx.reviewActions} />)}
+      {review.map((i) => <ReviewIssue key={i.id} issue={i} actions={actions} compact />)}
+      {(onMove || onRemove) && (
+        <div className="flex flex-wrap gap-1 border-t border-rule pt-2 text-xs">
+          {onMove && <button className="btn btn-ghost px-2 py-1 text-xs" disabled={line.index === 0} onClick={() => onMove(-1)}>↑ Up</button>}
+          {onMove && <button className="btn btn-ghost px-2 py-1 text-xs" disabled={line.index === (line.count ?? 0) - 1} onClick={() => onMove(1)}>↓ Down</button>}
+          {onRemove && <button className="btn btn-ghost ml-auto px-2 py-1 text-xs text-bad" onClick={onRemove}>Remove line</button>}
+        </div>
+      )}
     </div>
   )
 }
 
 function AddFromEvidence({ evidence, ids, onAdd, label }: { evidence: Record<string, string>; ids: string[]; onAdd: (id: string) => void; label: string }) {
   return (
-    <select className="mt-2 block w-auto max-w-full cursor-pointer truncate rounded border border-dashed border-rule bg-transparent px-2 py-1 text-xs text-muted hover:border-rust hover:text-rust" value="" onChange={(e) => e.target.value && onAdd(e.target.value)} aria-label={label}>
+    <select className="mt-1 block w-auto max-w-full cursor-pointer truncate rounded border border-dashed border-rule bg-transparent px-2 py-1 font-sans text-xs text-muted hover:border-rust hover:text-rust" value="" onChange={(e) => e.target.value && onAdd(e.target.value)} aria-label={label}>
       <option value="">+ {label}</option>
       {ids.map((id) => <option key={id} value={id}>{id}: {(evidence[id] ?? id).split('\n')[0].slice(0, 90)}</option>)}
     </select>
@@ -132,6 +175,7 @@ function ItemsField({ items, onCommit, ariaLabel }: { items: string[]; onCommit:
     <AutoText
       ariaLabel={ariaLabel}
       value={value}
+      className="-mx-1 rounded-[3px] border border-transparent bg-transparent px-1 leading-[1.45] hover:border-rule focus:border-rust focus:bg-sheet focus:outline-none"
       onFocus={() => { setText(joined); setEditing(true) }}
       onChange={setText}
       onBlur={() => {
@@ -144,13 +188,13 @@ function ItemsField({ items, onCommit, ariaLabel }: { items: string[]; onCommit:
 }
 
 function H({ children }: { children: string }) {
-  return <h3 className="rule-b mb-2 mt-6 pb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-rust">{children}</h3>
+  return <p className="border-b border-ink pb-[3px] text-xs font-semibold uppercase tracking-[0.14em] text-ink">{children}</p>
 }
 
 export default function Review({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [focus, setFocus] = useState<string | null>(null)
+  const [focus, setFocusState] = useState<string | null>(null)
 
   // Local edits live in Workspace (memo.review) so they survive switching steps.
   const draft: Tailored = memo.review?.draft ?? app.tailored!
@@ -158,6 +202,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
 
   const p = profile.profile
   const evidence = profile.evidence
+  const roleIds = p.roles.map((r) => r.id)
   const report = app.report
   const issuesAt = (path: string) => (dirty ? [] : report?.errors.filter((e) => e.where === path) ?? [])
 
@@ -168,7 +213,14 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       return { ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }
     })
 
-  const focusedClaim = useMemo(() => (focus ? claimAt(draft, focus) : null), [focus, draft])
+  const lines = useMemo(() => linesOf(draft, p), [draft, p])
+  const byPath = useMemo(() => Object.fromEntries(lines.map((l) => [l.path, l])), [lines])
+  const selected = focus ? byPath[focus] : undefined
+  const changed = (path: string) => dirty && JSON.stringify(claimAt(app.tailored, path)) !== JSON.stringify(claimAt(draft, path))
+  const setFocus = (path: string | null, scroll = false) => {
+    setFocusState(path)
+    if (path && scroll) requestAnimationFrame(() => document.getElementById(lineDomId(path))?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+  }
 
   async function save() {
     const sentRev = memo.review?.rev
@@ -184,6 +236,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       setSaving(false)
     }
   }
+  const discard = () => setMemo((m) => ({ ...m, review: null }))
 
   // ---- hiring-manager review -----------------------------------------------------------
   const critique = app.critique
@@ -205,6 +258,11 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       if (decision === 'accepted' && issue.action !== 'advice') {
         if (!findsTarget(draft, issue)) { setError('That line has changed since the review. Re-run the review.'); return }
         update((d) => applyIssue(d, issue))
+        // Keep the selection on the same line when the fix moves or removes it.
+        if (focus && selected && issueTargets(issue, selected.claim)) {
+          if (issue.action === 'remove') setFocus(null)
+          else if (issue.action === 'move_to_top') setFocus(withIndex(focus, 0))
+        }
       }
       void saveDecisions({ [issue.id]: decision })
     },
@@ -214,7 +272,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       try {
         const saved = await api.saveAnswers(app.id, [...app.answers.filter((a) => a.question_id !== qid), entry])
         setApp((prev) => ({ ...prev, answers: saved }))
-        setMemo((m) => ({ ...m, gaps: null }))  // re-seed Gaps so the new question shows
+        setMemo((m) => ({ ...m, gaps: null, gapFocus: qid }))  // re-seed Gaps so the new question shows, opened
         await saveDecisions({ [issue.id]: 'accepted' })
         go('gaps')
       } catch (e) {
@@ -230,6 +288,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       if (findsTarget(next, i)) { applyIssue(next, i); decided[i.id] = 'accepted' }
     }
     setMemo((m) => ({ ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }))
+    setFocus(null)
     void saveDecisions(decided)
   }
 
@@ -240,149 +299,174 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
       'Writing specific fixes and fact-checking each one…',
     ], async () => setApp(await api.critique(app.id)))
 
-  const ctx: Ctx = { evidence, roleIds: p.roles.map((r) => r.id), focus, setFocus, issuesAt, reviewFor, reviewActions }
-
   const ats = app.ats
   const usedProjects = new Set(draft.projects.map((x) => x.id))
+  const length = app.length
+
+  const editorFor = (l: Line) => (
+    <LineEditor line={l} evidence={evidence} roleIds={roleIds} issues={issuesAt(l.path)} review={reviewFor(l.claim)} actions={reviewActions}
+      onChange={(c) => update((d) => l.set(d, c))}
+      onRemove={l.remove && (() => { update((d) => l.remove!(d)); setFocus(null) })}
+      onMove={l.move && ((dir: number) => {
+        const to = (l.index ?? 0) + dir
+        if (to < 0 || to >= (l.count ?? 0)) return
+        update((d) => l.move!(d, dir))
+        setFocus(withIndex(l.path, to))
+      })} />
+  )
+
+  /** One claim on the sheet: click to select it; selected lines get their editor (inline below lg). */
+  const line = (path: string, bullet = true) => {
+    const l = byPath[path]
+    if (!l) return null
+    const on = focus === path
+    const errs = issuesAt(path)
+    const hm = reviewFor(l.claim).length
+    return (
+      <div key={path}>
+        <div id={lineDomId(path)} role="button" tabIndex={0} aria-pressed={on}
+          onClick={() => setFocus(path)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocus(path) } }}
+          className={cx('-mx-1.5 flex cursor-pointer gap-2 rounded-[3px] px-1.5 py-[3px] leading-[1.45] text-body transition-colors',
+            on ? 'bg-rust-soft ring-1 ring-inset ring-rust/30' : errs.length ? 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30 hover:bg-bad-soft' : 'hover:bg-paper')}>
+          {bullet && <span className="flex-none text-faint">•</span>}
+          <span className={cx('min-w-0 flex-1 break-words', l.italic && 'italic text-muted')}>{l.claim.text || <span className="italic text-faint">(empty line)</span>}</span>
+          {(changed(path) || errs.length > 0 || hm > 0) && (
+            <span className="flex flex-none items-center gap-1 self-start pt-[5px]">
+              {changed(path) && <span title="Unsaved edit" className="size-1.5 rounded-full bg-warn" />}
+              {errs.length > 0 && <span title={errs.map((e) => e.message).join('\n')} className="rounded-[3px] bg-bad-soft px-[5px] font-mono text-[10px] leading-4 text-bad">FIX</span>}
+              {hm > 0 && <span title="Hiring-manager suggestion" className="rounded-[3px] border border-rust/30 bg-rust-soft px-[5px] font-mono text-[10px] leading-4 text-rust">HM</span>}
+            </span>
+          )}
+        </div>
+        {on && <div className={cx(card, 'my-2 p-3 font-sans text-[14px] lg:hidden')}>{editorFor(l)}</div>}
+      </div>
+    )
+  }
+
+  const stamp = dirty
+    ? <span className="animate-stamp inline-block rounded-sm border-2 border-warn px-3 py-1 font-mono text-xs font-medium uppercase tracking-[0.2em] text-warn">Unsaved</span>
+    : report && <Stamp ok={report.ok}>{report.ok ? 'Verified' : `${report.errors.length} issue${report.errors.length > 1 ? 's' : ''}`}</Stamp>
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
       {/* ---------------------------------------------------------------- the sheet */}
-      <article className="sheet animate-rise min-w-0 rounded px-5 py-7 text-[14.5px] text-body sm:px-10 sm:py-9">
+      <article className="sheet animate-rise flex min-w-0 flex-col gap-[18px] rounded px-4 py-7 text-[14px] sm:px-12 sm:py-10" style={SHEET_FONT}>
         {app.sent.length > 0 && (
-          <p className="-mt-2 mb-5 rounded bg-ok-soft px-3 py-2 text-xs text-ok">
+          <p className="rounded bg-ok-soft px-3 py-2 font-sans text-xs text-ok">
             You sent a frozen copy on {new Date(app.sent[0].created).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}.
             Edits here won’t change it. Find it under Export → Sent copies.
           </p>
         )}
-        <p className="font-serif text-4xl font-semibold text-ink">{p.contact.name}</p>
-        <select
-          aria-label="Headline"
-          className="-mx-1 mt-1 w-full min-w-0 max-w-full cursor-pointer rounded-sm border border-transparent bg-transparent px-1 font-semibold text-rust hover:border-rule"
-          value={draft.headline}
-          onChange={(e) => update((d) => { d.headline = e.target.value })}
-        >
-          {!p.headlines.some((h) => h.id === draft.headline) && <option value={draft.headline} disabled>Choose a headline…</option>}
-          {p.headlines.map((h) => <option key={h.id} value={h.id}>{h.text} ({h.tracks.join(', ')})</option>)}
-        </select>
-        <Issues list={issuesAt('headline')} />
-        <p className="mt-1 text-xs text-muted">
-          {[p.contact.location, p.contact.phone, p.contact.email, ...p.contact.links.map((l) => l.text)].filter(Boolean).join(' · ')}
-          <span className="ml-2 text-faint" title="Locked: comes from your profile">🔒</span>
-        </p>
+        <div className="flex flex-col items-center gap-1 text-center">
+          <p className="text-2xl font-semibold uppercase tracking-[0.04em] text-ink">{p.contact.name}</p>
+          <p className="text-xs text-muted">
+            {[p.contact.location, p.contact.phone, p.contact.email, ...p.contact.links.map((l) => l.text)].filter(Boolean).join(' · ')}
+            <span className="ml-1.5 text-faint" title="Locked: comes from your profile">🔒</span>
+          </p>
+          <select
+            aria-label="Headline"
+            className="mt-1.5 w-auto min-w-0 max-w-full cursor-pointer rounded-[3px] border border-transparent bg-transparent px-1 text-center text-[14px] font-semibold text-rust [text-align-last:center] hover:border-rule"
+            value={draft.headline}
+            onChange={(e) => update((d) => { d.headline = e.target.value })}
+          >
+            {!p.headlines.some((h) => h.id === draft.headline) && <option value={draft.headline} disabled>Choose a headline…</option>}
+            {p.headlines.map((h) => <option key={h.id} value={h.id}>{h.text} ({h.tracks.join(', ')})</option>)}
+          </select>
+          <Issues list={issuesAt('headline')} />
+        </div>
 
         {draft.summary && (
-          <>
+          <section className="flex flex-col gap-1.5">
             <H>Summary</H>
-            <ClaimEditor ctx={ctx} path="summary" claim={draft.summary} onChange={(c) => update((d) => { d.summary = c })} />
-          </>
+            {line('summary', false)}
+          </section>
         )}
 
-        <H>Career highlights</H>
-        <div className="space-y-2">
-          {draft.highlights.map((h, i) => (
-            <div key={i} className="flex gap-2">
-              <span className="pt-0.5 text-rust">•</span>
-              <ClaimEditor ctx={ctx}
-                className="flex-1"
-                path={`highlights[${i}]`}
-                claim={h}
-                onChange={(c) => update((d) => { d.highlights[i] = c })}
-                onRemove={() => update((d) => { d.highlights.splice(i, 1) })}
-                onMove={(dir) => update((d) => { d.highlights = move(d.highlights, i, dir) })}
-              />
-            </div>
-          ))}
-        </div>
-        <AddFromEvidence evidence={evidence} label="add highlight from evidence" ids={Object.keys(evidence)} onAdd={(id) => update((d) => { d.highlights.push({ text: evidence[id].split('\n')[0], sources: [id] }) })} />
+        <section className="flex flex-col gap-1.5">
+          <H>Career highlights</H>
+          <div className="flex flex-col gap-0.5">
+            {draft.highlights.map((_, i) => line(`highlights[${i}]`))}
+          </div>
+          <AddFromEvidence evidence={evidence} label="add highlight from evidence" ids={Object.keys(evidence)}
+            onAdd={(id) => { update((d) => { d.highlights.push({ text: evidence[id].split('\n')[0], sources: [id] }) }); setFocus(`highlights[${draft.highlights.length}]`) }} />
+        </section>
 
-        <H>Core competencies</H>
-        <div className="space-y-2">
+        <section className="flex flex-col gap-1.5">
+          <H>Core competencies</H>
           {draft.competencies.map((g, i) => {
             const issues = g.items.flatMap((_, j) => issuesAt(`competencies[${i}].items[${j}]`))
             return (
-              <div key={i} className={cx('group/claim flex gap-2 rounded-sm', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-bad/30')}>
-                <span className="pt-0.5 text-rust">•</span>
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2 sm:flex-nowrap">
-                    <input aria-label={`Competency group ${i + 1}`} style={{ width: `${Math.max(g.label.length, 6) + 1}ch` }} className="shrink-0 rounded-sm border border-transparent bg-transparent font-semibold text-ink hover:border-rule focus:border-rust focus:outline-none" value={g.label} onChange={(e) => update((d) => { d.competencies[i].label = e.target.value })} />
-                    <ItemsField ariaLabel={`Competency items ${i + 1}`} items={g.items} onCommit={(items) => update((d) => { d.competencies[i].items = items })} />
-                    <div className="flex shrink-0 opacity-0 group-hover/claim:opacity-100">
-                      <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, -1) })} aria-label="Move up">↑</button>
-                      <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, 1) })} aria-label="Move down">↓</button>
-                    </div>
+              <div key={i} className={cx('group/claim -mx-1.5 rounded-[3px] px-1.5', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30')}>
+                <div className="flex flex-wrap items-baseline gap-x-1 sm:flex-nowrap">
+                  <span className="flex shrink-0 items-baseline font-semibold text-ink">
+                    {/* the invisible copy sizes the input to its text */}
+                    <span className="inline-grid">
+                      <span className="invisible col-start-1 row-start-1 whitespace-pre border border-transparent px-px" aria-hidden>{g.label || 'Group'}</span>
+                      <input aria-label={`Competency group ${i + 1}`} size={1}
+                        className="col-start-1 row-start-1 w-full min-w-0 rounded-[3px] border border-transparent bg-transparent px-px hover:border-rule focus:border-rust focus:outline-none"
+                        value={g.label} onChange={(e) => update((d) => { d.competencies[i].label = e.target.value })} />
+                    </span>
+                    :
+                  </span>
+                  <div className="min-w-0 flex-1"><ItemsField ariaLabel={`Competency items ${i + 1}`} items={g.items} onCommit={(items) => update((d) => { d.competencies[i].items = items })} /></div>
+                  <div className="flex shrink-0 opacity-0 transition group-focus-within/claim:opacity-100 group-hover/claim:opacity-100">
+                    <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, -1) })} aria-label="Move up">↑</button>
+                    <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.competencies = move(d.competencies, i, 1) })} aria-label="Move down">↓</button>
                   </div>
-                  <Issues list={[...issuesAt(`competencies[${i}].label`), ...issuesAt(`competencies[${i}]`), ...issues]} />
                 </div>
+                <Issues list={[...issuesAt(`competencies[${i}].label`), ...issuesAt(`competencies[${i}]`), ...issues]} />
               </div>
             )
           })}
-        </div>
-        <p className="mt-1 text-xs text-faint">Separate items with “·”. Every item must be a skill from your profile. Remove a group by clearing its items.</p>
+          <p className="font-sans text-xs text-faint">Separate items with “·”. Every item must be a skill from your profile. Remove a group by clearing its items.</p>
+        </section>
 
-        <H>Professional experience</H>
-        {draft.experience.map((tr, i) => {
-          const role = p.roles.find((r) => r.id === tr.role)
-          if (!role) return <Issues key={i} list={[{ where: '', message: `unknown role ${tr.role}` }]} />
-          const roleIds = Object.keys(evidence).filter((id) => id.startsWith(`${role.id}.a`) || id === `${role.id}.scope`)
-          return (
-            <div key={tr.role} className="mt-4">
-              <div className="flex items-baseline justify-between gap-4">
-                <p className="font-semibold text-ink">{role.employer}, {role.location} <span className="text-faint" title="Locked: employer, title and dates come from your profile">🔒</span></p>
-                <p className="shrink-0 text-xs text-muted">{role.dates}</p>
-              </div>
-              <p className="font-semibold text-rust">{role.title}</p>
-              {tr.scope && (
-                <ClaimEditor ctx={ctx}
-                  className={cx('mt-1', role.scope?.italic !== false && 'italic text-muted')}
-                  path={`experience[${i}].scope`}
-                  claim={tr.scope}
-                  roleId={role.id}
-                  onChange={(c) => update((d) => { d.experience[i].scope = c })}
-                  onRemove={() => update((d) => { d.experience[i].scope = null })}
-                />
-              )}
-              <div className="mt-1 space-y-1.5">
-                {tr.bullets.map((b, j) => (
-                  <div key={j} className="flex gap-2">
-                    <span className="pt-0.5 text-rust">•</span>
-                    <ClaimEditor ctx={ctx}
-                      className="flex-1"
-                      path={`experience[${i}].bullets[${j}]`}
-                      claim={b}
-                      roleId={role.id}
-                      onChange={(c) => update((d) => { d.experience[i].bullets[j] = c })}
-                      onRemove={() => update((d) => { d.experience[i].bullets.splice(j, 1) })}
-                      onMove={(dir) => update((d) => { d.experience[i].bullets = move(d.experience[i].bullets, j, dir) })}
-                    />
-                  </div>
-                ))}
+        <section className="flex flex-col gap-1.5">
+          <H>Professional experience</H>
+          {draft.experience.map((tr, i) => {
+            const role = p.roles.find((r) => r.id === tr.role)
+            if (!role) return <Issues key={i} list={[{ where: '', message: `unknown role ${tr.role}` }]} />
+            const ids = Object.keys(evidence).filter((id) => id.startsWith(`${role.id}.a`) || id === `${role.id}.scope`)
+            return (
+              <div key={tr.role} className="flex flex-col gap-0.5">
+                <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3">
+                  <p className="text-ink">
+                    <span className="font-semibold">{role.employer}</span> · {role.location}
+                    <span className="ml-1.5 text-faint" title="Locked: employer, title and dates come from your profile">🔒</span>
+                  </p>
+                  <p className="shrink-0 text-[13px] text-muted">{role.dates}</p>
+                </div>
+                <p className="font-semibold text-rust">{role.title}</p>
+                {tr.scope && line(`experience[${i}].scope`, false)}
+                {tr.bullets.map((_, j) => line(`experience[${i}].bullets[${j}]`))}
                 {tr.sub_roles.map((sr) => {
                   const item = role.sub_roles.find((s) => s.id === sr.id)
                   return (
-                    <div key={sr.id} className="group/claim flex gap-2">
-                      <span className="pt-0.5 text-rust">•</span>
-                      <p className="flex-1"><span className="font-semibold text-ink">{item?.label}</span> {sr.text?.text ?? item?.text}</p>
-                      <button className="px-1 text-faint opacity-0 hover:text-bad group-hover/claim:opacity-100" onClick={() => update((d) => { d.experience[i].sub_roles = d.experience[i].sub_roles.filter((x) => x.id !== sr.id) })} aria-label="Remove sub-role">✕</button>
+                    <div key={sr.id} className="group/claim -mx-1.5 flex gap-2 px-1.5 py-[3px] leading-[1.45]">
+                      <span className="flex-none text-faint">•</span>
+                      <p className="min-w-0 flex-1"><span className="font-semibold text-ink">{item?.label}</span> {sr.text?.text ?? item?.text}</p>
+                      <button className="px-1 text-faint opacity-0 transition hover:text-bad focus:opacity-100 group-hover/claim:opacity-100" onClick={() => update((d) => { d.experience[i].sub_roles = d.experience[i].sub_roles.filter((x) => x.id !== sr.id) })} aria-label="Remove sub-role">✕</button>
                     </div>
                   )
                 })}
+                <AddFromEvidence evidence={evidence} label="add bullet from this role’s evidence" ids={ids}
+                  onAdd={(id) => { update((d) => { d.experience[i].bullets.push({ text: evidence[id].split('\n')[0], sources: [id] }) }); setFocus(`experience[${i}].bullets[${tr.bullets.length}]`) }} />
+                <Issues list={issuesAt(`experience[${i}]`)} />
               </div>
-              <AddFromEvidence evidence={evidence} label="add bullet from this role’s evidence" ids={roleIds} onAdd={(id) => update((d) => { d.experience[i].bullets.push({ text: evidence[id].split('\n')[0], sources: [id] }) })} />
-              <Issues list={issuesAt(`experience[${i}]`)} />
-            </div>
-          )
-        })}
+            )
+          })}
+        </section>
 
-        <H>Projects & community leadership</H>
-        <div className="space-y-1.5">
+        <section className="flex flex-col gap-1.5">
+          <H>Projects & community leadership</H>
           {draft.projects.map((tp, i) => {
             const item = p.projects.find((x) => x.id === tp.id)
             return (
-              <div key={tp.id} className="group/claim flex gap-2">
-                <span className="pt-0.5 text-rust">•</span>
-                <p className="flex-1"><span className="font-semibold text-ink">{item?.label}</span> {tp.text?.text ?? item?.text}</p>
-                <div className="flex shrink-0 opacity-0 group-hover/claim:opacity-100">
+              <div key={tp.id} className="group/claim -mx-1.5 flex gap-2 px-1.5 py-[3px] leading-[1.45]">
+                <span className="flex-none text-faint">•</span>
+                <p className="min-w-0 flex-1"><span className="font-semibold text-ink">{item?.label}</span> {tp.text?.text ?? item?.text}</p>
+                <div className="flex shrink-0 opacity-0 transition group-focus-within/claim:opacity-100 group-hover/claim:opacity-100">
                   <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.projects = move(d.projects, i, -1) })} aria-label="Move up">↑</button>
                   <button className="px-1 text-faint hover:text-ink" onClick={() => update((d) => { d.projects = move(d.projects, i, 1) })} aria-label="Move down">↓</button>
                   <button className="px-1 text-faint hover:text-bad" onClick={() => update((d) => { d.projects.splice(i, 1) })} aria-label="Remove">✕</button>
@@ -390,114 +474,120 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
               </div>
             )
           })}
-        </div>
-        {p.projects.some((x) => !usedProjects.has(x.id)) && (
-          <AddFromEvidence evidence={evidence} label="add project" ids={p.projects.filter((x) => !usedProjects.has(x.id)).map((x) => x.id)} onAdd={(id) => update((d) => { d.projects.push({ id }) })} />
-        )}
+          {p.projects.some((x) => !usedProjects.has(x.id)) && (
+            <AddFromEvidence evidence={evidence} label="add project" ids={p.projects.filter((x) => !usedProjects.has(x.id)).map((x) => x.id)} onAdd={(id) => update((d) => { d.projects.push({ id }) })} />
+          )}
+        </section>
 
         {(['education', 'extras'] as const).map((key) => (
-          <div key={key}>
+          <section key={key} className="flex flex-col gap-1.5">
             <H>{key === 'education' ? 'Education & certifications' : 'Awards & languages'}</H>
-            <div className="space-y-1">
-              {p[key].map((item) => {
-                const on = draft[key].includes(item.id)
-                return (
-                  <label key={item.id} className={cx('flex cursor-pointer gap-2', !on && 'text-faint line-through')}>
-                    <input type="checkbox" className="mt-1 accent-rust" checked={on} onChange={() => update((d) => { d[key] = on ? d[key].filter((x) => x !== item.id) : p[key].map((x) => x.id).filter((x) => x === item.id || d[key].includes(x)) })} />
-                    <span><span className="font-semibold">{item.label}</span> {item.text}</span>
-                  </label>
-                )
-              })}
-            </div>
-          </div>
+            {p[key].map((item) => {
+              const on = draft[key].includes(item.id)
+              return (
+                <label key={item.id} className={cx('flex cursor-pointer gap-2 leading-[1.45]', !on && 'text-faint line-through')}>
+                  <input type="checkbox" className="mt-1 accent-rust" checked={on} onChange={() => update((d) => { d[key] = on ? d[key].filter((x) => x !== item.id) : p[key].map((x) => x.id).filter((x) => x === item.id || d[key].includes(x)) })} />
+                  <span><span className="font-semibold">{item.label}</span> {item.text}</span>
+                </label>
+              )
+            })}
+          </section>
         ))}
       </article>
 
       {/* ---------------------------------------------------------------- margin */}
-      <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
-        <div className="sheet animate-rise rounded p-5" style={{ animationDelay: '80ms' }}>
-          <div className="flex items-center justify-between">
-            <p className="eyebrow">Fact-check</p>
-            {dirty ? <span className="text-xs text-warn">unsaved edits</span> : report && <Stamp ok={report.ok}>{report.ok ? 'Verified' : `${report.errors.length} issue${report.errors.length > 1 ? 's' : ''}`}</Stamp>}
-          </div>
-          <p className="mt-3 text-sm text-muted">
-            {dirty ? 'Save to re-run the fact-check.' : report?.ok ? 'Every claim traces to your profile.' : 'Fix the highlighted claims: cite the right evidence, reword to match it, or remove them.'}
-          </p>
-          {!dirty && report && report.errors.length > 0 && (
-            <ul className="mt-3 max-h-56 space-y-1 overflow-auto border-t border-rule pt-3 text-xs text-bad">
-              {report.errors.map((e, i) => <li key={i}><span className="font-mono text-[10px] text-faint">{e.where}</span> {e.message}</li>)}
-            </ul>
+      <aside className="animate-rise flex min-w-0 flex-col gap-4 lg:sticky lg:top-[76px] lg:-mx-1 lg:max-h-[calc(100vh-92px)] lg:overflow-y-auto lg:px-1 lg:pb-2" style={{ animationDelay: '80ms' }}>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          {stamp}
+          {length && (
+            <span className={cx('font-mono text-[11px]', length.lines > length.budget ? 'text-warn' : 'text-faint')}
+              title="Estimated lines, against your base resume's length (2 pages)">
+              ~{length.lines} of {length.budget} lines
+            </span>
           )}
-          {!dirty && report && report.warnings.length > 0 && (
-            <ul className="mt-3 space-y-1 border-t border-rule pt-3 text-xs text-warn">
-              {report.warnings.map((w, i) => <li key={i}>{w.message}</li>)}
-            </ul>
-          )}
-          <div className="mt-4 flex gap-2">
-            <button className="btn btn-primary flex-1 justify-center" disabled={!dirty || saving} onClick={save}>
-              {saving ? <><Spinner /> Checking…</> : 'Save & re-check'}
-            </button>
-            {dirty && <button className="btn" onClick={() => setMemo((m) => ({ ...m, review: null }))}>Discard</button>}
-          </div>
-          <button className="btn mt-2 w-full justify-center" disabled={dirty || !report?.ok} onClick={() => go('export')}>Continue to export →</button>
-          {app.meta.repair_rounds ? <p className="mt-2 text-xs text-faint">The AI self-repaired {app.meta.repair_rounds} fact-check round{app.meta.repair_rounds > 1 ? 's' : ''}.</p> : null}
         </div>
+        <p className="-mt-1 text-[13px] text-muted">
+          {dirty ? 'Save to re-run the fact-check.' : report?.ok ? 'Every claim traces to your profile.' : report ? 'Fix the flagged lines: cite the right evidence, reword to match it, or remove them.' : ''}
+          {app.meta.repair_rounds ? <span className="block text-xs text-faint">The AI self-repaired {app.meta.repair_rounds} fact-check round{app.meta.repair_rounds > 1 ? 's' : ''}.</span> : null}
+        </p>
+        {!dirty && report && (report.errors.length > 0 || report.warnings.length > 0) && (
+          <section className={cx(card, 'flex flex-col gap-2 px-[18px] py-3.5 text-xs')}>
+            {report.errors.length > 0 && (
+              <ul className="max-h-56 space-y-1 overflow-auto text-bad">
+                {report.errors.map((e, i) => (
+                  <li key={i}>
+                    {byPath[e.where]
+                      ? <button className="cursor-pointer text-left hover:underline" onClick={() => setFocus(e.where, true)}><span className="font-mono text-[10px] text-faint">{e.where}</span> {e.message}</button>
+                      : <><span className="font-mono text-[10px] text-faint">{e.where}</span> {e.message}</>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {report.warnings.length > 0 && (
+              <ul className={cx('space-y-1 text-warn', report.errors.length > 0 && 'border-t border-rule pt-2')}>
+                {report.warnings.map((w, i) => <li key={i}>{w.message}</li>)}
+              </ul>
+            )}
+          </section>
+        )}
 
         <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+        <section className={cx(card, 'hidden flex-col gap-2.5 px-[18px] py-4 lg:flex')}>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className={label}>Selected line</p>
+            {selected && <span className="truncate text-xs text-faint">{selected.where}</span>}
+          </div>
+          {selected ? editorFor(selected) : (
+            <p className="text-[13px] text-muted">Click any line on the resume to edit it and see the evidence it cites, side by side.</p>
+          )}
+        </section>
 
         <HiringManagerCard critique={critique} dirty={dirty} canRun={!dirty && !!report?.ok}
           onRun={runReview} onAcceptAll={acceptAll} actions={reviewActions} isInline={isInline} />
 
-        <div className="sheet animate-rise rounded p-5" style={{ animationDelay: '140ms' }}>
-          <p className="eyebrow">Marginalia</p>
-          {focusedClaim ? (
-            <ol className="mt-3 space-y-3">
-              {focusedClaim.sources.map((s, i) => (
-                <li key={s} className="text-sm">
-                  <p className="font-mono text-[11px] text-rust"><sup className="font-serif">{i + 1}</sup> {s}</p>
-                  <p className="mt-0.5 font-serif leading-snug text-body">{evidence[s]?.split('\n')[0] ?? 'unknown id'}</p>
-                </li>
-              ))}
-              {!focusedClaim.sources.length && <li className="text-sm text-bad">No sources: this claim can’t be verified.</li>}
-            </ol>
-          ) : (
-            <p className="mt-2 text-sm text-muted">Click into any claim to see the evidence it cites, side by side.</p>
-          )}
-        </div>
-
         {ats && (
-          <div className="sheet animate-rise rounded p-5" style={{ animationDelay: '200ms' }}>
-            <p className="eyebrow">ATS keywords</p>
-            {(['must', 'nice'] as const).map((k) => ats.coverage[k].total > 0 && (
-              <div key={k} className="mt-3">
-                <div className="flex justify-between text-xs text-muted">
-                  <span>{k === 'must' ? 'Must-have' : 'Nice-to-have'}</span>
-                  <span className="font-mono">{ats.coverage[k].hit}/{ats.coverage[k].total}</span>
-                </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-wash">
-                  <div className="h-full rounded-full bg-rust transition-all" style={{ width: `${(100 * ats.coverage[k].hit) / ats.coverage[k].total}%` }} />
-                </div>
-              </div>
-            ))}
-            <div className="mt-4 flex flex-wrap gap-1.5">
+          <section className="flex flex-col gap-2">
+            <p className={label}>
+              Keywords · must {ats.coverage.must.hit}/{ats.coverage.must.total}
+              {ats.coverage.nice.total > 0 && <span className="text-muted"> · nice {ats.coverage.nice.hit}/{ats.coverage.nice.total}</span>}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
               {ats.keywords.map((kw) => (
                 <span
                   key={kw.term}
                   title={{ in_resume: 'In the resume', unused: 'You have evidence but it isn’t used. Consider surfacing it.', gap: 'No evidence in your profile' }[kw.status]}
-                  className={cx('rounded-full px-2 py-0.5 text-xs', {
-                    in_resume: 'bg-ok-soft text-ok',
-                    unused: 'bg-warn-soft text-warn',
-                    gap: 'bg-wash text-faint line-through',
+                  className={cx('rounded-full border px-[9px] py-0.5 text-xs', {
+                    in_resume: 'border-transparent bg-ok-soft text-ok',
+                    unused: 'border-warn bg-sheet text-warn',
+                    gap: 'border-rule bg-sheet text-faint',
                   }[kw.status])}
                 >
                   {kw.term}
                 </span>
               ))}
             </div>
-            <p className="mt-3 font-mono text-[11px] text-faint">{ats.words} words · green used · amber available · struck = gap</p>
-          </div>
+            <p className="font-mono text-[11px] text-faint">{ats.words} words · green in resume · amber evidence unused · grey no evidence</p>
+          </section>
         )}
+
+        <div className="flex flex-wrap justify-end gap-2">
+          {dirty ? (
+            <>
+              <button className="btn" onClick={discard} disabled={saving}>Discard</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? <><Spinner /> Checking…</> : 'Save & fact-check'}</button>
+            </>
+          ) : (
+            <button className="btn btn-primary" disabled={!report?.ok} onClick={() => go('export')}
+              title={report?.ok ? undefined : 'Fix the fact-check issues first'}>Continue to export →</button>
+          )}
+        </div>
       </aside>
+
+      {/* the margin's Save sits far below the sheet on small screens */}
+      <div className="lg:hidden">
+        <SaveDock dirty={dirty} text="Unsaved edits" busy={saving} flash={null} onSave={save} onDiscard={discard} saveLabel="Save & check" />
+      </div>
     </div>
   )
 }

@@ -273,7 +273,7 @@ function Dossier({ a, detail, busy, notes, onNotes, onNotesBlur, onStatus, onAct
   const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-muted'
   const steps = [
     { label: 'Brief', note: p?.requirements ? plural(p.requirements, 'requirement') : 'not analyzed', bar: p?.requirements ? 'bg-ok' : 'bg-rule', tone: p?.requirements ? 'text-muted' : 'text-faint' },
-    { label: 'Gaps', note: !p?.requirements ? '—' : p.gaps_open && !p.drafted ? `${p.gaps_open} open` : 'answered',
+    { label: 'Gaps', note: !p?.requirements ? '—' : p.gaps_open ? `${p.gaps_open} open` : 'answered',
       bar: !p?.requirements ? 'bg-rule' : p.gaps_open && !p.drafted ? 'bg-warn' : 'bg-ok', tone: p?.gaps_open && !p.drafted ? 'text-warn' : 'text-muted' },
     { label: 'Review', note: !p?.drafted ? '—' : p.verified === false ? 'fact-check failing' : p.critique ? p.critique.verdict : 'verified',
       bar: !p?.drafted ? 'bg-rule' : p.verified === false ? 'bg-bad' : p.critique && p.critique.open && !p.critique.stale ? 'bg-rust' : 'bg-ok',

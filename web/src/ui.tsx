@@ -156,3 +156,8 @@ export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabe
     </div>
   )
 }
+
+/** Tailwind classes of the status pill, for custom pills (e.g. one with a ▾ for a select). */
+export function statusStyle(status: string) {
+  return STATUS_STYLE[status] ?? STATUS_STYLE.draft
+}

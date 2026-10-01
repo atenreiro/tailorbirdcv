@@ -67,16 +67,16 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
   const acceptable = open.filter((i) => i.action !== 'advice').length
   const r = critique?.latest
   return (
-    <div className="sheet animate-rise rounded p-5" style={{ animationDelay: '110ms' }}>
+    <section className="rounded border border-rule bg-sheet px-[18px] py-4">
       <div className="flex items-center justify-between">
-        <p className="eyebrow">Hiring-manager review</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rust">Hiring-manager review</p>
         {r && <span className={cx('rounded-sm border-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em]', VERDICT[r.verdict.decision].cls)}>{VERDICT[r.verdict.decision].label}</span>}
       </div>
-      {!r && <p className="mt-2 text-sm text-muted">Read this draft as the role’s hiring manager and a recruiter skimming the top third would. Takes about 1–1.5 minutes. Every suggested fix is fact-checked before you see it.</p>}
+      {!r && <p className="mt-2 text-[13px] text-muted">Read this draft as the role’s hiring manager and a recruiter skimming the top third would. Takes about 1–1.5 minutes. Every suggested fix is fact-checked before you see it.</p>}
       {r && (
         <>
           {critique!.stale && <p className="mt-2 rounded bg-warn-soft px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
-          <p className="mt-2 text-sm text-body">{r.verdict.reason}</p>
+          <p className="mt-2 text-[13px] text-body">{r.verdict.reason}</p>
           <dl className="mt-3 space-y-1.5">
             {(Object.keys(SCORE_LABEL) as ScoreKey[]).map((k) => {
               const prev = critique!.previous_scores?.[k]?.score
@@ -90,7 +90,7 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
                       {delta !== 0 && <span className={delta > 0 ? 'ml-1 text-ok' : 'ml-1 text-bad'}>{delta > 0 ? `+${delta}` : delta}</span>}
                     </dd>
                   </div>
-                  <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-wash">
+                  <div className="mt-[3px] h-1 overflow-hidden rounded-full bg-wash">
                     <div className="h-full rounded-full bg-rust" style={{ width: `${r.scores[k].score * 10}%` }} />
                   </div>
                 </div>
@@ -110,18 +110,18 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
             </div>
           )}
           <p className="mt-3 border-t border-rule pt-3 text-xs text-muted">
-            {open.length ? `${open.length} open suggestion${open.length > 1 ? 's' : ''}. Line-specific ones are shown under each line.` : 'All suggestions handled.'}
+            {open.length ? `${open.length} open suggestion${open.length > 1 ? 's' : ''}.${open.length > general.length ? ' Line-specific ones are marked HM on the resume: click one to see it.' : ''}` : 'All suggestions handled.'}
           </p>
           {general.length > 0 && <div className="mt-2 space-y-2">{general.map((i) => <ReviewIssue key={i.id} issue={i} actions={actions} compact />)}</div>}
         </>
       )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button className="btn flex-1 justify-center" disabled={!canRun} onClick={onRun}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className="btn flex-1 justify-center px-3.5 py-[7px] text-[13px]" disabled={!canRun} onClick={onRun}
           title={dirty ? 'Save your edits first' : canRun ? '' : 'Fix the fact-check errors first'}>
           {r ? 'Re-run review' : 'Run review'}
         </button>
-        {acceptable > 1 && <button className="btn btn-primary" onClick={onAcceptAll}>Accept all {acceptable}</button>}
+        {acceptable > 1 && <button className="btn btn-primary px-3.5 py-[7px] text-[13px]" onClick={onAcceptAll}>Accept all {acceptable}</button>}
       </div>
-    </div>
+    </section>
   )
 }
