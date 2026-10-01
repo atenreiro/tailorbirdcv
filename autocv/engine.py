@@ -1,10 +1,9 @@
 """AI engine: the local Claude Code CLI in headless mode (`claude -p`).
 
 Uses the CLI's own login (your Claude subscription), so there is no API key and no
-per-call billing. Calls run with every tool disabled, no MCP servers, no session
-persistence, and from an empty working directory (so no CLAUDE.md/skills are
-loaded) — the model only sees the prompt AutoCV builds, and must answer with JSON
-matching the schema AutoCV supplies.
+per-call billing. Calls are fully isolated (see ISOLATION_ARGS): no tools, MCP servers,
+plugins, hooks, skills or saved sessions, from an empty working directory — the model
+only sees the prompt AutoCV builds, and must answer with JSON matching the schema.
 
 Set AUTOCV_ENGINE=fake to run the UI with canned responses (tests / demos).
 """
@@ -29,6 +28,17 @@ class Engine(Protocol):
     async def status(self) -> dict: ...
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any: ...
+
+
+# Run the model with nothing from the user's Claude Code setup: no tools, no MCP servers,
+# no user/local settings (so no plugins), no hooks, no skills/slash commands, no saved
+# session. The working directory is an empty temp dir, so "project" settings are empty
+# too. Prompts carry the candidate's profile — none of it should reach hooks or plugins.
+ISOLATION_ARGS = [
+    "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+    "--setting-sources", "project", "--settings", json.dumps({"disableAllHooks": True}),
+    "--disable-slash-commands",
+]
 
 
 class ClaudeCLIEngine:
@@ -78,8 +88,7 @@ class ClaudeCLIEngine:
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
         args = [
             "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
-            "--system-prompt", system, "--tools", "", "--strict-mcp-config",
-            "--no-session-persistence",
+            "--system-prompt", system, *ISOLATION_ARGS,
         ]
         if self.model:
             args += ["--model", self.model]

@@ -22,6 +22,8 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - Every non-GET `/api/*` request must send `X-AutoCV: 1` (cross-site guard). Profile/knowledge PUTs send `If-Match: <version>`; 409 means reload.
 - Private files are written atomically under a process-wide lock (`store.lock`); never hold it across an AI call.
 - Deleted evidence/knowledge ids are retired (`retired_ids`) and never reused.
+- URL fetching goes through `jobfetch.pinned_client()` (PinnedBackend: resolve once, validate every address, connect to the validated one). The headless browser's requests are performed by that client too, never by Chromium's network stack.
+- The AI engine runs fully isolated (`engine.ISOLATION_ARGS`): no tools, MCP, user/local settings, plugins, hooks, skills or sessions.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands

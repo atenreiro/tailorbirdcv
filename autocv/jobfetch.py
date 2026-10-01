@@ -27,6 +27,7 @@ import socket
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urljoin, urlparse
 
+import httpcore
 import httpx
 from bs4 import BeautifulSoup
 
@@ -59,25 +60,83 @@ class Job:
 # --------------------------------------------------------------------------- safe http
 
 
+def _resolve(host: str, port: int | None) -> list[str]:
+    """All addresses `host` resolves to (patched in tests)."""
+    return [info[4][0].split("%")[0] for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)]
+
+
+def check_addr(ip: str, port: int | None = None) -> None:
+    """Raise BlockedURL unless `ip` is a public unicast address. (`port` is for tests.)"""
+    addr = ipaddress.ip_address(ip)
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if not addr.is_global or addr.is_multicast:
+        raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
+
+
 async def check_public_url(url: str) -> None:
+    """Fast pre-check of scheme and address. The binding guarantee is PinnedBackend,
+    which re-validates the exact address every connection uses."""
     parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    try:
+        host, port = parsed.hostname, parsed.port
+    except ValueError:
+        raise BlockedURL("That URL isn't valid (bad port).")
+    if parsed.scheme not in ("http", "https") or not host:
         raise BlockedURL("The URL must start with http:// or https://")
     try:
-        infos = await asyncio.to_thread(socket.getaddrinfo, parsed.hostname, parsed.port or None)
+        addrs = await asyncio.to_thread(_resolve, host, port)
     except socket.gaierror:
-        raise FetchError(f"Could not resolve {parsed.hostname}.")
-    for *_, sockaddr in infos:
-        ip = ipaddress.ip_address(sockaddr[0].split("%")[0])
-        if not ip.is_global or ip.is_multicast:
-            raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
+        raise FetchError(f"Could not resolve {host}.")
+    for ip in addrs:
+        check_addr(ip, port)
+
+
+class PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Resolve once, validate every address, connect to the validated one.
+
+    Closes the DNS-rebinding race where a hostname resolves to a public address for the
+    check and to 127.0.0.1 / a LAN address for the actual connection. TLS still verifies
+    the certificate against the real hostname, and the Host header is unchanged."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend | None = None):
+        self.inner = inner or httpcore.AnyIOBackend()
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        try:
+            addrs = await asyncio.to_thread(_resolve, host, port)
+        except socket.gaierror as e:
+            raise httpcore.ConnectError(f"Could not resolve {host}") from e
+        if not addrs:
+            raise httpcore.ConnectError(f"Could not resolve {host}")
+        for ip in addrs:
+            check_addr(ip, port)  # every answer must be public, not just the one we use
+        return await self.inner.connect_tcp(addrs[0], port, timeout=timeout, local_address=local_address,
+                                            socket_options=socket_options)
+
+    async def connect_unix_socket(self, *args, **kwargs):
+        raise BlockedURL("Unix sockets are not allowed.")
+
+    async def sleep(self, seconds: float) -> None:
+        await self.inner.sleep(seconds)
+
+
+def pinned_client(timeout: float = 20) -> httpx.AsyncClient:
+    """An httpx client whose every connection goes through PinnedBackend. No proxies
+    (a proxy would resolve names itself), no automatic redirects."""
+    transport = httpx.AsyncHTTPTransport(trust_env=False, retries=0)
+    pool = transport._pool  # httpx has no public hook for the network backend
+    assert hasattr(pool, "_network_backend"), "httpx internals changed: PinnedBackend can't be installed"
+    pool._network_backend = PinnedBackend()
+    return httpx.AsyncClient(transport=transport, follow_redirects=False, timeout=timeout, trust_env=False,
+                             headers={"User-Agent": "Mozilla/5.0 AutoCV"})
 
 
 async def safe_get(client: httpx.AsyncClient, url: str) -> str:
     """GET with per-hop SSRF checks and a size cap."""
     for _ in range(MAX_REDIRECTS + 1):
         await check_public_url(url)
-        async with client.stream("GET", url) as resp:
+        async with client.stream("GET", url) as resp:  # connection re-validated by PinnedBackend
             if resp.is_redirect:
                 url = str(resp.url.join(resp.headers.get("location", "")))
                 continue
@@ -301,34 +360,43 @@ async def render_page(url: str) -> Rendered:
 
     await check_public_url(url)
     blocked: list[str] = []
+    client = pinned_client(timeout=15)
+    hop_by_hop = {"host", "content-length", "accept-encoding", "connection", "transfer-encoding", "keep-alive"}
+    drop_response = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 
     async def guard(route):
+        """Every browser request is performed by the pinned client (never by Chromium's own
+        network stack), so neither redirects nor DNS rebinding can reach a private address."""
         request = route.request
         scheme = urlparse(request.url).scheme
         if scheme in ("data", "blob"):
             return await route.continue_()
         if request.resource_type in ("image", "media", "font"):
             return await route.abort()
-        # Follow redirects here, checking every hop: if the browser followed a 3xx
-        # itself, the next hop would NOT pass through this route handler.
-        target, method = request.url, request.method
+        headers = {k: v for k, v in (await request.all_headers()).items()
+                   if k.lower() not in hop_by_hop and not k.startswith(":")}
+        target, method, body = request.url, request.method, request.post_data_buffer
         for _ in range(MAX_REDIRECTS + 1):
             try:
                 await check_public_url(target)
+                resp = await client.request(method, target, headers=headers, content=body)
             except FetchError:
                 blocked.append(target)
                 return await route.abort("blockedbyclient")
-            try:
-                response = await route.fetch(url=target, method=method, max_redirects=0, timeout=15_000)
-            except PWError:
+            except httpx.HTTPError:
                 return await route.abort()
-            location = response.headers.get("location")
-            if response.status in (301, 302, 303, 307, 308) and location:
+            location = resp.headers.get("location")
+            if resp.status_code in (301, 302, 303, 307, 308) and location:
                 target = urljoin(target, location)
-                if response.status == 303 or (response.status in (301, 302) and method == "POST"):
-                    method = "GET"
+                if resp.status_code == 303 or (resp.status_code in (301, 302) and method == "POST"):
+                    method, body = "GET", None
                 continue
-            return await route.fulfill(response=response)
+            out_headers: dict[str, str] = {}
+            for k, v in resp.headers.multi_items():
+                if k.lower() in drop_response:
+                    continue
+                out_headers[k] = f"{out_headers[k]}\n{v}" if k in out_headers and k.lower() == "set-cookie" else v
+            return await route.fulfill(status=resp.status_code, headers=out_headers, body=resp.content)
         blocked.append(target)
         return await route.abort("blockedbyclient")
 
@@ -361,6 +429,7 @@ async def render_page(url: str) -> Rendered:
             return Rendered(html, text, page.url, blocked)
         finally:
             await browser.close()
+            await client.aclose()
 
 
 def from_rendered(r: Rendered) -> Job | None:
@@ -377,8 +446,7 @@ def from_rendered(r: Rendered) -> Job | None:
 
 async def fetch_job(url: str, client: httpx.AsyncClient | None = None) -> Job:
     own = client is None
-    client = client or httpx.AsyncClient(follow_redirects=False, timeout=20,
-                                         headers={"User-Agent": "Mozilla/5.0 AutoCV"})
+    client = client or pinned_client()
     try:
         if ref := lever_ref(url):
             slug, job_id = ref
