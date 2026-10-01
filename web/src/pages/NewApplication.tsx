@@ -71,7 +71,7 @@ export default function NewApplication() {
                 onChange={(e) => setUrl(e.target.value)}
                 autoFocus
               />
-              <p className="text-sm text-muted">Works for most public career pages. LinkedIn and sites that need a login usually block fetching, so paste the text for those.</p>
+              <p className="text-sm text-muted">Reads Lever, Greenhouse and Ashby postings (Binance careers included) and most public career pages. LinkedIn and sites behind a login block fetching, so paste the text for those.</p>
             </div>
           )}
         </div>

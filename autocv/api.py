@@ -19,6 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ValidationError
 
 from . import ai, ats, factcheck
+from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import TailoredResume
@@ -87,64 +88,6 @@ def _ats_json(store: Store, app_id: str, tailored: TailoredResume) -> dict | Non
     coverage = {p: dict(zip(("hit", "total"), report.coverage(p))) for p in ("must", "nice")}
     return {"words": report.words, "coverage": coverage,
             "keywords": [r.__dict__ for r in report.results]}
-
-
-MAX_REDIRECTS = 5
-MAX_PAGE_BYTES = 3_000_000
-
-
-async def _check_public_url(url: str) -> None:
-    """SSRF guard: only http(s) to hosts that resolve exclusively to public addresses."""
-    import ipaddress
-    import socket
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise HTTPException(422, "The URL must start with http:// or https://")
-    try:
-        infos = await asyncio.to_thread(socket.getaddrinfo, parsed.hostname, parsed.port or None)
-    except socket.gaierror:
-        raise HTTPException(422, f"Could not resolve {parsed.hostname}. Paste the job description instead.")
-    for *_, sockaddr in infos:
-        ip = ipaddress.ip_address(sockaddr[0].split("%")[0])
-        if not ip.is_global or ip.is_multicast:
-            raise HTTPException(422, "That URL points to a private or local network address, so AutoCV won't fetch it.")
-
-
-async def _fetch_url(url: str) -> str:
-    import httpx
-    from bs4 import BeautifulSoup
-
-    try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=20,
-                                     headers={"User-Agent": "Mozilla/5.0 AutoCV"}) as client:
-            for _ in range(MAX_REDIRECTS + 1):  # follow redirects by hand, re-checking every hop
-                await _check_public_url(url)
-                async with client.stream("GET", url) as resp:
-                    if resp.is_redirect:
-                        url = str(resp.url.join(resp.headers.get("location", "")))
-                        continue
-                    resp.raise_for_status()
-                    body = b""
-                    async for chunk in resp.aiter_bytes():
-                        body += chunk
-                        if len(body) > MAX_PAGE_BYTES:
-                            raise HTTPException(422, "That page is too large. Paste the job description instead.")
-                    html = body.decode(resp.encoding or "utf-8", errors="replace")
-                    break
-            else:
-                raise HTTPException(422, "Too many redirects. Paste the job description instead.")
-    except httpx.HTTPError as e:
-        raise HTTPException(422, f"Could not fetch the URL ({e}). Paste the job description instead.")
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "nav", "header", "footer", "noscript", "svg"]):
-        tag.decompose()
-    text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
-    if len(text) < 300:
-        raise HTTPException(422, "The page returned too little text (it may need a login or JavaScript). "
-                                 "Paste the job description instead.")
-    return text
 
 
 def _engine_call(exc: EngineError) -> HTTPException:
@@ -228,12 +171,16 @@ def create_app(store: Store | None = None, engine: Engine | None = None) -> Fast
     @api.post("/applications", status_code=201)
     async def create_application(body: NewApplication):
         need_profile()
-        jd = body.jd.strip()
+        jd, company, role = body.jd.strip(), body.company, body.role
         if not jd and body.url:
-            jd = await _fetch_url(body.url)
+            try:
+                job = await fetch_job(body.url.strip())
+            except FetchError as e:
+                raise HTTPException(422, f"{e} Paste the job description instead.")
+            jd, company, role = job.text, company or job.company, role or job.role
         if len(jd) < 100:
             raise HTTPException(422, "The job description looks too short — paste the full text.")
-        app_id = store.create_app(body.company or "company", body.role or "role", jd, body.url)
+        app_id = store.create_app(company or "company", role or "role", jd, body.url)
         return {"id": app_id}
 
     @api.get("/applications/{app_id}")
