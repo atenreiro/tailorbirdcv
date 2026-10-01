@@ -1,6 +1,7 @@
 import { api } from '../../api'
 import { Section, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
+import StyleCoach from './StyleCoach'
 
 export default function Export({ app, setApp, go, run }: StepProps) {
   const pdf = app.files.find((f) => f.endsWith('.pdf'))
@@ -46,6 +47,8 @@ export default function Export({ app, setApp, go, run }: StepProps) {
             <button className="btn" onClick={() => go('review')}>Back to review</button>
           </div>
         </Section>
+
+        {docx && <StyleCoach app={app} />}
 
         {docx && (
           <div className="animate-rise rounded border border-rule bg-wash/60 p-4 text-sm text-muted">

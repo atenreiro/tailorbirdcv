@@ -30,10 +30,17 @@ keywords:                # 15–30 ATS terms as the JD writes them
 ```
 Show the user a short summary: role, industry lens, track, top 5 must-haves with status, and the gaps. If the industry or track is ambiguous (e.g. a "Team Lead" role at a quant firm), ask.
 
+## 2b. Use what AutoCV remembers (`private/knowledge.yaml`)
+- `answers` with `kind: no_experience` on the same topic are **known gaps**. Don't ask again; tell the user "known gap (you said no on <date>)" and offer to revisit if it changed.
+- A related past answer → ask, but quote it so he can confirm or update rather than retype.
+- `preferences` with `status: active` are approved style rules. Apply them when composing. They never override the fact rules.
+- Knowledge is **not evidence**. Only `private/profile.yaml` can be cited.
+
 ## 3. Ask about gaps (AskUserQuestion, ≤4 per batch)
 For each `gap` or weak `partial` on a must-have, ask a concrete question, e.g. "The JD asks for Kubernetes/container security. Have you done real work on this? If so, where and what?" Include an option for "No real experience".
 - If the user confirms new evidence, draft the exact wording and get his OK. Then add it to the profile under the right role (`source: interview`, `in_base_resume: false`, next free id) and re-validate with `uv run autocv evidence`.
 - No experience → it stays a gap. Do **not** soften it into "exposure to" or "familiar with".
+- Record each final answer in `private/knowledge.yaml` → `answers`, with fields `id` (k<n>), `topic`, `question`, `answer`, `kind` (experience | no_experience), `evidence_id` (if approved), `app_id`, `company`, `date`. The web UI reads the same file.
 
 ## 4. Compose `<app>/tailored.yaml`
 The schema is in `autocv/schema.py`; `private/source/base_tailored.yaml` is a complete example.

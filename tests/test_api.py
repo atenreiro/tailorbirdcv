@@ -22,7 +22,8 @@ ANALYSIS = {
                       "evidence": ["acme-bank.a1", "not.an.id"], "note": ""}],
     "keywords": [{"term": "detection engineering", "priority": "must", "aliases": []},
                  {"term": "Kubernetes", "priority": "nice", "aliases": []}],
-    "questions": [{"id": "q1", "requirement": "Kubernetes", "question": "Any Kubernetes work?"}],
+    "questions": [{"id": "q1", "requirement": "Kubernetes", "question": "Any Kubernetes work?", "prefill_from": ""}],
+    "known_gaps": [],
 }
 
 

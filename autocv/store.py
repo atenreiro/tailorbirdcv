@@ -1,10 +1,14 @@
 """Filesystem store for the private data: profile + one folder per application.
 
     private/
-      profile.yaml
+      profile.yaml          the only citable facts
+      knowledge.yaml        remembered answers + learned style preferences (not citable)
       source/base_resume.docx, base_tailored.yaml
       applications/<YYYY-MM-DD>_<company>_<role>/
-        meta.json  jd.md  analysis.yaml  tailored.yaml  <Name>_Resume_<Company>.docx/.pdf
+        meta.json  jd.md  analysis.yaml  answers.yaml
+        tailored.ai.yaml    the AI's composed draft (to learn from the user's edits)
+        tailored.yaml       the current, user-edited version
+        <Name>_Resume_<Company>.docx/.pdf
 """
 
 from __future__ import annotations
@@ -16,10 +20,18 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .schema import MasterProfile, TailoredResume, dump_yaml, load_profile, load_tailored, load_yaml
+from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
+                     load_profile, load_tailored, load_yaml)
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "rejected", "withdrawn"]
+
+
+def next_id(prefix: str, taken: set[str]) -> str:
+    n = 1
+    while f"{prefix}{n}" in taken:
+        n += 1
+    return f"{prefix}{n}"
 
 
 def slug(text: str) -> str:
@@ -136,6 +148,83 @@ class Store:
 
     def save_tailored(self, app_id: str, tailored: TailoredResume) -> None:
         dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.yaml")
+
+    def ai_tailored(self, app_id: str) -> TailoredResume | None:
+        p = self.app_path(app_id) / "tailored.ai.yaml"
+        return load_tailored(p) if p.exists() else None
+
+    def save_ai_tailored(self, app_id: str, tailored: TailoredResume) -> None:
+        dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.ai.yaml")
+
+    # -- gap answers (per application) ---------------------------------------------------
+    def answers(self, app_id: str) -> list[AppAnswer]:
+        p = self.app_path(app_id) / "answers.yaml"
+        data = load_yaml(p) if p.exists() else {}
+        return [AppAnswer.model_validate(a) for a in data.get("answers", [])]
+
+    def save_answers(self, app_id: str, answers: list[AppAnswer]) -> None:
+        dump_yaml({"answers": [a.model_dump(exclude_none=True) for a in answers]},
+                  self.app_path(app_id) / "answers.yaml")
+        self._remember(app_id, answers)
+
+    # -- knowledge (across applications) -------------------------------------------------
+    @property
+    def knowledge_path(self) -> Path:
+        return self.private / "knowledge.yaml"
+
+    def knowledge(self) -> Knowledge:
+        p = self.knowledge_path
+        return Knowledge.model_validate(load_yaml(p)) if p.exists() else Knowledge()
+
+    def save_knowledge(self, knowledge: Knowledge) -> Knowledge:
+        knowledge = Knowledge.model_validate(knowledge.model_dump())
+        dump_yaml(knowledge.model_dump(exclude_none=True), self.knowledge_path)
+        return knowledge
+
+    def _remember(self, app_id: str, answers: list[AppAnswer]) -> None:
+        """Upsert finalized answers into the knowledge base; drafts are forgotten.
+
+        no_experience → a known gap. approved → experience (backed by profile evidence).
+        rejected → the answer is kept for pre-filling, but is never evidence.
+        """
+        knowledge = self.knowledge()
+        company = self.meta(app_id).get("company")
+        today = f"{dt.date.today():%Y-%m-%d}"
+        by_key = {(k.app_id, k.question): k for k in knowledge.answers}
+        changed = False
+        for a in answers:
+            key = (app_id, a.question)
+            existing = by_key.get(key)
+            if a.status == "draft" or (a.status == "rejected" and not a.answer.strip()):
+                if existing:
+                    knowledge.answers.remove(existing)
+                    changed = True
+                continue
+            kind = "no_experience" if a.status == "no_experience" else "experience"
+            fields = {"topic": a.requirement or a.question, "question": a.question,
+                      "answer": "" if kind == "no_experience" else a.answer.strip(), "kind": kind,
+                      "evidence_id": a.evidence_id if a.status == "approved" else None,
+                      "app_id": app_id, "company": company}
+            if existing:
+                if any(getattr(existing, k) != v for k, v in fields.items()):
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
+                    existing.date = today
+                    changed = True
+            else:
+                knowledge.answers.append(KnowledgeAnswer(id=next_id("k", {k.id for k in knowledge.answers}),
+                                                         date=today, **fields))
+                changed = True
+        # A finalized answer to a reopened known gap ("kg-<id>") replaces the old entry.
+        for a in answers:
+            if a.question_id.startswith("kg-") and a.status != "draft":
+                old_id = a.question_id[3:]
+                kept = [k for k in knowledge.answers if k.id != old_id]
+                if len(kept) != len(knowledge.answers):
+                    knowledge.answers = kept
+                    changed = True
+        if changed:
+            self.save_knowledge(knowledge)
 
     def files(self, app_id: str) -> list[str]:
         path = self.app_path(app_id)

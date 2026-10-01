@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -22,8 +23,8 @@ from . import ai, ats, factcheck
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
-from .schema import TailoredResume
-from .store import ROOT, STATUSES, Store
+from .schema import AppAnswer, Knowledge, Preference, TailoredResume
+from .store import ROOT, STATUSES, Store, next_id
 
 MAX_PAGES = 2
 
@@ -190,7 +191,11 @@ def create_app(store: Store | None = None, engine: Engine | None = None) -> Fast
         out = {"id": app_id, "meta": store.meta(app_id), "jd": store.jd(app_id),
                "analysis": store.analysis(app_id), "files": store.files(app_id),
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
-               "report": None, "ats": None}
+               "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
+               "edits": 0, "report": None, "ats": None}
+        ai_draft = store.ai_tailored(app_id)
+        if ai_draft and tailored:
+            out["edits"] = len(ai.edited_claims(ai_draft, tailored))
         if tailored and store.profile_path.exists():
             out["report"] = _report_json(factcheck.check(store.profile(), tailored))
             out["ats"] = _ats_json(store, app_id, tailored)
@@ -210,7 +215,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None) -> Fast
     async def analyze(app_id: str):
         need_app(app_id)
         try:
-            analysis = await ai.analyze(engine, need_profile(), store.jd(app_id))
+            analysis = await ai.analyze(engine, need_profile(), store.jd(app_id), store.knowledge())
         except EngineError as e:
             raise _engine_call(e)
         store.save_analysis(app_id, analysis)
@@ -241,13 +246,16 @@ def create_app(store: Store | None = None, engine: Engine | None = None) -> Fast
         if not analysis:
             raise HTTPException(409, "Analyze the job description first.")
         try:
-            result = await ai.compose(engine, need_profile(), analysis, store.base_tailored(), body.guidance)
+            result = await ai.compose(engine, need_profile(), analysis, store.base_tailored(), body.guidance,
+                                      store.knowledge().active_preferences())
         except EngineError as e:
             raise _engine_call(e)
         except ValidationError as e:
             raise HTTPException(502, f"The model returned an invalid resume structure: {e}")
         store.save_tailored(app_id, result["tailored"])
-        store.update_meta(app_id, status="composed", repair_rounds=result["repair_rounds"])
+        store.save_ai_tailored(app_id, result["tailored"])
+        store.update_meta(app_id, status="composed", repair_rounds=result["repair_rounds"],
+                          guidance=body.guidance.strip())
         return get_application(app_id)
 
     @api.put("/applications/{app_id}/tailored")
@@ -285,6 +293,45 @@ def create_app(store: Store | None = None, engine: Engine | None = None) -> Fast
         out = get_application(app_id)
         out["build"] = {"pages": pages, "too_long": bool(pages and pages > MAX_PAGES)}
         return out
+
+    # -- gap answers + memory -------------------------------------------------------------
+    @api.put("/applications/{app_id}/answers")
+    def put_answers(app_id: str, answers: list[AppAnswer]):
+        need_app(app_id)
+        store.save_answers(app_id, answers)
+        return [a.model_dump(exclude_none=True) for a in store.answers(app_id)]
+
+    @api.get("/knowledge")
+    def get_knowledge():
+        return store.knowledge().model_dump(exclude_none=True)
+
+    @api.put("/knowledge")
+    def put_knowledge(data: dict):
+        try:
+            return store.save_knowledge(Knowledge.model_validate(data)).model_dump(exclude_none=True)
+        except ValidationError as e:
+            raise HTTPException(422, str(e))
+
+    @api.post("/applications/{app_id}/preferences")
+    async def suggest_preferences(app_id: str):
+        """Propose style preferences from this application's guidance and Review edits."""
+        need_app(app_id)
+        ai_draft, current = store.ai_tailored(app_id), store.tailored(app_id)
+        edits = ai.edited_claims(ai_draft, current) if ai_draft and current else []
+        guidance = [store.meta(app_id).get("guidance") or ""]
+        knowledge = store.knowledge()
+        try:
+            proposals = await ai.learn_preferences(engine, edits, guidance, [
+                p for p in knowledge.preferences if p.status != "dismissed"])
+        except EngineError as e:
+            raise _engine_call(e)
+        today = f"{dt.date.today():%Y-%m-%d}"
+        for prop in proposals:
+            knowledge.preferences.append(Preference(
+                id=next_id("p", {x.id for x in knowledge.preferences}), text=prop["text"].strip(),
+                rationale=prop.get("rationale", ""), status="proposed", source_app=app_id, date=today))
+        knowledge = store.save_knowledge(knowledge)
+        return {"edits": len(edits), "proposed": len(proposals), "knowledge": knowledge.model_dump(exclude_none=True)}
 
     @api.get("/applications/{app_id}/files/{name}")
     def get_file(app_id: str, name: str, download: bool = False):

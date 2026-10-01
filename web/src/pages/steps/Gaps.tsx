@@ -1,32 +1,103 @@
-import { useState } from 'react'
-import { api, type Proposal } from '../../api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { api, type AppAnswer, type Knowledge, type Proposal } from '../../api'
 import { cx, ErrorNote, Section, Spinner } from '../../ui'
 import type { StepProps } from '../Workspace'
 
-type Answer = { text: string; none: boolean }
 type Draft = Proposal & { state: 'pending' | 'approved' | 'rejected'; id?: string }
+type Question = { id: string; requirement: string; question: string; prefill_from?: string }
+
+const REOPENED = 'kg-' // question ids for known gaps the user asked to revisit
+
+function fmt(date?: string) {
+  return date ? new Date(date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+}
 
 export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: StepProps) {
-  const questions = app.analysis?.questions ?? []
-  const [answers, setAnswers] = useState<Record<string, Answer>>({})
+  const [knowledge, setKnowledge] = useState<Knowledge | null>(null)
+  const [answers, setAnswers] = useState<Record<string, AppAnswer>>(() =>
+    Object.fromEntries(app.answers.map((a) => [a.question_id, a])))
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [drafting, setDrafting] = useState(false)
-  const [guidance, setGuidance] = useState('')
+  const [guidance, setGuidance] = useState(app.meta.guidance ?? '')
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const saveTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => { api.knowledge().then(setKnowledge).catch(() => setKnowledge({ answers: [], preferences: [] })) }, [])
+
+  const kById = useMemo(() => Object.fromEntries((knowledge?.answers ?? []).map((k) => [k.id, k])), [knowledge])
+  const knownGaps = (app.analysis?.known_gaps ?? []).filter((g) => kById[g.knowledge_id])
+
+  // Analysis questions + known gaps the user reopened (persisted in answers.yaml).
+  const questions: Question[] = useMemo(() => [
+    ...(app.analysis?.questions ?? []),
+    ...Object.values(answers).filter((a) => a.question_id.startsWith(REOPENED))
+      .map((a) => ({ id: a.question_id, requirement: a.requirement, question: a.question })),
+  ], [app.analysis, answers])
+
+  // Pre-fill from past answers once knowledge has loaded (never over a saved answer).
+  useEffect(() => {
+    if (!knowledge) return
+    setAnswers((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const q of app.analysis?.questions ?? []) {
+        const k = q.prefill_from ? kById[q.prefill_from] : undefined
+        if (!k || next[q.id]) continue
+        next[q.id] = {
+          question_id: q.id, requirement: q.requirement, question: q.question, prefill_from: k.id,
+          answer: k.kind === 'experience' ? k.answer : '', status: k.kind === 'no_experience' ? 'no_experience' : 'draft',
+        }
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [knowledge, kById, app.analysis])
+
+  const persist = (next: Record<string, AppAnswer>, immediate = false) => {
+    window.clearTimeout(saveTimer.current)
+    const save = async () => {
+      setSaved('saving')
+      try {
+        await api.saveAnswers(app.id, Object.values(next))
+        setSaved('saved')
+      } catch (e) {
+        setError((e as Error).message)
+        setSaved('idle')
+      }
+    }
+    if (immediate) void save()
+    else saveTimer.current = window.setTimeout(save, 700)
+  }
+
+  const update = (q: Question, patch: Partial<AppAnswer>, immediate = false) => {
+    setAnswers((prev) => {
+      const base: AppAnswer = prev[q.id] ?? { question_id: q.id, requirement: q.requirement, question: q.question, answer: '', status: 'draft' }
+      const next = { ...prev, [q.id]: { ...base, ...patch } }
+      persist(next, immediate)
+      return next
+    })
+  }
+
+  const reopen = (requirement: string, knowledgeId: string) => {
+    const k = kById[knowledgeId]
+    const q: Question = {
+      id: `${REOPENED}${knowledgeId}`, requirement,
+      question: `Earlier you said you had no real experience with “${k?.topic ?? requirement}” (${fmt(k?.date)}). Has that changed? If so, where and what?`,
+    }
+    update(q, {}, true)
+  }
 
   const roles = profile.profile.roles
   const categories = profile.profile.skills.map((s) => s.category)
-  const answered = questions.filter((q) => answers[q.id]?.text.trim() && !answers[q.id]?.none)
+  const answered = questions.filter((q) => answers[q.id]?.answer.trim() && answers[q.id]?.status === 'draft')
   const pending = drafts.filter((d) => d.state === 'pending').length
-
-  const setAnswer = (id: string, patch: Partial<Answer>) =>
-    setAnswers((prev) => ({ ...prev, [id]: { ...(prev[id] ?? { text: '', none: false }), ...patch } }))
 
   async function draftEvidence() {
     setDrafting(true)
     setError(null)
     try {
-      const proposals = await api.proposals(app.id, answered.map((q) => ({ question_id: q.id, question: q.question, answer: answers[q.id].text })))
+      const proposals = await api.proposals(app.id, answered.map((q) => ({ question_id: q.id, question: q.question, answer: answers[q.id].answer })))
       setDrafts(proposals.map((p) => ({ ...p, state: 'pending' })))
     } catch (e) {
       setError((e as Error).message)
@@ -35,19 +106,29 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
     }
   }
 
+  const questionFor = (qid: string) => questions.find((x) => x.id === qid)
+
   async function approve(i: number) {
     const d = drafts[i]
     try {
-      const q = questions.find((x) => x.id === d.question_id)
+      const q = questionFor(d.question_id)
       const res = await api.addEvidence({
         target: d.target, text: d.text, skills: d.skills,
-        note: q ? `Q: ${q.question} A: ${answers[q.id]?.text ?? ''}` : undefined,
+        note: q ? `Q: ${q.question} A: ${answers[q.id]?.answer ?? ''}` : undefined,
       })
       setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, state: 'approved', id: res.id } : x)))
+      if (q) update(q, { status: 'approved', evidence_id: res.id }, true)
       await reloadProfile()
     } catch (e) {
       setError((e as Error).message)
     }
+  }
+
+  function reject(i: number) {
+    const d = drafts[i]
+    setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, state: 'rejected' } : x)))
+    const q = questionFor(d.question_id)
+    if (q) update(q, { status: 'rejected' }, true)
   }
 
   const patchDraft = (i: number, patch: Partial<Draft>) =>
@@ -58,8 +139,8 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
       'Choosing the headline and leading highlights…',
       'Reordering evidence by relevance to this role…',
       'Rephrasing in the job’s vocabulary — facts locked…',
+      'Applying your approved style preferences…',
       'Running the fact-check and repairing any issues…',
-      'Almost there — final fact-check pass…',
     ], async () => {
       setApp(await api.compose(app.id, guidance))
       go('review')
@@ -67,30 +148,47 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
 
   return (
     <div className="space-y-10">
-      <Section eyebrow="Gaps" title={questions.length ? 'A few questions before writing' : 'No gaps to ask about'}>
+      <Section
+        eyebrow="Gaps"
+        title={questions.length ? 'A few questions before writing' : 'No new gaps to ask about'}
+        aside={saved !== 'idle' && <span className="text-xs text-faint">{saved === 'saving' ? 'Saving…' : '✓ Answers saved'}</span>}
+      >
         <p className="mb-6 max-w-2xl text-muted">
           {questions.length
-            ? 'These requirements have weak or no evidence in your profile. Answer only with real experience. Anything you leave blank or mark “No real experience” stays a gap. AutoCV won’t paper over it.'
-            : 'Your profile has evidence for every must-have. You can go straight to composing.'}
+            ? 'These requirements have weak or no evidence in your profile. Answer only with real experience; anything left blank or marked “No real experience” stays a gap. Your answers are saved and remembered for future roles.'
+            : 'Your profile and past answers cover every must-have. You can go straight to composing.'}
         </p>
         <ol className="space-y-5">
           {questions.map((q, i) => {
-            const ans = answers[q.id] ?? { text: '', none: false }
+            const ans = answers[q.id]
+            const none = ans?.status === 'no_experience'
+            const locked = ans?.status === 'approved'
+            const prefill = ans?.prefill_from ? kById[ans.prefill_from] : undefined
             return (
               <li key={q.id} className="sheet animate-rise rounded p-5" style={{ animationDelay: `${i * 60}ms` }}>
                 <p className="text-[11px] uppercase tracking-wider text-muted">{q.requirement}</p>
                 <p className="mt-1 font-serif text-xl text-ink">{q.question}</p>
+                {prefill && (
+                  <p className="mt-2 rounded bg-wash px-3 py-1.5 text-xs text-muted">
+                    ↺ Pre-filled from your answer{prefill.company ? ` for ${prefill.company}` : ''} on {fmt(prefill.date)}. Confirm or update it.
+                  </p>
+                )}
                 <textarea
-                  className={cx('field mt-3 min-h-[84px]', ans.none && 'opacity-40')}
-                  disabled={ans.none}
+                  className={cx('field mt-3 min-h-[84px]', (none || locked) && 'opacity-50')}
+                  disabled={none || locked}
                   placeholder="Where, what you did, the scale. Plain facts are best."
-                  value={ans.text}
-                  onChange={(e) => setAnswer(q.id, { text: e.target.value })}
+                  value={ans?.answer ?? ''}
+                  onChange={(e) => update(q, { answer: e.target.value, status: 'draft', evidence_id: null })}
                 />
-                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-muted">
-                  <input type="checkbox" className="accent-rust" checked={ans.none} onChange={(e) => setAnswer(q.id, { none: e.target.checked })} />
-                  No real experience. Keep it as a gap.
-                </label>
+                {locked ? (
+                  <p className="mt-2 text-sm text-ok">✓ Saved to your profile as <span className="font-mono text-xs">{ans?.evidence_id}</span></p>
+                ) : (
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm text-muted">
+                    <input type="checkbox" className="accent-rust" checked={none}
+                      onChange={(e) => update(q, { status: e.target.checked ? 'no_experience' : 'draft' }, true)} />
+                    No real experience. Keep it as a gap (remembered, so I won’t ask again).
+                  </label>
+                )}
               </li>
             )
           })}
@@ -101,6 +199,30 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
           </button>
         )}
       </Section>
+
+      {knownGaps.length > 0 && (
+        <Section eyebrow="Remembered" title="Known gaps, not asked again">
+          <ul className="divide-y divide-rule/70">
+            {knownGaps.map((g) => {
+              const k = kById[g.knowledge_id]
+              const reopened = !!answers[`${REOPENED}${g.knowledge_id}`]
+              return (
+                <li key={g.knowledge_id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <span>
+                    <span className="text-ink">{g.requirement}</span>
+                    <span className="block text-xs text-muted">
+                      You answered “no real experience”{k.company ? ` for ${k.company}` : ''} on {fmt(k.date)}.
+                    </span>
+                  </span>
+                  <button className="btn btn-ghost text-sm text-rust" disabled={reopened} onClick={() => reopen(g.requirement, g.knowledge_id)}>
+                    {reopened ? 'Asked above ↑' : 'This has changed. Ask me again'}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </Section>
+      )}
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
@@ -145,7 +267,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
                 {d.state === 'pending' && (
                   <div className="mt-4 flex gap-2">
                     <button className="btn btn-primary" disabled={!d.text.trim()} onClick={() => approve(i)}>Approve & save</button>
-                    <button className="btn" onClick={() => patchDraft(i, { state: 'rejected' })}>Reject</button>
+                    <button className="btn" onClick={() => reject(i)}>Reject</button>
                   </div>
                 )}
               </div>
@@ -155,9 +277,11 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run }: S
       )}
 
       <Section eyebrow="Compose" title="Write the tailored resume">
-        <label className="block text-sm text-muted" htmlFor="guidance">Optional guidance, e.g. “lead with the mobile money fraud work” or “keep it hands-on”.</label>
+        <label className="block text-sm text-muted" htmlFor="guidance">
+          Optional guidance for this role, e.g. “lead with the mobile money fraud work”. Your approved style preferences are applied automatically.
+        </label>
         <textarea id="guidance" className="field mt-2 min-h-[64px]" value={guidance} onChange={(e) => setGuidance(e.target.value)} />
-        <div className="mt-5 flex items-center gap-4">
+        <div className="mt-5 flex flex-wrap items-center gap-4">
           <button className="btn btn-primary" onClick={compose} disabled={pending > 0}>
             {app.tailored ? 'Re-compose tailored resume →' : 'Compose tailored resume →'}
           </button>

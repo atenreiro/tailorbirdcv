@@ -188,6 +188,59 @@ class TailoredResume(_Model):
     extras: list[str] = Field(default_factory=list)  # ids, verbatim
 
 
+# --------------------------------------------------------------------------- memory
+#
+# What AutoCV remembers across applications. None of this is citable evidence: a
+# resume claim can only cite the MasterProfile. Knowledge steers *questions* (don't
+# re-ask, pre-fill) and active preferences steer *style*.
+
+
+class AppAnswer(_Model):
+    """One gap question on one application, as the user left it."""
+
+    question_id: str
+    requirement: str = ""
+    question: str
+    answer: str = ""
+    status: Literal["draft", "no_experience", "approved", "rejected"] = "draft"
+    evidence_id: str | None = None  # set when the drafted evidence was approved
+    prefill_from: str | None = None  # knowledge id the answer was pre-filled from
+
+
+class KnowledgeAnswer(_Model):
+    """A finalized answer, remembered for future roles."""
+
+    id: str
+    topic: str  # the requirement it answered, e.g. "Kubernetes / container security"
+    question: str
+    answer: str = ""
+    kind: Literal["experience", "no_experience"]
+    evidence_id: str | None = None
+    app_id: str | None = None
+    company: str | None = None
+    date: str
+
+
+class Preference(_Model):
+    """A writing-style rule learned from guidance and Review edits. Only `active`
+    preferences (approved by the user) are used."""
+
+    id: str
+    text: str
+    rationale: str = ""
+    status: Literal["proposed", "active", "dismissed"] = "proposed"
+    source_app: str | None = None
+    date: str
+
+
+class Knowledge(_Model):
+    answers: list[KnowledgeAnswer] = Field(default_factory=list)
+    preferences: list[Preference] = Field(default_factory=list)
+
+    def active_preferences(self) -> list[Preference]:
+        return [p for p in self.preferences if p.status == "active"]
+
+
 # --------------------------------------------------------------------------- io
 
 

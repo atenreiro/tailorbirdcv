@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, type Evidence, type Profile as P, type Track } from '../api'
+import { AnswersPanel, PreferencesPanel } from './Memory'
 import { cx, ErrorNote, Spinner } from '../ui'
 
-const TABS = ['Experience', 'Skills', 'Headlines', 'Summary & highlights', 'Projects & more', 'Synonyms', 'YAML'] as const
+const TABS = ['Experience', 'Skills', 'Headlines', 'Summary & highlights', 'Projects & more', 'Synonyms', 'Answers & gaps', 'Style preferences', 'YAML'] as const
 type Tab = (typeof TABS)[number]
 const TRACKS: Track[] = ['manager', 'ic', 'hybrid']
 
@@ -48,7 +50,8 @@ function EvidenceRow({ e, onChange, onDelete }: { e: Evidence; onChange: (e: Evi
 export default function Profile() {
   const [saved, setSaved] = useState<P | null>(null)
   const [p, setP] = useState<P | null>(null)
-  const [tab, setTab] = useState<Tab>('Experience')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'prefs' ? 'Style preferences' : params.get('tab') === 'answers' ? 'Answers & gaps' : 'Experience')
   const [yaml, setYaml] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -274,6 +277,9 @@ export default function Profile() {
           </section>
         </div>
       )}
+
+      {tab === 'Answers & gaps' && <AnswersPanel />}
+      {tab === 'Style preferences' && <PreferencesPanel />}
 
       {tab === 'YAML' && (
         <div>

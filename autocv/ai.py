@@ -16,7 +16,7 @@ import yaml
 
 from . import factcheck
 from .engine import Engine
-from .schema import MasterProfile, TailoredResume
+from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
 ROOT = Path(__file__).resolve().parent.parent
 INDUSTRIES = ["banking", "tech", "quant", "fintech", "telco", "consulting"]
@@ -52,13 +52,14 @@ def _profile_text(profile: MasterProfile) -> str:
 # --------------------------------------------------------------------------- analyze
 
 
-def analysis_schema(evidence_ids: list[str]) -> dict:
+def analysis_schema(evidence_ids: list[str], knowledge_ids: list[str] | None = None) -> dict:
     ids = {"type": "array", "items": {"type": "string", "enum": evidence_ids}}
+    kid = {"type": "string", "enum": [*(knowledge_ids or []), ""]}
     return {
         "type": "object",
         "additionalProperties": False,
         "required": ["company", "role", "industry", "track", "seniority", "location", "summary",
-                     "requirements", "keywords", "questions"],
+                     "requirements", "keywords", "questions", "known_gaps"],
         "properties": {
             "company": {"type": "string"},
             "role": {"type": "string"},
@@ -87,18 +88,31 @@ def analysis_schema(evidence_ids: list[str]) -> dict:
                 }}},
             "questions": {"type": "array", "items": {
                 "type": "object", "additionalProperties": False,
-                "required": ["id", "requirement", "question"],
+                "required": ["id", "requirement", "question", "prefill_from"],
                 "properties": {
                     "id": {"type": "string"},
                     "requirement": {"type": "string"},
                     "question": {"type": "string"},
+                    "prefill_from": {**kid, "description": "id of a related past answer to pre-fill, or empty"},
                 }}},
+            "known_gaps": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["requirement", "knowledge_id"],
+                "properties": {"requirement": {"type": "string"}, "knowledge_id": kid}}},
         },
     }
 
 
-async def analyze(engine: Engine, profile: MasterProfile, jd: str) -> dict:
+def _knowledge_text(knowledge: Knowledge | None) -> str:
+    if not knowledge or not knowledge.answers:
+        return "(none yet)"
+    return _yaml([{"id": k.id, "topic": k.topic, "question": k.question, "kind": k.kind,
+                   "answer": k.answer or None, "date": k.date} for k in knowledge.answers])
+
+
+async def analyze(engine: Engine, profile: MasterProfile, jd: str, knowledge: Knowledge | None = None) -> dict:
     ids = list(factcheck.evidence_index(profile))
+    kids = [k.id for k in knowledge.answers] if knowledge else []
     prompt = f"""TASK: analyze
 Analyze this job description against the candidate's profile.
 
@@ -110,18 +124,29 @@ partial = adjacent evidence; gap = none. Cite the evidence ids.
 - questions: for each must-have gap or weak partial (max 6), one concrete question asking whether the \
 candidate has real experience the profile does not show (where, what, scale). Ids q1, q2, ... \
 Do not ask about things the profile already evidences.
+- PAST ANSWERS are the candidate's answers on earlier applications (not evidence, never cite them):
+  - kind no_experience on the SAME topic → do NOT ask again; mark that requirement status gap with \
+note "Known gap — you answered no real experience on <date>", and list it in known_gaps with its id.
+  - a related but not identical past answer → still ask, and set prefill_from to that answer's id so \
+the candidate can confirm or update it. Otherwise prefill_from is "".
 
 INDUSTRY LENSES:
 {_yaml({k: v["signals"] for k, v in _config("industries.yaml").items()})}
+PAST ANSWERS:
+{_knowledge_text(knowledge)}
 PROFILE:
 {_profile_text(profile)}
 JOB DESCRIPTION:
 {jd}
 """
-    result = await engine.complete(SYSTEM, prompt, analysis_schema(ids))
-    known = set(ids)
+    result = await engine.complete(SYSTEM, prompt, analysis_schema(ids, kids))
+    known, known_k = set(ids), set(kids)
     for req in result.get("requirements", []):
         req["evidence"] = [e for e in req.get("evidence", []) if e in known]
+    for q in result.get("questions", []):
+        if q.get("prefill_from") not in known_k:
+            q["prefill_from"] = ""
+    result["known_gaps"] = [g for g in result.get("known_gaps", []) if g.get("knowledge_id") in known_k]
     return result
 
 
@@ -227,7 +252,7 @@ def tailored_schema(profile: MasterProfile, track: str | None) -> dict:
 
 
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,
-                    guidance: str) -> str:
+                    guidance: str, preferences: list[Preference] | None = None) -> str:
     industry, track = analysis.get("industry"), analysis.get("track")
     lens = _config("industries.yaml").get(industry, {})
     track_rules = _config("tracks.yaml").get(track, {})
@@ -254,8 +279,10 @@ INDUSTRY LENS ({industry}) — emphasis only, never facts:
 {_yaml(lens)}
 TRACK ({track}) — emphasis only:
 {_yaml(track_rules)}
-EXTRA GUIDANCE FROM THE CANDIDATE:
+EXTRA GUIDANCE FROM THE CANDIDATE (for this role):
 {guidance or "(none)"}
+STYLE PREFERENCES THE CANDIDATE APPROVED (apply them; they never override the rules or the facts):
+{chr(10).join(f"- {p.text}" for p in preferences or []) or "(none)"}
 JOB ANALYSIS:
 {_yaml(brief)}
 PROFILE (the only source of facts):
@@ -281,9 +308,10 @@ TAILORED RESUME:
 
 
 async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
-                  base: TailoredResume | None = None, guidance: str = "") -> dict:
+                  base: TailoredResume | None = None, guidance: str = "",
+                  preferences: list[Preference] | None = None) -> dict:
     schema = tailored_schema(profile, analysis.get("track"))
-    raw = await engine.complete(SYSTEM, _compose_prompt(profile, analysis, base, guidance), schema)
+    raw = await engine.complete(SYSTEM, _compose_prompt(profile, analysis, base, guidance, preferences), schema)
     rounds = 0
     while True:
         tailored = TailoredResume.model_validate(raw)
@@ -292,3 +320,75 @@ async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
             return {"tailored": tailored, "report": report, "repair_rounds": rounds}
         rounds += 1
         raw = await engine.complete(SYSTEM, _repair_prompt(profile, raw, report), schema)
+
+
+# --------------------------------------------------------------------------- learn style preferences
+
+
+def _claims(t: TailoredResume) -> list[tuple[str, Claim]]:
+    out: list[tuple[str, Claim]] = []
+    if t.summary:
+        out.append(("summary", t.summary))
+    out += [(f"highlight {i + 1}", c) for i, c in enumerate(t.highlights)]
+    for r in t.experience:
+        if r.scope:
+            out.append((f"{r.role} scope", r.scope))
+        out += [(f"{r.role} bullet", c) for c in r.bullets]
+    return out
+
+
+def edited_claims(ai_draft: TailoredResume, current: TailoredResume) -> list[dict]:
+    """What the user changed relative to the AI's draft, matching claims by the evidence
+    they cite (robust to reordering): edited, removed and user-added claims."""
+    remaining = _claims(current)
+    edits: list[dict] = []
+    for where, before in _claims(ai_draft):
+        match = next((i for i, (_, c) in enumerate(remaining) if set(c.sources) == set(before.sources)), None)
+        if match is None:
+            edits.append({"where": where, "before": before.text, "after": "(removed)"})
+            continue
+        _, after = remaining.pop(match)
+        if " ".join(after.text.split()) != " ".join(before.text.split()):
+            edits.append({"where": where, "before": before.text, "after": after.text})
+    edits += [{"where": where, "before": "(added by the candidate)", "after": c.text} for where, c in remaining]
+    if ai_draft.headline != current.headline:
+        edits.append({"where": "headline", "before": ai_draft.headline, "after": current.headline})
+    return edits
+
+
+def preferences_schema() -> dict:
+    return {
+        "type": "object", "additionalProperties": False, "required": ["preferences"],
+        "properties": {"preferences": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["text", "rationale"],
+            "properties": {
+                "text": {"type": "string", "description": "one short, reusable style rule"},
+                "rationale": {"type": "string", "description": "which edits/guidance show it"},
+            }}}},
+    }
+
+
+async def learn_preferences(engine: Engine, edits: list[dict], guidance: list[str],
+                            existing: list[Preference]) -> list[dict]:
+    """Propose reusable writing-style preferences from the candidate's edits and guidance."""
+    if not edits and not any(g.strip() for g in guidance):
+        return []
+    prompt = f"""TASK: learn_preferences
+The candidate reviewed AI-written resume drafts. Below are their edits (AI draft → their version) and \
+the guidance they gave. Infer at most 5 REUSABLE writing-style preferences that would make future drafts \
+need fewer edits — e.g. word choice, tone, sentence length, what to lead with, what to cut, formatting \
+habits. Rules:
+- Style only. Never a fact, number, employer, tool or claim about experience.
+- Only propose a preference with clear support in the edits or guidance; fewer is better than weak ones.
+- Skip anything already covered by the existing preferences.
+- Ignore edits that only fix facts or citations (those are not style).
+
+EXISTING PREFERENCES:
+{chr(10).join(f"- {p.text}" for p in existing) or "(none)"}
+GUIDANCE GIVEN:
+{chr(10).join(f"- {g}" for g in guidance if g.strip()) or "(none)"}
+EDITS:
+{_yaml(edits) if edits else "(none)"}
+"""
+    result = await engine.complete(SYSTEM, prompt, preferences_schema())
+    return [p for p in result.get("preferences", []) if p.get("text", "").strip()][:5]

@@ -53,8 +53,23 @@ export interface Analysis {
   summary: string
   requirements: Requirement[]
   keywords: { term: string; priority: 'must' | 'nice'; aliases: string[] }[]
-  questions: { id: string; requirement: string; question: string }[]
+  questions: { id: string; requirement: string; question: string; prefill_from?: string }[]
+  known_gaps?: { requirement: string; knowledge_id: string }[]
 }
+export type AnswerStatus = 'draft' | 'no_experience' | 'approved' | 'rejected'
+export interface AppAnswer {
+  question_id: string; requirement: string; question: string; answer: string
+  status: AnswerStatus; evidence_id?: string | null; prefill_from?: string | null
+}
+export interface KnowledgeAnswer {
+  id: string; topic: string; question: string; answer: string; kind: 'experience' | 'no_experience'
+  evidence_id?: string | null; app_id?: string | null; company?: string | null; date: string
+}
+export interface Preference {
+  id: string; text: string; rationale: string; status: 'proposed' | 'active' | 'dismissed'
+  source_app?: string | null; date: string
+}
+export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[] }
 export interface Issue { where: string; message: string }
 export interface Report { ok: boolean; errors: Issue[]; warnings: Issue[] }
 export interface Ats {
@@ -65,10 +80,12 @@ export interface Ats {
 export interface Meta {
   company: string; role: string; url?: string | null; status: string
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
+  guidance?: string
 }
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
   tailored: Tailored | null; report: Report | null; ats: Ats | null
+  answers: AppAnswer[]; edits: number
   build?: { pages: number | null; too_long: boolean }
 }
 export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[] }
@@ -125,6 +142,11 @@ export const api = {
   compose: (id: string, guidance: string) => req<Application>('POST', `/applications/${id}/compose`, { guidance }),
   saveTailored: (id: string, t: Tailored) => req<Application>('PUT', `/applications/${id}/tailored`, t),
   build: (id: string) => req<Application>('POST', `/applications/${id}/build`),
+  saveAnswers: (id: string, answers: AppAnswer[]) => req<AppAnswer[]>('PUT', `/applications/${id}/answers`, answers),
+  knowledge: () => req<Knowledge>('GET', '/knowledge'),
+  saveKnowledge: (k: Knowledge) => req<Knowledge>('PUT', '/knowledge', k),
+  suggestPreferences: (id: string) =>
+    req<{ edits: number; proposed: number; knowledge: Knowledge }>('POST', `/applications/${id}/preferences`),
   fileUrl: (id: string, name: string, download = false) =>
     `/api/applications/${id}/files/${encodeURIComponent(name)}${download ? '?download=true' : ''}`,
 }

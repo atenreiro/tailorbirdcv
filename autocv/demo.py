@@ -32,9 +32,21 @@ def _analyze(prompt: str) -> dict:
             {"term": "incident response", "priority": "must", "aliases": []},
             {"term": "Kubernetes", "priority": "nice", "aliases": []},
         ],
-        "questions": [{"id": "q1", "requirement": "Kubernetes / container security",
-                       "question": "Have you done hands-on Kubernetes or container security work? Where, and what?"}],
+        **_gap_questions(),
     }
+
+
+def _gap_questions() -> dict:
+    """Mimic the real analysis' use of past answers: known gap → not asked; related answer → pre-fill."""
+    topic = "Kubernetes / container security"
+    past = [k for k in Store.default().knowledge().answers if "kubernetes" in k.topic.lower()]
+    gap = next((k for k in past if k.kind == "no_experience"), None)
+    if gap:
+        return {"questions": [], "known_gaps": [{"requirement": topic, "knowledge_id": gap.id}]}
+    return {"questions": [{"id": "q1", "requirement": topic,
+                           "question": "Have you done hands-on Kubernetes or container security work? Where, and what?",
+                           "prefill_from": past[0].id if past else ""}],
+            "known_gaps": []}
 
 
 def _propose(prompt: str) -> dict:
@@ -49,6 +61,11 @@ def _compose(prompt: str) -> dict:
     return base.model_dump(exclude_none=True) if base else {}
 
 
+def _learn(prompt: str) -> dict:
+    return {"preferences": [{"text": "Demo preference: prefer plain verbs over buzzwords.",
+                             "rationale": "demo (fake engine)"}]}
+
+
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose})
+                       "repair": _compose, "learn_preferences": _learn})
