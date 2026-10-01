@@ -154,3 +154,23 @@ def test_ui_page_is_never_served_stale(env):
     client, _, _ = env
     res = client.get("/profile")
     assert res.status_code == 200 and res.headers["cache-control"] == "no-cache"
+
+
+def test_tracker_progress_reflects_real_state(env):
+    client, store, engine = env
+    app_id = client.post("/api/applications", json={"jd": JD}).json()["id"]
+    (row,) = client.get("/api/applications").json()
+    assert row["progress"] == {"seniority": None, "requirements": 0, "gaps_open": 0, "drafted": False,
+                               "verified": None, "critique": None}
+    app_id = client.post(f"/api/applications/{app_id}/analyze").json()["id"]
+    progress = lambda: client.get("/api/applications").json()[0]["progress"]  # noqa: E731
+    assert progress()["gaps_open"] == 1 and progress()["requirements"] == 1 and progress()["seniority"] == "Senior"
+    client.put(f"/api/applications/{app_id}/answers", json=[
+        {"question_id": "q1", "requirement": "Kubernetes", "question": "Any Kubernetes work?", "status": "no_experience"}])
+    assert progress()["gaps_open"] == 0
+    client.post(f"/api/applications/{app_id}/compose", json={})
+    assert progress()["drafted"] and progress()["verified"] is True
+    t = client.get(f"/api/applications/{app_id}").json()["tailored"]
+    t["highlights"][0]["text"] = "Cut false positives by 99%."
+    client.put(f"/api/applications/{app_id}/tailored", json=t)
+    assert progress()["verified"] is False

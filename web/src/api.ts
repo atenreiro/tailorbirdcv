@@ -117,7 +117,14 @@ export interface Application {
   length: { lines: number; budget: number } | null
   build?: { pages: number | null; too_long: boolean }
 }
-export interface AppSummary extends Meta { id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean; sent?: SentCopy | null }
+export interface Progress {
+  seniority?: string | null; requirements: number; gaps_open: number; drafted: boolean; verified: boolean | null
+  critique: { verdict: CritiqueResult['verdict']['decision']; open: number; stale: boolean } | null
+}
+export interface AppSummary extends Meta {
+  id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean; sent?: SentCopy | null
+  progress?: Progress | null
+}
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]

@@ -243,16 +243,41 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return {"id": new_id, "evidence": factcheck.evidence_index(profile)}
 
     # -- applications ------------------------------------------------------------------
+    def progress(app_id: str, profile) -> dict:
+        """What the tracker needs to say where an application stands and what's next."""
+        analysis = store.analysis(app_id) or {}
+        answers = {a.question_id: a for a in store.answers(app_id)}
+        settled = {"no_experience", "approved", "rejected"}
+        gaps_open = sum(1 for q in analysis.get("questions", [])
+                        if (a := answers.get(q["id"])) is None or (a.status not in settled and not a.answer.strip()))
+        tailored = store.tailored(app_id)
+        verified = None
+        if tailored and profile:
+            try:
+                verified = factcheck.check(profile, tailored).ok
+            except Exception:
+                verified = False
+        review = critique_payload(app_id)
+        hm_summary = None
+        if review:
+            latest = review["latest"]
+            hm_summary = {"verdict": latest["verdict"]["decision"], "stale": review["stale"],
+                          "open": sum(1 for i in latest["issues"] if i["id"] not in review["decisions"])}
+        return {"seniority": analysis.get("seniority"), "requirements": len(analysis.get("requirements", [])),
+                "gaps_open": gaps_open, "drafted": tailored is not None, "verified": verified, "critique": hm_summary}
+
     @api.get("/applications")
     def list_applications():
         apps = store.list_apps()
+        profile = store.profile() if store.profile_path.exists() else None
         for a in apps:
             try:
                 a["outputs_stale"] = store.outputs_stale(a["id"])
                 sent = store.sent_copies(a["id"])
                 a["sent"] = sent[0] if sent else None
+                a["progress"] = progress(a["id"], profile)
             except KeyError:
-                a["outputs_stale"], a["sent"] = False, None
+                a["outputs_stale"], a["sent"], a["progress"] = False, None, None
         return apps
 
     @api.post("/applications", status_code=201)
