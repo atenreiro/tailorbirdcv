@@ -124,6 +124,7 @@ export interface Progress {
 export interface AppSummary extends Meta {
   id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean; sent?: SentCopy | null
   progress?: Progress | null
+  reached?: 'built' | 'applied' | 'interview' | 'offer' | null; reached_at?: string | null
 }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 export interface Proposal {

@@ -30,6 +30,9 @@ from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, Tailo
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "rejected", "withdrawn"]
 PIPELINE = ["draft", "analyzed", "composed", "built"]  # set by the tool; the rest are set by the user
+# Funnel stages, in order. An application "reached" a stage once its status got there,
+# even if it later moved on to rejected/withdrawn.
+MILESTONES = ["built", "applied", "interview", "offer"]
 
 # One lock for every read-modify-write of private data. FastAPI runs sync endpoints in
 # a thread pool, so concurrent requests are real. Never hold it across an AI call.
@@ -243,7 +246,10 @@ class Store:
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
     def save_meta(self, app_id: str, meta: dict) -> dict:
-        meta = {**meta, "updated": dt.datetime.now().isoformat(timespec="seconds")}
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        meta = {**meta, "updated": now}
+        if meta.get("status") in MILESTONES and meta.get("status") not in meta.get("milestones", {}):
+            meta["milestones"] = {**meta.get("milestones", {}), meta["status"]: now}
         _write_json_atomic(self.apps_dir / app_id / "meta.json", meta)
         return meta
 
@@ -259,6 +265,25 @@ class Store:
             if current in PIPELINE and PIPELINE.index(status) > PIPELINE.index(current):
                 return self.update_meta(app_id, status=status)
             return self.meta(app_id)
+
+    def reached(self, app_id: str) -> tuple[str | None, str | None]:
+        """The furthest funnel stage this application reached, and when. Uses recorded
+        milestones, falling back to evidence for applications from before they were
+        recorded: the current status, a frozen sent copy, or built files."""
+        meta = self.meta(app_id)
+        seen = dict(meta.get("milestones", {}))
+        status = meta.get("status")
+        if status in MILESTONES:
+            seen.setdefault(status, meta.get("updated"))
+        sent = self.sent_copies(app_id)
+        if sent:
+            seen.setdefault("applied", sent[-1].get("created"))
+        pdf = next((f for f in self.app_path(app_id).glob("*.pdf")), None)
+        if pdf or meta.get("built_hash"):
+            when = dt.datetime.fromtimestamp(pdf.stat().st_mtime).isoformat(timespec="seconds") if pdf else meta.get("updated")
+            seen.setdefault("built", when)
+        top = max((MILESTONES.index(k) for k in seen if k in MILESTONES), default=None)
+        return (None, None) if top is None else (MILESTONES[top], seen[MILESTONES[top]])
 
     # -- outputs ---------------------------------------------------------------------------
     def tailored_hash(self, app_id: str) -> str:

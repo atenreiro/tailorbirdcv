@@ -177,3 +177,35 @@ def test_history_ids_are_confined(env):
     assert client.get("/api/history/profile/..%2F..%2Fprofile").status_code == 404
     assert client.get("/api/history/secrets").status_code == 404
     assert client.post("/api/history/profile/nope/restore").status_code == 404
+
+
+# ---- funnel milestones ---------------------------------------------------------------------
+
+def reached(client):
+    (row,) = client.get("/api/applications").json()
+    return row["reached"], row["reached_at"]
+
+
+def test_funnel_remembers_the_furthest_stage_after_rejection(env):
+    client, store, app_id, _ = env
+    assert reached(client) == (None, None)                  # composed: not in the funnel yet
+    client.post(f"/api/applications/{app_id}/build")
+    assert reached(client)[0] == "built"
+    client.post(f"/api/applications/{app_id}/freeze?build=true&mark_applied=true")
+    client.patch(f"/api/applications/{app_id}", json={"status": "interview"})
+    client.patch(f"/api/applications/{app_id}", json={"status": "rejected"})
+    stage, when = reached(client)
+    assert stage == "interview" and when == store.meta(app_id)["milestones"]["interview"]
+    assert set(store.meta(app_id)["milestones"]) == {"built", "applied", "interview"}
+
+
+def test_funnel_falls_back_to_evidence_for_older_applications(env):
+    client, store, app_id, _ = env
+    client.post(f"/api/applications/{app_id}/freeze?build=true&mark_applied=true")
+    meta = store.meta(app_id)
+    meta.pop("milestones")
+    meta["status"] = "rejected"
+    from autocv.store import _write_json_atomic
+    _write_json_atomic(store.app_path(app_id) / "meta.json", meta)   # as written before milestones existed
+    stage, when = reached(client)
+    assert stage == "applied" and when == store.sent_copies(app_id)[-1]["created"]

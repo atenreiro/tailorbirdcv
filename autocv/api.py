@@ -276,8 +276,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 sent = store.sent_copies(a["id"])
                 a["sent"] = sent[0] if sent else None
                 a["progress"] = progress(a["id"], profile)
+                a["reached"], a["reached_at"] = store.reached(a["id"])
             except KeyError:
                 a["outputs_stale"], a["sent"], a["progress"] = False, None, None
+                a["reached"], a["reached_at"] = None, None
         return apps
 
     @api.post("/applications", status_code=201)
