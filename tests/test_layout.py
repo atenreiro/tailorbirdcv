@@ -114,3 +114,20 @@ def test_old_company_named_resumes_lose_the_company(store):
     assert store.files(app["id"]) == ["Jane_Example_Resume.docx", "Jane_Example_Resume.pdf", "Jane_Example_Resume_v2.docx"]
     sent = store.app_path(app["id"]) / "sent" / "2026-10-01_120000"
     assert [p.name for p in sent.iterdir()] == ["Jane_Example_Resume.pdf"]  # sent copies untouched
+
+
+def test_deleting_an_application_keeps_answers_but_drops_their_link(store):
+    old = _old_style(store, "2026-10-01_northwind_platform-engineer", "Northwind", "Platform Engineer")
+    (store.private / "knowledge.yaml").write_text(yaml.safe_dump({
+        "answers": [{"id": "k1", "topic": "K8s", "question": "Any K8s?", "answer": "", "kind": "no_experience",
+                     "app_id": old, "company": "Northwind", "date": "2026-10-01"}],
+        "preferences": [{"id": "p1", "text": "Plain verbs.", "rationale": "x", "status": "active",
+                         "source_app": old, "date": "2026-10-01"}]}))
+    store.migrate_layout()
+    store.delete_app("northwind~2026-10-01_platform-engineer")
+    assert store.list_apps() == [] and not (store.apps_dir / "binance").exists()
+    k = store.knowledge()
+    assert k.answers[0].app_id is None and k.answers[0].company == "Northwind"   # the answer is kept
+    assert k.preferences[0].source_app is None
+    with pytest.raises(KeyError):
+        store.app_path(old)                                                    # old id no longer resolves

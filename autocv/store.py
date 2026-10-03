@@ -302,8 +302,9 @@ class Store:
                         renamed.append(new)
         return renamed
 
-    def _repoint_knowledge(self, renamed: dict[str, str]) -> None:
-        """Answers and style preferences remember which application they came from."""
+    def _repoint_knowledge(self, renamed: dict[str, str | None]) -> None:
+        """Answers and style preferences remember which application they came from
+        (None: the application was deleted; the answer itself is kept)."""
         if not self.knowledge_path.exists() or not renamed:
             return
         knowledge = self.knowledge()
@@ -318,11 +319,19 @@ class Store:
             self.save_knowledge(knowledge, cause="application folders reorganized")
 
     def delete_app(self, app_id: str) -> None:
+        """Delete an application folder (job description, drafts, built files, sent copies).
+        Remembered answers and style preferences are kept; they just stop linking to it."""
         import shutil
         with _LOCK:
             path = self.app_path(app_id)
+            canonical = self.app_id_for(path)
             shutil.rmtree(path)
             self._prune(path.parent)
+            legacy = self._legacy_ids()
+            gone = [old for old, new in legacy.items() if new == canonical]
+            if gone:
+                _write_json_atomic(self.apps_dir / LEGACY_IDS, {k: v for k, v in legacy.items() if k not in gone})
+            self._repoint_knowledge({i: None for i in [canonical, *gone]})
 
     def create_app(self, company: str, role: str, jd: str, url: str | None = None) -> str:
         app_id, path = self._new_folder(company, f"{dt.date.today():%Y-%m-%d}", role)

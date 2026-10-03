@@ -16,7 +16,7 @@ const STAGE_TITLE = Object.fromEntries(COLS) as Record<Stage, string>
 const LANE_LIMIT = 5
 
 type Tone = 'warn' | 'act' | 'ok' | 'mute'
-type Kind = 'brief' | 'gaps' | 'review' | 'rebuild' | 'build' | 'critique' | 'apply'
+type Kind = 'brief' | 'gaps' | 'review' | 'rebuild' | 'build' | 'critique' | 'apply' | 'delete'
 interface Next { text: string; short?: string; tone: Tone; cta?: string; kind?: Kind }
 // text colour, dot colour, soft background
 const TONE: Record<Tone, [string, string, string]> = {
@@ -198,15 +198,18 @@ export default function Applications() {
     return () => window.removeEventListener('keydown', onKey)
   }, [visible, sel, open, nav, show, close])
 
-  async function run(app: AppSummary, kind: Kind, fn: () => Promise<unknown>) {
-    if (busy) return
+  /** Runs an action for one application, then refreshes the list. Returns whether it succeeded. */
+  async function run(app: AppSummary, kind: Kind, fn: () => Promise<unknown>): Promise<boolean> {
+    if (busy) return false
     setError(null)
     setBusy({ id: app.id, kind })
     try {
       await fn()
       await reload()
+      return true
     } catch (e) {
       setError((e as Error).message)
+      return false
     } finally {
       setBusy(null)
     }
@@ -236,6 +239,12 @@ export default function Applications() {
       else void setStatus(app, 'built')
     } else if (to === 'flight') void setStatus(app, 'applied')
     else void setStatus(app, 'rejected')
+  }
+
+  // Only called after the user confirms in the panel. The card is gone afterwards, so focus
+  // falls back to the search box.
+  async function remove(app: AppSummary) {
+    if (await run(app, 'delete', () => api.remove(app.id))) close()
   }
 
   async function saveNotes(app: AppSummary) {
@@ -391,20 +400,24 @@ export default function Applications() {
         className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
           open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
         {a && (
-          <Sheet a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
+          <Sheet key={a.id} a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
             onClose={close} onNotes={(text) => setDraft({ id: a.id, text })} onNotesBlur={() => saveNotes(a)}
-            onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} />
+            onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} onDelete={() => void remove(a)} />
         )}
       </aside>
     </div>
   )
 }
 
-function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct }: {
+function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete }: {
   a: AppSummary; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
   closeRef: RefObject<HTMLButtonElement | null>
   onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string) => void; onAct: (n: Next) => void
+  onDelete: () => void
 }) {
+  const [confirming, setConfirming] = useState(false)
+  const deleting = busy?.id === a.id && busy.kind === 'delete'
+  const sentCount = detail?.sent.length ?? (a.sent ? 1 : 0)
   const p = a.progress
   const n = nextOf(a)
   const working = busy?.id === a.id
@@ -527,6 +540,32 @@ function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur
         {!a.files.length && !a.sent && <span className="text-[13px] text-faint">No files built yet</span>}
         <Link to={`/a/${a.id}`} className="btn btn-dark ml-auto h-9 px-3.5 hover:text-white">Open workspace →</Link>
       </div>
+
+      {confirming ? (
+        <div role="alertdialog" aria-labelledby={`del-title-${a.id}`} aria-describedby={`del-desc-${a.id}`}
+          className="flex flex-col gap-3 border-t border-bad/30 bg-bad-soft px-[26px] py-4">
+          <p id={`del-title-${a.id}`} className="font-semibold text-bad">Delete {a.company} — {a.role}?</p>
+          <p id={`del-desc-${a.id}`} className="text-[13px] leading-[1.45] text-body text-pretty">
+            This permanently removes its job description, analysis, tailored resume and built files
+            {sentCount ? <>, and <strong>{sentCount === 1 ? 'the read-only copy you sent' : `${sentCount} read-only sent copies`}</strong></> : null}.
+            Your master profile and remembered answers are kept. This can’t be undone.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button autoFocus className="btn h-9 px-3.5" disabled={deleting} onClick={() => setConfirming(false)}>Cancel</button>
+            <button className="btn h-9 border-bad bg-bad px-3.5 font-semibold text-white hover:border-[#8f1c13] hover:bg-[#8f1c13]"
+              disabled={deleting} onClick={onDelete}>
+              {deleting && <Spinner />}{deleting ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-end border-t border-line px-[26px] py-2">
+          <button className="cursor-pointer rounded-md px-2 py-1 text-[13px] text-muted hover:bg-bad-soft hover:text-bad disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!!busy} onClick={() => setConfirming(true)}>
+            Delete application…
+          </button>
+        </div>
+      )}
     </>
   )
 }
