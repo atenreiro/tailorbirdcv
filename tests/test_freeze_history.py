@@ -28,11 +28,12 @@ def env(tmp_path, monkeypatch):
     shutil.copy(FIX / "tailored.yaml", private / "source" / "base_tailored.yaml")
     pages = {"n": 2}
 
-    def fake_to_pdf(docx, pdf=None, timeout=0):  # stands in for Word
+    def fake_to_pdf(docx, pdf=None, timeout=0, engine=None):  # stands in for Word/LibreOffice
         out = pdf or docx.with_suffix(".pdf")
         out.write_bytes(b"%PDF-1.4 stand-in")
         return out
     monkeypatch.setattr(pdfmod, "to_pdf", fake_to_pdf)
+    monkeypatch.setattr(pdfmod, "resolve", lambda preferred=None, engines=None: preferred or "word")
     monkeypatch.setattr(pdfmod, "page_count", lambda p: pages["n"])
     engine = FakeEngine({"analyze": ANALYSIS, "compose": TAILORED, "repair": TAILORED,
                          "learn_preferences": {"preferences": [{"text": "Prefer plain verbs.", "rationale": "x"}]}})

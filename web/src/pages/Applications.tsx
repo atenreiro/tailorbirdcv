@@ -109,8 +109,8 @@ function NextLine({ a, working }: { a: AppSummary; working: boolean }) {
 }
 
 const BUSY_TEXT: Partial<Record<Kind, string>> = {
-  rebuild: 'Rebuilding the PDF and DOCX from the current resume (Word opens briefly)…',
-  build: 'Building the PDF and DOCX (Word opens briefly)…',
+  rebuild: 'Rebuilding the PDF and DOCX from the current resume…',
+  build: 'Building the PDF and DOCX…',
   critique: 'Reading the resume as the hiring manager. This takes about a minute…',
   apply: 'Building a fresh PDF and freezing the copy you’re sending…',  // only while marking applied runs a build
   status: 'Saving…',

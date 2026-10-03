@@ -3,6 +3,7 @@ import Applications from './pages/Applications'
 import Funnel from './pages/Funnel'
 import NewApplication from './pages/NewApplication'
 import Profile from './pages/Profile'
+import Settings from './pages/Settings'
 import Workspace from './pages/Workspace'
 import { cx } from './lib'
 import { EngineBadge } from './ui'
@@ -34,7 +35,16 @@ function Masthead() {
           <NavLink to="/new" className={link}>New<span className="hidden sm:inline">&nbsp;tailoring</span></NavLink>
           <NavLink to="/profile" className={link}><span className="hidden sm:inline">Master&nbsp;</span>Profile</NavLink>
         </nav>
-        <div className="ml-auto"><EngineBadge /></div>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <EngineBadge />
+          <NavLink to="/settings" aria-label="Settings" title="Settings"
+            className={({ isActive }) => cx('grid size-8 shrink-0 place-items-center rounded-md transition-colors sm:size-9', isActive ? 'bg-[#1f2738] text-white' : 'text-[#9aa3b5] hover:text-white')}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+            </svg>
+          </NavLink>
+        </div>
       </div>
     </header>
   )
@@ -52,6 +62,7 @@ export default function App() {
           <Route path="/new" element={<NewApplication />} />
           <Route path="/a/:id" element={<Workspace />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </>

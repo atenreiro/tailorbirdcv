@@ -1,5 +1,7 @@
+import { Link } from 'react-router-dom'
 import { api, ApiError, type Profile, type Tailored } from '../../api'
 import { cx, fmtDate } from '../../lib'
+import { pdfEngineName, useSettings } from '../../settings'
 import { Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
@@ -17,11 +19,14 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
   const ok = !!app.report?.ok
   const unsaved = !!memo.review
   const overBudget = !!app.length && app.length.lines > app.length.budget
+  const settings = useSettings()
+  const engine = pdfEngineName(settings)
+  const via = engine ? ` with ${engine}` : ''
 
   const build = () =>
     run('Typesetting your resume', [
       'Rendering your exact resume design…',
-      'Converting to PDF through Microsoft Word…',
+      `Converting to PDF${via}…`,
       'Counting pages…',
     ], async () => setApp(await api.build(app.id)), false)
 
@@ -31,7 +36,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
         setApp(await api.freeze(app.id))
       } catch (e) {
         if (!(e instanceof ApiError) || e.code !== 'needs_build') throw e
-        if (window.confirm(`${e.message}\n\nBuild a fresh PDF now and freeze that? (Word will open briefly.)`)) {
+        if (window.confirm(`${e.message}\n\nBuild a fresh PDF now and freeze that?`)) {
           setApp(await api.freeze(app.id, { build: true }))
         }
       }
@@ -71,7 +76,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
           </div>
           {unsaved && <p className="rounded-lg bg-[#f6ead2] px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
           {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
-          {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF with Microsoft Word. The first run may ask macOS for permission to control Word.</p>}
+          {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF{via}.{settings?.pdf_effective === 'word' ? ' The first run may ask macOS for permission to control Word.' : ''}</p>}
           {ok && !docx && overBudget && (
             <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
@@ -108,10 +113,16 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
           )}
           <div className="flex flex-wrap gap-2">
             <button className={btnPrimary} disabled={!ok || unsaved} onClick={build}
-              title={unsaved ? 'Save your Review edits first' : !ok ? 'Fix the fact-check issues in Review first' : 'Render the .docx and convert it to PDF with Microsoft Word'}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
+              title={unsaved ? 'Save your Review edits first' : !ok ? 'Fix the fact-check issues in Review first' : `Render the .docx and convert it to PDF${via}`}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
             {(tooLong || (overBudget && !docx)) && <button className={btn} disabled={!ok || unsaved} onClick={trim}>Trim with AI</button>}
             <button className={btn} onClick={() => go('review')}>Back to review</button>
           </div>
+          {settings && (
+            <p className="text-xs text-faint">
+              {engine ? <>PDFs are made with {engine}. </> : <>No PDF app found: only the .docx can be built. </>}
+              <Link to="/settings" className="text-accent hover:text-accent-strong">Change in Settings</Link>
+            </p>
+          )}
         </section>
 
         <section className={cx(card, 'animate-rise flex flex-col gap-2.5 px-[18px] py-4 text-[13px]')} style={{ animationDelay: '60ms' }}>

@@ -191,6 +191,27 @@ class Store:
     def apps_dir(self) -> Path:
         return self.private / "applications"
 
+    # -- settings ------------------------------------------------------------------
+    SETTINGS = {"pdf_engine": None}  # None = automatic (Word when installed, else LibreOffice)
+
+    @property
+    def settings_path(self) -> Path:
+        return self.private / "settings.json"
+
+    def settings(self) -> dict:
+        try:
+            saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        return {k: saved.get(k, v) for k, v in self.SETTINGS.items()} if isinstance(saved, dict) else dict(self.SETTINGS)
+
+    def save_settings(self, patch: dict) -> dict:
+        with self.lock:
+            data = {**self.settings(), **{k: v for k, v in patch.items() if k in self.SETTINGS}}
+            self.private.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(self.settings_path, data)
+            return data
+
     # -- profile -------------------------------------------------------------------
     def profile(self) -> MasterProfile:
         return load_profile(self.profile_path)

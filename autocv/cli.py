@@ -105,7 +105,7 @@ def cmd_baseline(args) -> int:
     _print_report(report)
     if not args.no_pdf:
         from .pdf import page_count, to_pdf
-        print(f"pages: {page_count(to_pdf(out))}")
+        print(f"pages: {page_count(to_pdf(out, engine=STORE.settings()['pdf_engine']))}")
     print(f"→ {out}")
     return 0 if report.ok and not diff else 1
 
@@ -163,7 +163,7 @@ def cmd_build(args) -> int:
     pages = None
     if not args.no_pdf:
         from .pdf import page_count, to_pdf
-        pdf = to_pdf(docx)
+        pdf = to_pdf(docx, engine=STORE.settings()["pdf_engine"])
         pages = page_count(pdf)
         print(f"pdf:  {pdf} ({pages} pages)")
         if pages > args.max_pages:

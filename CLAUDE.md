@@ -11,7 +11,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 6. Personal data lives only in `private/` (gitignored). Never commit it, never paste it into tests — tests use `tests/fixtures/` (fictional).
 
 ## Layout
-- `autocv/` — `schema.py` (models), `ingest.py` (docx → profile), `render.py` (pixel-faithful docx), `factcheck.py` (blocking gate), `ats.py` (keyword coverage), `pdf.py` (Word → PDF), `cli.py`.
+- `autocv/` — `schema.py` (models), `ingest.py` (docx → profile), `render.py` (pixel-faithful docx), `factcheck.py` (blocking gate), `ats.py` (keyword coverage), `pdf.py` (Word/LibreOffice → PDF), `cli.py`.
 - `config/industries.yaml`, `config/tracks.yaml` — emphasis heuristics only, never facts.
 - `templates/base.docx` — theme/page setup with empty body, no PII.
 - `.claude/skills/profile` (`/profile`) and `.claude/skills/tailor` (`/tailor`).
@@ -30,7 +30,9 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - AI Trim never saves: `/trim` returns a fact-checked `trim_proposal` that the UI loads into Review as unsaved edits.
 - Marking an application **applied** freezes a read-only copy of exactly what was sent (`sent/<timestamp>/`); stale or missing PDFs → "Build & freeze". Never edit `sent/`.
 - Every save of `profile.yaml`/`knowledge.yaml` keeps the previous version in `private/history/` (content changes only; kept forever); restore is itself undoable and merges `retired_ids`.
-- PDFs come from Microsoft Word driven by `osascript` (`pdf.py`): launched hidden in the background, never activated, only our document is opened/closed, and Word is quit only if AutoCV started it. Conversions run in the fixed folder `private/word/`, so Word's sandbox "Grant File Access" prompt appears at most once.
+- PDFs come from **Microsoft Word or LibreOffice** (`pdf.py`), chosen in Settings (`private/settings.json`, `GET/PUT /api/settings`); when both are installed Word is the default, and a chosen engine that's missing falls back to the other. One conversion runs at a time, always in the fixed folder `private/word/` (so Word's sandbox "Grant File Access" prompt appears at most once).
+  - Word is driven by `osascript`: launched hidden in the background, never activated, only our document is opened/closed, and Word is quit only if AutoCV started it.
+  - LibreOffice runs headless with its own profile (`private/libreoffice/`); the fonts the docx names are symlinked into the profile (from the system and Word's bundle) so line breaks match Word, and digit ranges ("2–4") are glued with U+2060 in LibreOffice's copy only — never in the user's .docx.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands

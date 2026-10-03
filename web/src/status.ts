@@ -16,7 +16,7 @@ export async function changeStatus(id: string, status: string, opts: {
     return { meta: await api.patch(id, outcome ? { status, outcome } : { status }) }
   } catch (e) {
     if (!(e instanceof ApiError) || e.code !== 'needs_build' || alreadySent) throw e
-    const ok = window.confirm(`${e.message}\n\nBuild a fresh PDF now and freeze the exact copy you're sending? (Word will open briefly.)`)
+    const ok = window.confirm(`${e.message}\n\nBuild a fresh PDF now and freeze the exact copy you're sending?`)
     if (!ok) return null
     onBuilding?.(true)
     try {

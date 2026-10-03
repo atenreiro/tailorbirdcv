@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ValidationError
 
-from . import ai, ats, critique as hm, factcheck
+from . import ai, ats, critique as hm, factcheck, pdf as pdfmod
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
@@ -42,6 +42,10 @@ class NewApplication(BaseModel):
     url: str | None = None
     company: str = ""
     role: str = ""
+
+
+class SettingsPatch(BaseModel):
+    pdf_engine: Literal[tuple(pdfmod.ENGINES)] | None = None  # type: ignore[valid-type]  # None = automatic
 
 
 class MetaPatch(BaseModel):
@@ -231,6 +235,26 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.get("/engine")
     async def engine_status():
         return await engine.status()
+
+    def settings_payload():
+        settings, engines = store.settings(), pdfmod.detect()
+        try:
+            effective = pdfmod.resolve(settings["pdf_engine"], engines)
+        except RuntimeError:
+            effective = None
+        return {**settings, "pdf_engines": engines, "pdf_effective": effective}
+
+    @api.get("/settings")
+    async def get_settings():
+        return await asyncio.to_thread(settings_payload)
+
+    @api.put("/settings")
+    async def put_settings(patch: SettingsPatch):
+        if patch.pdf_engine and not any(e["id"] == patch.pdf_engine and e["available"]
+                                        for e in await asyncio.to_thread(pdfmod.detect)):
+            raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this Mac.")
+        store.save_settings(patch.model_dump(include=patch.model_fields_set))
+        return await asyncio.to_thread(settings_payload)
 
     @api.get("/profile")
     def get_profile():
@@ -547,12 +571,14 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
             pages = None
             if pdf:
-                from .pdf import page_count, to_pdf
+                preferred, name = store.settings()["pdf_engine"], "PDF engine"
                 try:
-                    pages = page_count(await asyncio.to_thread(to_pdf, docx))
-                except Exception as e:  # Word missing / automation permission denied / timeout
+                    name = pdfmod.NAMES[await asyncio.to_thread(pdfmod.resolve, preferred)]
+                    pdf_file = await asyncio.to_thread(pdfmod.to_pdf, docx, engine=preferred)
+                    pages = pdfmod.page_count(pdf_file)
+                except Exception as e:  # no engine / automation permission denied / timeout
                     store.record_build(app_id, built_hash, profile_version, None)
-                    raise HTTPException(500, f"DOCX built, but PDF conversion via Word failed: {e}")
+                    raise HTTPException(500, f"DOCX built, but PDF conversion via {name} failed: {e}")
             store.record_build(app_id, built_hash, profile_version, pages)
             store.advance_status(app_id, "built")
             return pages

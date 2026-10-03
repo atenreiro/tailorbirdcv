@@ -170,7 +170,7 @@ export default function Workspace() {
     try {
       const r = await changeStatus(app!.id, status, { alreadySent, outcome, onBuilding: (on) => setWorking(on ? {
         title: 'Building & freezing the copy you send', ai: false,
-        lines: ['Rendering your resume…', 'Converting to PDF through Microsoft Word…', 'Saving a read-only sent copy…'],
+        lines: ['Rendering your resume…', 'Converting to PDF…', 'Saving a read-only sent copy…'],
       } : null) })
       if (!r) return
       // reload: applying freezes a sent copy, which the status response doesn't include
