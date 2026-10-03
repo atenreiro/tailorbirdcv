@@ -4,7 +4,7 @@ import { api, type Evidence, type LeadItem, type Profile as P, type Track } from
 import { AnswersPanel, PreferencesPanel, useKnowledge } from './Memory'
 import { HistoryPanel } from './History'
 import { setUnsaved } from '../unsaved'
-import { cx, ErrorNote, SaveDock, Spinner } from '../ui'
+import { cx, ErrorNote, SaveDock, Spinner, useTitle } from '../ui'
 
 type Tab = 'experience' | 'summary' | 'skills' | 'headlines' | 'projects' | 'synonyms' | 'answers' | 'prefs' | 'history' | 'yaml'
 const SECTIONS: [string, [Tab, string][]][] = [
@@ -108,6 +108,7 @@ export default function Profile() {
   const [conflict, setConflict] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const kn = useKnowledge()
+  useTitle(['Master profile'])
 
   const load = () =>
     api.profile().then((r) => { setSaved(r.profile); setP(structuredClone(r.profile)); setVersion(r.version); setConflict(false) })

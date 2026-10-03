@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppSummary, type ScoreKey } from '../api'
-import { cx, ErrorNote, Spinner, StatusPill } from '../ui'
+import { cx, ErrorNote, Spinner, StatusPill, useTitle } from '../ui'
 import { changeStatus } from '../status'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
@@ -75,6 +75,17 @@ function steps(a: AppSummary) {
   ]
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+/** Keep Tab / Shift+Tab cycling through the panel's controls while it's open. */
+function trapFocus(e: KeyboardEvent, root: HTMLElement) {
+  const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement)
+  if (!items.length) return
+  const first = items[0], last = items[items.length - 1], active = document.activeElement as HTMLElement | null
+  if (!active || !root.contains(active)) { e.preventDefault(); (e.shiftKey ? last : first).focus() }
+  else if (e.shiftKey && active === first) { e.preventDefault(); last.focus() }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus() }
+}
+
 function Meter({ a }: { a: AppSummary }) {
   return (
     <div title="Brief · Gaps · Review · Export" className="grid flex-1 grid-cols-4 gap-[3px]">
@@ -105,6 +116,7 @@ function savedView(): View {
 }
 
 export default function Applications() {
+  useTitle(['Applications'])
   const nav = useNavigate()
   const [apps, setApps] = useState<AppSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +132,9 @@ export default function Applications() {
   const [over, setOver] = useState<Stage | null>(null)
   const [expanded, setExpanded] = useState<Partial<Record<Stage, boolean>>>({})
   const closeBtn = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const opener = useRef<HTMLElement | null>(null)  // the card/row that opened the panel; focus returns there
 
   const reload = useCallback(() => api.applications().then(setApps).catch((e) => setError(e.message)), [])
   useEffect(() => { void reload() }, [reload])
@@ -148,24 +163,37 @@ export default function Applications() {
 
   useEffect(() => { if (open) closeBtn.current?.focus({ preventScroll: true }) }, [open])
 
-  // ↑ ↓ (or j k) move and open the sheet; Enter opens the workspace; Esc closes.
+  const show = useCallback((id: string, from?: HTMLElement | null) => {
+    opener.current = from ?? document.querySelector<HTMLElement>(`[data-app-id="${CSS.escape(id)}"]`)
+    setSel(id)
+    setOpen(true)
+  }, [])
+  // Close and hand focus back to whatever opened the panel (or the search box if it's gone).
+  const close = useCallback(() => {
+    setOpen(false)
+    const back = opener.current
+    setTimeout(() => (back?.isConnected ? back : search.current)?.focus({ preventScroll: true }), 0)
+  }, [])
+
+  // ↑ ↓ (or j k) move and open the sheet; Enter opens the workspace; Esc closes; Tab stays in the open panel.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpen(false); return }
-      if (/INPUT|TEXTAREA|SELECT/.test((document.activeElement as HTMLElement | null)?.tagName ?? '')) return
-      if (e.key === 'Enter' && open && sel) { e.preventDefault(); nav(`/a/${sel}`); return }
+      const active = document.activeElement as HTMLElement | null
+      if (e.key === 'Escape') { if (open) close(); return }
+      if (e.key === 'Tab' && open && panel.current) { trapFocus(e, panel.current); return }
+      if (/INPUT|TEXTAREA|SELECT/.test(active?.tagName ?? '')) return
+      // Enter on another control inside the panel (a link, the action button) keeps its own meaning.
+      const ownEnter = !!active && active !== closeBtn.current && /^(BUTTON|A)$/.test(active.tagName) && !!panel.current?.contains(active)
+      if (e.key === 'Enter' && open && sel && !ownEnter) { e.preventDefault(); nav(`/a/${sel}`); return }
       if (!['ArrowDown', 'ArrowUp', 'j', 'k'].includes(e.key) || !visible.length) return
       e.preventDefault()
       const i = visible.findIndex((x) => x.id === sel)
       const d = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
-      setSel(visible[Math.max(0, Math.min(visible.length - 1, i < 0 ? 0 : i + d))].id)
-      setOpen(true)
+      show(visible[Math.max(0, Math.min(visible.length - 1, i < 0 ? 0 : i + d))].id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [visible, sel, open, nav])
-
-  const show = (id: string) => { setSel(id); setOpen(true) }
+  }, [visible, sel, open, nav, show, close])
 
   async function run(app: AppSummary, kind: Kind, fn: () => Promise<unknown>) {
     if (busy) return
@@ -239,7 +267,7 @@ export default function Applications() {
               </button>
             ))}
           </div>
-          <input type="search" className="field h-10 w-[240px] max-w-full text-sm" placeholder="Search company or role" aria-label="Search applications"
+          <input ref={search} type="search" className="field h-10 w-[240px] max-w-full text-sm" placeholder="Search company or role" aria-label="Search applications"
             value={query} onChange={(e) => setQuery(e.target.value)} />
           <button aria-pressed={needs} onClick={() => setNeeds((x) => !x)}
             className={cx('inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3.5 font-medium transition-colors',
@@ -281,11 +309,11 @@ export default function Applications() {
                   {shown.map((x) => {
                     const on = open && x.id === sel
                     return (
-                      <article key={x.id} draggable tabIndex={0} aria-current={on ? 'true' : undefined}
+                      <article key={x.id} data-app-id={x.id} draggable tabIndex={0} aria-current={on ? 'true' : undefined}
                         onDragStart={(e: DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', x.id); setDrag(x.id) }}
                         onDragEnd={() => { setDrag(null); setOver(null) }}
-                        onClick={() => show(x.id)} onDoubleClick={() => nav(`/a/${x.id}`)}
-                        onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id) } }}
+                        onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
+                        onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id, e.currentTarget) } }}
                         className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#aeb7c6]',
                           on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(14_20_34/0.05)]', dim(x))}>
                         <div className="flex items-baseline justify-between gap-2.5">
@@ -330,9 +358,9 @@ export default function Applications() {
               {list.map((x) => {
                 const on = open && x.id === sel
                 return (
-                  <div key={x.id} role="row" tabIndex={0} aria-current={on ? 'true' : undefined}
-                    onClick={() => show(x.id)} onDoubleClick={() => nav(`/a/${x.id}`)}
-                    onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id) } }}
+                  <div key={x.id} data-app-id={x.id} role="row" tabIndex={0} aria-current={on ? 'true' : undefined}
+                    onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
+                    onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id, e.currentTarget) } }}
                     className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#eef0f4] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
                       on && 'bg-[#eef1fd] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
                     <div role="cell" className="min-w-0">
@@ -354,14 +382,14 @@ export default function Applications() {
         </>
       )}
 
-      <div onClick={() => setOpen(false)} aria-hidden
+      <div onClick={close} aria-hidden
         className={cx('fixed inset-0 z-40 bg-[rgb(14_20_34/0.28)] transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')} />
-      <aside aria-label="Application detail" aria-hidden={!open} inert={!open}
+      <aside ref={panel} role="dialog" aria-modal="true" aria-labelledby="app-detail-title" aria-hidden={!open} inert={!open}
         className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
           open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
         {a && (
           <Sheet a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
-            onClose={() => setOpen(false)} onNotes={setNotes} onNotesBlur={() => saveNotes(a)}
+            onClose={close} onNotes={setNotes} onNotesBlur={() => saveNotes(a)}
             onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} />
         )}
       </aside>
@@ -392,7 +420,7 @@ function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur
             className="size-8 cursor-pointer rounded-lg border border-rule bg-sheet text-base leading-none text-muted hover:border-ink hover:text-ink">×</button>
         </div>
         <div className="flex flex-col gap-1">
-          <h2 className="font-display text-[40px] leading-[0.95] text-ink">{a.company}</h2>
+          <h2 id="app-detail-title" className="font-display text-[40px] leading-[0.95] text-ink">{a.company}</h2>
           <p className="text-[15px] text-body">{a.role}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
 import { changeStatus } from '../status'
-import { cx, ErrorNote, fmtDate, Spinner, statusStyle } from '../ui'
+import { cx, ErrorNote, fmtDate, Spinner, statusStyle, useTitle } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
@@ -88,6 +88,7 @@ export default function Workspace() {
   const [error, setError] = useState<string | null>(null)
   const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null, gapFocus: null })
   const autoRan = useRef(false)
+  useTitle([app?.meta.company, app ? STEPS.find((s) => s.key === step)?.label : undefined])
 
   const setMemo = useCallback((fn: (m: StepMemo) => StepMemo) => setMemoState(fn), [])
 

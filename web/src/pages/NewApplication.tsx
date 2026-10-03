@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
-import { cx, ErrorNote, Spinner, StatusPill } from '../ui'
+import { cx, ErrorNote, Spinner, StatusPill, useTitle } from '../ui'
 
 const STOP = new Set(['and', 'the', 'of', 'for', 'in', 'a', 'an', 'to', 'with', 'senior', 'lead', 'head', 'manager', 'vp', 'director', 'engineer'])
 const words = (t: string) => new Set(t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)))
@@ -30,6 +30,7 @@ const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
 
 export default function NewApplication() {
+  useTitle(['New tailoring'])
   const nav = useNavigate()
   const [mode, setMode] = useState<'paste' | 'url'>('paste')
   const [jd, setJd] = useState('')

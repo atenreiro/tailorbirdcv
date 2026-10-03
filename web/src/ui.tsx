@@ -131,6 +131,16 @@ export function Section({ eyebrow, title, children, aside }: { eyebrow?: string;
   )
 }
 
+/** Sets the browser tab title to "<parts> · AutoCV" while the page is mounted. */
+export function useTitle(parts: (string | undefined)[]) {
+  const title = [...parts.filter((p): p is string => !!p?.trim()), 'AutoCV'].join(' · ')
+  useEffect(() => {
+    const previous = document.title
+    document.title = title
+    return () => { document.title = previous }
+  }, [title])
+}
+
 export function fmtDate(iso?: string) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })

@@ -219,7 +219,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
   const changed = (path: string) => dirty && JSON.stringify(claimAt(app.tailored, path)) !== JSON.stringify(claimAt(draft, path))
   const setFocus = (path: string | null, scroll = false) => {
     setFocusState(path)
-    if (path && scroll) requestAnimationFrame(() => document.getElementById(lineDomId(path))?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+    if (path && scroll) requestAnimationFrame(() => document.getElementById(lineDomId(path))?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
   }
 
   async function save() {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
-import { cx, ErrorNote, Spinner } from '../ui'
+import { cx, ErrorNote, Spinner, useTitle } from '../ui'
 
 type Stage = 'built' | 'applied' | 'interview' | 'offer'
 type Range = '30' | '90' | 'all'
@@ -42,6 +42,7 @@ const RING = 'shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--color-ink)]'
 const EASE = 'duration-[350ms] ease-[cubic-bezier(.2,.7,.2,1)]'
 
 export default function Funnel() {
+  useTitle(['Funnel'])
   const [apps, setApps] = useState<AppSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState<Range>('90')

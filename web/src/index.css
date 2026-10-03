@@ -111,3 +111,14 @@
     border: 1px solid transparent;
   }
 }
+
+/* Respect the system "reduce motion" setting: no rise/stamp/spin/pulse or slides. Animations still
+   run once to their end state (so faded-in content stays visible) and transitions still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

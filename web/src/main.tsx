@@ -16,7 +16,7 @@ const FRAME = 'max-w-[1480px] px-4 sm:px-7'
 /** The wordmark: "auto" condensed bold + "[cv]" in mono. */
 function Logo() {
   return (
-    <span aria-label="AutoCV" className="flex items-baseline text-[22px] leading-none text-white">
+    <span aria-hidden="true" className="flex items-baseline text-[22px] leading-none text-white">
       <span className="font-bold [font-stretch:75%]">auto</span>
       <span className="font-mono text-[20px] font-medium tracking-[-0.04em] text-[#7d93ff]">[cv]</span>
     </span>
@@ -30,7 +30,7 @@ function Masthead() {
   return (
     <header className="sticky top-0 z-30 bg-ink text-white">
       <div className={cx('mx-auto flex h-14 items-center gap-3 sm:gap-9', FRAME)}>
-        <NavLink to="/" onClick={guard} className="flex items-center"><Logo /></NavLink>
+        <NavLink to="/" onClick={guard} aria-label="AutoCV" className="flex items-center"><Logo /></NavLink>
         <nav className="flex h-full gap-0 overflow-x-auto sm:gap-1 whitespace-nowrap [scrollbar-width:none]">
           <NavLink to="/" end onClick={guard} className={link}><span className="sm:hidden">Apps</span><span className="hidden sm:inline">Applications</span></NavLink>
           <NavLink to="/funnel" onClick={guard} className={link}>Funnel</NavLink>
