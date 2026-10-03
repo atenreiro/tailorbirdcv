@@ -79,13 +79,13 @@ def test_word_converts_in_one_fixed_folder_and_cleans_up(docx, monkeypatch, tmp_
     out = pdf.to_pdf(docx, timeout=10)  # no preference → Word
     assert out == docx.with_suffix(".pdf") and out.read_bytes() == docx.read_bytes()  # Word gets the docx as is
     assert seen.read_text() == str((tmp_path / "word").resolve())  # Word only ever sees this folder
-    assert list((tmp_path / "word").iterdir()) == []  # staged copies removed
+    assert [p.name for p in (tmp_path / "word").iterdir()] == [".lock"]  # staged copies removed
 
 
 def test_word_script_never_activates_or_touches_other_documents():
     s = pdf._WORD_JXA
     assert "activate" not in s and "activeDocument" not in s
-    assert "open -g -j" in s and "if (!wasRunning) word.quit" in s
+    assert "open -g -j" in s and "if (!wasRunning" in s
 
 
 # -- LibreOffice ----------------------------------------------------------------------
@@ -124,7 +124,7 @@ def test_libreoffice_runs_headless_with_its_own_profile(docx, soffice, tmp_path)
     profile = (tmp_path / "lo-profile").resolve()
     assert f"-env:UserInstallation={profile.as_uri()}" in run["args"] and "--headless" in run["args"]
     assert run["args"][run["args"].index("--convert-to") + 1] == "pdf"
-    assert list((tmp_path / "word").iterdir()) == []
+    assert [p.name for p in (tmp_path / "word").iterdir()] == [".lock"]
 
 
 def test_libreoffice_gets_glued_ranges_but_the_users_docx_is_untouched(docx, soffice):
@@ -132,7 +132,7 @@ def test_libreoffice_gets_glued_ranges_but_the_users_docx_is_untouched(docx, sof
     original = docx.read_bytes()
     pdf.to_pdf(docx, timeout=10, engine="libreoffice")
     xml = json.loads(soffice.read_text())["xml"]
-    assert "2⁠–⁠4" in xml and "2019⁠-⁠2021" in xml
+    assert "2\u2060–\u20604" in xml and "2019\u2060-\u20602021" in xml
     assert docx.read_bytes() == original
 
 
@@ -155,8 +155,26 @@ def test_libreoffice_failure_is_reported(docx, soffice, monkeypatch, tmp_path):
 
 
 def test_glue_ranges_leaves_other_dashes_alone():
-    assert pdf.glue_ranges("2–4, 2019-2021, ISO-27001, A–Z, 5 – 6") == \
-        "2⁠–⁠4, 2019⁠-⁠2021, ISO-27001, A–Z, 5 – 6"
+    xml = '<w:t xml:space="preserve">2–4, 2019-2021, ISO-27001, A–Z, 5 – 6</w:t>'
+    assert pdf.glue_ranges(xml) == \
+        '<w:t xml:space="preserve">2\u2060–\u20604, 2019\u2060-\u20602021, ISO-27001, A–Z, 5 – 6</w:t>'
+
+
+def test_glue_ranges_only_touches_text_runs():
+    xml = ('<w:p w14:paraId="1-2"><w:instrText>HYPERLINK "https://x.io/2-4"</w:instrText>'
+           '<w:t>1-3</w:t><w:tbl w:w="10-20"/></w:p>')
+    assert pdf.glue_ranges(xml) == xml.replace("<w:t>1-3</w:t>", "<w:t>1\u2060-\u20603</w:t>")
+
+
+def test_word_is_only_quit_when_nothing_else_is_open():
+    s = pdf._WORD_JXA
+    assert "if (!wasRunning && word.documents.length === 0) word.quit({saving: 'ask'})" in s
+
+
+def test_word_only_ever_addresses_our_document_by_name():
+    s = pdf._WORD_JXA
+    assert "word.documents.byName(base)" in s and "ours.close(" in s and "ours.saveAs(" in s
+    assert "documents[" not in s and "documents()" not in s  # positions shift when the user opens a file
 
 
 # -- settings -------------------------------------------------------------------------
@@ -203,3 +221,4 @@ def test_settings_need_the_autocv_header(client):
     from fastapi.testclient import TestClient
     bare = TestClient(client.app, base_url="http://127.0.0.1")
     assert bare.put("/api/settings", json={"pdf_engine": "word"}).status_code == 403
+

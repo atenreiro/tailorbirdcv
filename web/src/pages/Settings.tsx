@@ -99,7 +99,7 @@ export default function Settings() {
   const detect = () => update('detect', () => loadSettings(true), 'Detected')
 
   const chosen = s?.pdf_effective ?? null
-  const missingChoice = s?.pdf_engine && s.pdf_engine !== s.pdf_effective
+  const missingChoice = s?.pdf_engine && s.pdf_effective && s.pdf_engine !== s.pdf_effective
     ? s.pdf_engines.find((e) => e.id === s.pdf_engine)?.name : null
   const none = s && !s.pdf_effective
 

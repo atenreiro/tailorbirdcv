@@ -20,6 +20,7 @@ waiting on a permission dialog), it's killed and a clear error is raised instead
 
 from __future__ import annotations
 
+import fcntl
 import os
 import plistlib
 import re
@@ -39,10 +40,14 @@ ENGINES = ("word", "libreoffice")  # order = default preference
 NAMES = {"word": "Microsoft Word", "libreoffice": "LibreOffice"}
 WORD_ID = "com.microsoft.Word"
 _APPS = [Path("/Applications"), Path.home() / "Applications"]
-_lock = threading.Lock()  # one conversion at a time (Word is shared; a LibreOffice profile is single-user)
+_lock = threading.Lock()  # one conversion at a time (Word is shared; a LibreOffice profile is single-user);
+# a file lock in the work folder does the same across processes (server + CLI)
 
 # JXA run by osascript with argv = [docx, pdf]. Never calls activate(), never touches other documents.
 _WORD_JXA = r"""
+// Our document is always addressed by its unique name, never by position: a document the user
+// opens meanwhile shifts positions, and closing "document 1" could then close theirs.
+// Word's document count is reliable; names it reports for other documents can go stale.
 function run(argv) {
   const src = argv[0], dst = argv[1], base = src.split('/').pop();
   const me = Application.currentApplication();
@@ -55,19 +60,18 @@ function run(argv) {
   }
   const alerts = word.displayAlerts();
   word.displayAlerts = 'alerts none';
-  let doc = null;
+  const ours = word.documents.byName(base);
+  const isOpen = () => { try { return ours.name() === base; } catch (e) { return false; } };
   try {
     word.open(Path(src), {addToRecentFiles: false, readOnly: true});
-    for (let i = 0; i < 100 && !doc; i++) {
-      doc = word.documents().find((d) => d.name() === base) || null;
-      if (!doc) delay(0.1);
-    }
-    if (!doc) throw new Error('Word did not open the document');
-    doc.saveAs({fileName: dst, fileFormat: 'format PDF', addToRecentFiles: false});
+    for (let i = 0; i < 100 && !isOpen(); i++) delay(0.1);
+    if (!isOpen()) throw new Error('Word did not open the document');
+    ours.saveAs({fileName: dst, fileFormat: 'format PDF', addToRecentFiles: false});
   } finally {
-    if (doc) doc.close({saving: 'no'});
+    if (isOpen()) ours.close({saving: 'no'});
     word.displayAlerts = alerts;
-    if (!wasRunning) word.quit({saving: 'no'});
+    // Quit only a Word we started, and only when nothing else is open in it ("ask" as a backstop).
+    if (!wasRunning && word.documents.length === 0) word.quit({saving: 'ask'});
   }
 }
 """
@@ -143,10 +147,11 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
     """Convert with `engine` (a preference, see resolve()); returns the PDF path next to the docx."""
     pdf = pdf or docx.with_suffix(".pdf")
     pdf.unlink(missing_ok=True)
-    with _lock:
+    work = work_dir().resolve()
+    work.mkdir(parents=True, exist_ok=True)
+    with _lock, open(work / ".lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)  # also serializes the CLI with a running server
         engine = resolve(engine)
-        work = work_dir().resolve()
-        work.mkdir(parents=True, exist_ok=True)
         tag = uuid.uuid4().hex[:12]
         src, dst = work / f"autocv-{tag}.docx", work / f"autocv-{tag}.pdf"
         try:
@@ -202,12 +207,16 @@ def _lo_command(src: Path, outdir: Path) -> list[str]:
 
 
 # Digit–digit ranges ("2–4", "2019-2021"): LibreOffice may break a line inside them, Word doesn't.
-_RANGE = re.compile(r"(?<=\d)([–—-])(?=\d)")
-_WJ = "⁠"  # WORD JOINER: invisible, forbids a line break, and isn't extracted as text
+_RANGE = re.compile(r"(?<=\d)([\u2013\u2014-])(?=\d)")
+_WJ = "\u2060"  # WORD JOINER: invisible, forbids a line break, and isn't extracted as text
+
+
+_TEXT = re.compile(r"(<w:t(?:\s[^>]*)?>)([^<]*)(</w:t>)")
 
 
 def glue_ranges(xml: str) -> str:
-    return _RANGE.sub(f"{_WJ}\\1{_WJ}", xml)
+    """Glue ranges inside text runs only (never attributes, field codes or other markup)."""
+    return _TEXT.sub(lambda m: m[1] + _RANGE.sub(f"{_WJ}\\1{_WJ}", m[2]) + m[3], xml)
 
 
 def _lo_copy(docx: Path, dst: Path) -> None:

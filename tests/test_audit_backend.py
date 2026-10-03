@@ -607,3 +607,15 @@ def test_builds_from_before_fingerprints_count_as_current(env):
     _write_json_atomic(store.app_path(app_id) / "meta.json", meta)   # as an older build wrote it
     assert not client.get(f"/api/applications/{app_id}").json()["outputs_stale"]
     assert store.freeze_problem(app_id) is None                       # the fact-check still ran and passed
+
+
+def test_build_without_any_pdf_engine_keeps_the_docx_and_explains(env, monkeypatch):
+    client, store, _ = env
+    app_id = composed_app(client)
+
+    def none_installed(preferred=None, engines=None):
+        raise RuntimeError("No PDF engine found: install Microsoft Word or LibreOffice")
+    monkeypatch.setattr(pdfmod, "resolve", none_installed)
+    r = client.post(f"/api/applications/{app_id}/build")
+    assert r.status_code == 500 and r.json()["detail"].startswith("DOCX built, but no PDF: No PDF engine found")
+    assert any(f.endswith(".docx") for f in client.get(f"/api/applications/{app_id}").json()["files"])

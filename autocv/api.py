@@ -571,9 +571,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
             pages = None
             if pdf:
-                preferred, name = store.settings()["pdf_engine"], "PDF engine"
+                preferred = store.settings()["pdf_engine"]
                 try:
                     name = pdfmod.NAMES[await asyncio.to_thread(pdfmod.resolve, preferred)]
+                except RuntimeError as e:  # neither Word nor LibreOffice
+                    store.record_build(app_id, built_hash, profile_version, None)
+                    raise HTTPException(500, f"DOCX built, but no PDF: {e}")
+                try:
                     pdf_file = await asyncio.to_thread(pdfmod.to_pdf, docx, engine=preferred)
                     pages = pdfmod.page_count(pdf_file)
                 except Exception as e:  # no engine / automation permission denied / timeout

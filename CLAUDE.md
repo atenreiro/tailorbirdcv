@@ -31,8 +31,8 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - Marking an application **applied** freezes a read-only copy of exactly what was sent (`sent/<timestamp>/`); stale or missing PDFs → "Build & freeze". Never edit `sent/`.
 - Every save of `profile.yaml`/`knowledge.yaml` keeps the previous version in `private/history/` (content changes only; kept forever); restore is itself undoable and merges `retired_ids`.
 - PDFs come from **Microsoft Word or LibreOffice** (`pdf.py`), chosen in Settings (`private/settings.json`, `GET/PUT /api/settings`); when both are installed Word is the default, and a chosen engine that's missing falls back to the other. One conversion runs at a time, always in the fixed folder `private/word/` (so Word's sandbox "Grant File Access" prompt appears at most once).
-  - Word is driven by `osascript`: launched hidden in the background, never activated, only our document is opened/closed, and Word is quit only if AutoCV started it.
-  - LibreOffice runs headless with its own profile (`private/libreoffice/`); the fonts the docx names are symlinked into the profile (from the system and Word's bundle) so line breaks match Word, and digit ranges ("2–4") are glued with U+2060 in LibreOffice's copy only — never in the user's .docx.
+  - Word is driven by `osascript`: launched hidden in the background, never activated; our document is addressed only by its unique name (never by position — a document the user opens shifts positions), and Word is quit only if AutoCV started it and its document count is 0 (`saving: ask`). A file lock in `private/word/` serializes conversions across processes (server + CLI).
+  - LibreOffice runs headless with its own profile (`private/libreoffice/`); the fonts the docx names are symlinked into the profile (from the system and Word's bundle) so line breaks match Word, and digit ranges ("2–4") inside `<w:t>` text runs are glued with U+2060 in LibreOffice's copy only — never in the user's .docx.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands
