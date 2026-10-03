@@ -1,9 +1,12 @@
-"""AI engine: the local Claude Code CLI in headless mode (`claude -p`).
+"""AI engines, chosen in Settings → AI engine:
 
-Uses the CLI's own login (your Claude subscription), so there is no API key and no
-per-call billing. Calls are fully isolated (see ISOLATION_ARGS): no tools, MCP servers,
-plugins, hooks, skills or saved sessions, from an empty working directory — the model
-only sees the prompt AutoCV builds, and must answer with JSON matching the schema.
+- the local Claude Code CLI in headless mode (`claude -p`), on the CLI's own login (your Claude
+  subscription: no API key, no per-call billing), or
+- the Anthropic API with your own key (kept in the OS keychain), billed per use.
+
+CLI calls are fully isolated (see ISOLATION_ARGS): no tools, MCP servers, plugins, hooks,
+skills or saved sessions, from an empty working directory. Either way the model only sees the
+prompt AutoCV builds, and must answer with JSON matching the schema.
 
 Set AUTOCV_ENGINE=fake to run the UI with canned responses (tests / demos).
 """
@@ -140,6 +143,112 @@ class ClaudeCLIEngine:
         return result
 
 
+DEFAULT_API_MODEL = "claude-sonnet-5-5"
+
+
+class AnthropicAPIEngine:
+    """Claude through the Anthropic API with the user's own key (pay per use). Structured output via
+    a forced tool call whose input schema is AutoCV's JSON schema."""
+
+    name = "anthropic-api"
+
+    def __init__(self, model: str | None = None, timeout: float = 600, key=None, client_factory=None):
+        from . import apikey
+        self.model = model or DEFAULT_API_MODEL
+        self.timeout = timeout
+        self._key = key or (lambda: apikey.get()[0])
+        self._client_factory = client_factory
+        self._checked: tuple[str, float, dict] | None = None  # (key, when, status) — status is cached briefly
+
+    def _client(self, key: str):
+        if self._client_factory:
+            return self._client_factory(key)
+        import anthropic
+        return anthropic.AsyncAnthropic(api_key=key, timeout=self.timeout, max_retries=2)
+
+    @staticmethod
+    def _explain(e: Exception) -> str:
+        import anthropic
+        if isinstance(e, anthropic.AuthenticationError):
+            return "The Anthropic API key was rejected. Check it in Settings → AI engine."
+        if isinstance(e, anthropic.PermissionDeniedError):
+            return "This API key isn't allowed to use that model."
+        if isinstance(e, anthropic.NotFoundError):
+            return "That model isn't available to this API key. Choose another model in Settings → AI engine."
+        if isinstance(e, anthropic.RateLimitError):
+            return "The Anthropic API rate limit was reached. Wait a minute and try again."
+        if isinstance(e, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
+            return "Couldn't reach the Anthropic API. Check your internet connection."
+        if isinstance(e, anthropic.APIStatusError):
+            return f"The Anthropic API returned an error ({e.status_code})."
+        return str(e)
+
+    async def status(self) -> dict:
+        import time
+        key = self._key()
+        base = {"engine": self.name, "model": self.model}
+        if not key:
+            return {**base, "ready": False, "detail": "No API key yet — add one in Settings → AI engine."}
+        if self._checked and self._checked[0] == key and time.monotonic() - self._checked[1] < 300:
+            return self._checked[2]
+        try:
+            await self._client(key).models.retrieve(self.model)
+            result = {**base, "ready": True, "detail": "API key works"}
+        except Exception as e:  # noqa: BLE001
+            result = {**base, "ready": False, "detail": self._explain(e)}
+        self._checked = (key, time.monotonic(), result)
+        return result
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        key = self._key()
+        if not key:
+            raise EngineError("No Anthropic API key — add one in Settings → AI engine.")
+        try:
+            msg = await self._client(key).messages.create(
+                model=self.model, max_tokens=16000, system=system,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[{"name": "answer", "description": "Return the result as JSON matching the schema.",
+                        "input_schema": schema}],
+                tool_choice={"type": "tool", "name": "answer"},
+            )
+        except Exception as e:  # noqa: BLE001
+            raise EngineError(self._explain(e)) from e
+        if getattr(msg, "stop_reason", None) == "max_tokens":
+            raise EngineError("The answer was cut off (too long). Try again, or shorten the job description.")
+        for block in msg.content:
+            if getattr(block, "type", None) == "tool_use":
+                return block.input
+        raise EngineError("The model did not return structured output.")
+
+
+class SwitchingEngine:
+    """The engine chosen in Settings → AI engine, looked up on every call (so switching takes effect
+    without a restart)."""
+
+    def __init__(self, store):
+        self.store = store
+        self._cli: ClaudeCLIEngine | None = None
+        self._api: dict[str, AnthropicAPIEngine] = {}
+
+    def current(self) -> Engine:
+        settings = self.store.settings()
+        if settings.get("ai_engine") == "anthropic-api":
+            model = settings.get("api_model") or DEFAULT_API_MODEL
+            return self._api.setdefault(model, AnthropicAPIEngine(model=model))
+        self._cli = self._cli or ClaudeCLIEngine()
+        return self._cli
+
+    @property
+    def name(self) -> str:
+        return self.current().name
+
+    async def status(self) -> dict:
+        return await self.current().status()
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        return await self.current().complete(system, prompt, schema)
+
+
 class FakeEngine:
     """Deterministic stand-in. `responses` maps a task name (first line of the
     prompt, e.g. "TASK: analyze") to a value or a callable(prompt) -> value."""
@@ -162,8 +271,11 @@ class FakeEngine:
         return value(prompt) if callable(value) else value
 
 
-def default_engine() -> Engine:
+def default_engine(store=None) -> Engine:
     if os.environ.get("AUTOCV_ENGINE") == "fake":
         from .demo import demo_engine
         return demo_engine()
-    return ClaudeCLIEngine()
+    if store is None:
+        from .store import Store
+        store = Store.default()
+    return SwitchingEngine(store)

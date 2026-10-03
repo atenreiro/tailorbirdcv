@@ -24,6 +24,8 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "playwright>=1.48",
     "platformdirs>=4.0",
+    "anthropic>=0.40",
+    "keyring>=25",
 ]
 
 [project.scripts]

@@ -19,11 +19,11 @@ from fastapi import APIRouter, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod, themes
 from .jobfetch import FetchError, fetch_job
-from .engine import Engine, EngineError, default_engine
+from .engine import DEFAULT_API_MODEL, Engine, EngineError, default_engine
 from .render import docx_text, render, use_design
 from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
@@ -66,10 +66,18 @@ class TargetsPatch(BaseModel):
 
 
 class SettingsPatch(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     pdf_engine: Literal[tuple(pdfmod.ENGINES)] | None = None  # type: ignore[valid-type]  # None = automatic
     targets: TargetsPatch | None = None
     theme: Literal[tuple(themes.THEMES)] | None = None  # type: ignore[valid-type]
     paper: Literal["letter", "a4"] | None = None  # None = the theme's default
+    ai_engine: Literal["claude-cli", "anthropic-api"] | None = None
+    api_model: str | None = Field(None, max_length=100, pattern=r"^[A-Za-z0-9._:\-]*$")  # "" / None = default
+
+
+class ApiKey(BaseModel):
+    key: str = Field(min_length=1, max_length=400)
 
 
 class MetaPatch(BaseModel):
@@ -196,7 +204,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             store.profile()
     except Exception as e:  # noqa: BLE001
         log.warning("AutoCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
-    engine = engine or default_engine()
+    engine = engine or default_engine(store)
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     # DNS-rebinding guard: a malicious site can't reach this local API through a hostname it controls.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
@@ -277,12 +285,36 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 "packs": ai.PACKS,
                 "themes": [{"id": t.id, "name": t.name, "description": t.description, "fonts": t.fonts(),
                             "accent": t.accent, "ink": t.ink, "rule": t.rule, "name_font": t.name_font,
-                            "paper": t.paper} for t in themes.THEMES.values()]}
+                            "paper": t.paper} for t in themes.THEMES.values()],
+                "api_key": api_key_info(), "api_default_model": DEFAULT_API_MODEL}
 
     @api.get("/doctor")
     async def get_doctor():
         from . import doctor
         return await doctor.run_checks(engine, store.private, store.settings()["pdf_engine"])
+
+    def api_key_info() -> dict:
+        from . import apikey
+        key, source = apikey.get()
+        return {"configured": bool(key), "source": source, "masked": apikey.masked(key)}
+
+    @api.put("/settings/api-key")
+    async def put_api_key(body: ApiKey):
+        """Store the Anthropic API key in the OS keychain (never in the data folder, never sent back)."""
+        from . import apikey
+        try:
+            await asyncio.to_thread(apikey.save, body.key)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except apikey.KeychainUnavailable as e:
+            raise HTTPException(409, str(e))
+        return await asyncio.to_thread(settings_payload)
+
+    @api.delete("/settings/api-key")
+    async def delete_api_key():
+        from . import apikey
+        await asyncio.to_thread(apikey.delete)
+        return await asyncio.to_thread(settings_payload)
 
     @api.get("/settings")
     async def get_settings():
@@ -294,6 +326,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                         for e in await asyncio.to_thread(pdfmod.detect)):
             raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this computer.")
         data = patch.model_dump(include=patch.model_fields_set - {"targets"})
+        if "api_model" in data:
+            data["api_model"] = (data["api_model"] or "").strip() or None
         if patch.targets is not None:
             data["targets"] = {k: v.strip() if isinstance(v, str) else v
                                for k, v in patch.targets.model_dump(exclude_unset=True).items() if v is not None}

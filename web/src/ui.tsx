@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { api, STATUSES, type EngineStatus, type Outcome } from './api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, statusStyle } from './lib'
 
@@ -94,9 +95,10 @@ export function EngineBadge() {
           <p className="eyebrow mb-2">{status.engine}</p>
           <p className="text-body">{status.detail}</p>
           {status.model && <p className="mt-1 font-mono text-xs text-muted">model: {status.model}</p>}
-          {!ready && (
+          {!ready && status.engine === 'claude-cli' && (
             <pre className="mt-3 rounded-lg bg-wash px-3 py-2 font-mono text-xs text-ink">claude{'\n'}/login</pre>
           )}
+          <Link to="/settings" onClick={() => setOpen(false)} className="mt-3 inline-block text-xs text-accent hover:text-accent-strong">AI engine settings →</Link>
         </div>
       )}
     </div>

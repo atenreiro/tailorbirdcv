@@ -217,7 +217,7 @@ def cmd_doctor(args) -> int:
 
     from . import doctor
     from .engine import default_engine
-    checks = asyncio.run(doctor.run_checks(default_engine(), PRIVATE, STORE.settings()["pdf_engine"]))
+    checks = asyncio.run(doctor.run_checks(default_engine(STORE), PRIVATE, STORE.settings()["pdf_engine"]))
     print(doctor.render(checks))
     return 1 if any(c["status"] == "error" for c in checks) else 0
 

@@ -241,6 +241,117 @@ function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: 
   )
 }
 
+function AIEngine({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+  const [key, setKey] = useState('')
+  const [model, setModel] = useState(settings.api_model ?? '')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ ready: boolean; detail: string } | null>(null)
+  const apply = async (kind: string, call: () => Promise<SettingsData>) => {
+    setBusy(kind)
+    setError(null)
+    setStatus(null)
+    try {
+      const next = await call()
+      cacheSettings(next)
+      onSaved(next)
+      return next
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const test = async () => {
+    setBusy('test')
+    setError(null)
+    try {
+      const st = await api.engine()
+      setStatus({ ready: st.ready, detail: st.detail })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const usingApi = settings.ai_engine === 'anthropic-api'
+  const k = settings.api_key
+  const options: { id: SettingsData['ai_engine']; name: string; lead: string; detail: string }[] = [
+    { id: 'claude-cli', name: 'Claude Code', lead: 'Your Claude subscription. No extra cost.',
+      detail: 'Uses the `claude` command on this computer. Install Claude Code, run `claude`, then /login.' },
+    { id: 'anthropic-api', name: 'Anthropic API key', lead: 'Pay per use on your Anthropic account.',
+      detail: 'For people without Claude Code. Create a key at console.anthropic.com; it’s stored in this computer’s keychain, never in AutoCV’s files.' },
+  ]
+  return (
+    <section aria-labelledby="ai-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex max-w-[640px] flex-col gap-1.5">
+          <p className={cx(label, 'text-accent')}>AI engine</p>
+          <h2 id="ai-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which Claude does the writing</h2>
+          <p className="text-sm leading-[1.5] text-muted text-pretty">Either way, the AI only sees what AutoCV sends it for the task at hand, and every claim is fact-checked against your profile.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {status && <span role="status" className={cx('max-w-[260px] text-xs', status.ready ? 'text-ok' : 'text-bad')}>{status.ready ? '✓ ' : '✗ '}{status.detail}</span>}
+          <button className="btn" onClick={test} disabled={!!busy}>{busy === 'test' && <Spinner />}Test</button>
+        </div>
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <div role="radiogroup" aria-labelledby="ai-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        {options.map((o) => {
+          const chosen = settings.ai_engine === o.id
+          return (
+            <label key={o.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
+              chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
+              <input type="radio" name="ai-engine" className="sr-only" checked={chosen} disabled={!!busy} aria-label={o.name}
+                onChange={() => apply('engine', () => api.saveSettings({ ai_engine: o.id }))} />
+              <span className="flex items-center gap-2.5">
+                <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+                  {chosen && <span className="size-2 rounded-full bg-accent" />}
+                </span>
+                <span className="font-display text-[22px] leading-none text-ink">{o.name}</span>
+                {chosen && <span className="rounded bg-accent-soft px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-accent">In use</span>}
+              </span>
+              <span className="pl-[28px] text-[13px] font-semibold text-ink">{o.lead}</span>
+              <span className="pl-[28px] text-[13px] leading-[1.45] text-muted text-pretty">{o.detail}</span>
+            </label>
+          )
+        })}
+      </div>
+      {usingApi && (
+        <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">API key</span>
+            {k.configured && (
+              <p className="flex flex-wrap items-center gap-3 text-[13px] text-body">
+                <span className="font-mono">{k.masked}</span>
+                <span className="text-muted">{k.source === 'keychain' ? 'stored in your keychain' : 'from ANTHROPIC_API_KEY'}</span>
+                {k.source === 'keychain' && <button className="text-accent hover:text-accent-strong" disabled={!!busy}
+                  onClick={() => apply('delete', api.deleteApiKey)}>Remove</button>}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <input className="field max-w-[420px] font-mono text-[13px]" type="password" autoComplete="off" spellCheck={false}
+                placeholder={k.configured ? 'Replace with a new key…' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} aria-label="Anthropic API key" />
+              <button className="btn btn-primary" disabled={!key.trim() || !!busy}
+                onClick={async () => { if (await apply('key', () => api.saveApiKey(key))) setKey('') }}>{busy === 'key' && <Spinner />}Save key</button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">Model</span>
+            <div className="flex flex-wrap gap-2">
+              <input className="field max-w-[300px] font-mono text-[13px]" value={model} placeholder={settings.api_default_model}
+                onChange={(e) => setModel(e.target.value)} aria-label="Model" />
+              <button className="btn" disabled={(model.trim() || null) === (settings.api_model || null) || !!busy}
+                onClick={() => apply('model', () => api.saveSettings({ api_model: model.trim() || null }))}>Save model</button>
+            </div>
+            <span className="text-xs text-faint">Leave empty for the default ({settings.api_default_model}).</span>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 const TONE: Record<DoctorCheck['status'], [string, string]> = {
   ok: ['bg-ok', 'text-ok'], warn: ['bg-[#d08a1c]', 'text-warn'], error: ['bg-bad', 'text-bad'],
 }
@@ -338,6 +449,8 @@ export default function Settings() {
       {s && <YourTargets settings={s} onSaved={setS} />}
 
       {s && <ResumeDesign settings={s} onSaved={setS} />}
+
+      {s && <AIEngine settings={s} onSaved={setS} />}
 
       {s && (
         <section aria-labelledby="pdf-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">

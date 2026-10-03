@@ -1,6 +1,6 @@
 # AutoCV
 
-Tailors a master resume to a job description, **without inventing anything**. A local web UI (FastAPI + React) handles the workflow. The AI work runs on your own Claude Code CLI login, so it uses your Claude subscription with no API key and no per-call billing. Deterministic Python handles the fact-check gate, renders your exact Word design, measures ATS keyword coverage, and converts to PDF through Microsoft Word or LibreOffice. Runs on macOS, Windows and Linux.
+Tailors a master resume to a job description, **without inventing anything**. A local web UI (FastAPI + React) handles the workflow. The AI work runs on Claude: either your own Claude Code login (your Claude subscription, no extra cost) or an Anthropic API key (pay per use). Deterministic Python handles the fact-check gate, renders your exact Word design, measures ATS keyword coverage, and converts to PDF through Microsoft Word or LibreOffice. Runs on macOS, Windows and Linux.
 
 ## How it works
 ```
@@ -19,7 +19,9 @@ JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► 
 ## Install
 You need:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (or [pipx](https://pipx.pypa.io/)).
-- [Claude Code](https://claude.com/claude-code), logged in with your Claude subscription (run `claude`, then `/login`). On Windows, use the native installer (`claude.exe`).
+- Claude, either way (choose in Settings → AI engine):
+  - [Claude Code](https://claude.com/claude-code), logged in with your Claude subscription (run `claude`, then `/login`). On Windows, use the native installer (`claude.exe`).
+  - or an [Anthropic API key](https://console.anthropic.com/) (billed per use). AutoCV stores it in your OS keychain, never in its files; `ANTHROPIC_API_KEY` also works.
 - A PDF engine, chosen in Settings (Word is the default when both are installed):
 
 | | macOS | Windows | Linux |
@@ -72,7 +74,7 @@ To customise the emphasis heuristics for yourself, copy `autocv/data/config/indu
 - Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001` (PowerShell: `$env:AUTOCV_ENGINE="fake"; uv run autocv serve --port 8001`).
 - LibreOffice in an unusual location: set `AUTOCV_SOFFICE` to its `soffice` (Windows: `soffice.com`) path.
 - Job URLs: Lever/Greenhouse/Ashby APIs → embedded JobPosting data → page text → headless Chromium fallback (`AUTOCV_BROWSER_FALLBACK=0` disables it). Every request, browser ones included, is limited to public addresses.
-- `AUTOCV_MODEL` picks the model (e.g. `opus`); the default is the CLI's own default.
+- `AUTOCV_MODEL` picks the Claude Code model (e.g. `opus`; default: the CLI's own). The API engine's model is set in Settings → AI engine.
 
 The Claude Code skills `/tailor` and `/profile` still work and share the same data.
 
