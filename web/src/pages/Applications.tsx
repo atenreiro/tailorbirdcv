@@ -266,7 +266,7 @@ export default function Applications() {
     <div className="flex flex-col gap-7">
       <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div className="flex flex-col gap-2.5">
-          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Applications</h1>
+          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">My Applications</h1>
           {apps && <p className="font-mono text-xs text-muted">{active} active · {needsCount} need{needsCount === 1 ? 's' : ''} you · {all.length} total</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
