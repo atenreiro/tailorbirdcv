@@ -15,7 +15,10 @@ import json
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from typing import Any, Protocol
+
+from . import oscompat
 
 
 class EngineError(RuntimeError):
@@ -41,21 +44,46 @@ ISOLATION_ARGS = [
 ]
 
 
+def _windows_command(binary: str) -> list[str]:
+    """On Windows an npm install gives `claude.cmd`, which runs through cmd.exe and mangles
+    arguments with quotes or newlines. Run its script with node directly instead."""
+    if not (oscompat.IS_WINDOWS and binary.lower().endswith((".cmd", ".bat"))):
+        return [binary]
+    script = Path(binary).parent / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+    node = shutil.which("node")
+    if script.is_file() and node:
+        return [node, str(script)]
+    raise EngineError("Found claude.cmd but not the Claude Code script it wraps. Install the native Claude Code "
+                      "for Windows (claude.exe), or set AUTOCV_CLAUDE_BIN to claude.exe.")
+
+
 class ClaudeCLIEngine:
     name = "claude-cli"
 
-    def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600):
+    def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600,
+                 command: list[str] | None = None):
         self.binary = binary or os.environ.get("AUTOCV_CLAUDE_BIN") or shutil.which("claude") or "claude"
         self.model = model or os.environ.get("AUTOCV_MODEL")
         self.timeout = timeout
+        self.command = command  # the argv prefix to run instead of the binary (tests)
 
-    async def _run(self, args: list[str], stdin: str | None = None, timeout: float | None = None) -> str:
-        with tempfile.TemporaryDirectory(prefix="autocv-engine-") as cwd:
+    async def _run(self, args: list[str], stdin: str | None = None, timeout: float | None = None,
+                   files: dict[str, str] | None = None) -> str:
+        """Run the CLI from an empty temp folder. `files` are written to a sibling folder first, and
+        "{name}" in `args` becomes that file's path (long texts go in files, not on the command line,
+        which Windows limits and cmd.exe mangles)."""
+        with tempfile.TemporaryDirectory(prefix="autocv-engine-") as root:
+            cwd, inputs = Path(root, "work"), Path(root, "in")
+            cwd.mkdir()
+            inputs.mkdir()
+            for name, text in (files or {}).items():
+                (inputs / name).write_text(text, encoding="utf-8")
+            args = [str(inputs / a[1:-1]) if a[:1] == "{" and a[1:-1] in (files or {}) else a for a in args]
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    self.binary, *args, cwd=cwd,
+                    *(self.command or _windows_command(self.binary)), *args, cwd=cwd,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE, **oscompat.group_kwargs(),
                 )
             except FileNotFoundError as e:
                 raise EngineError("Claude Code CLI not found — install it or set AUTOCV_CLAUDE_BIN") from e
@@ -65,14 +93,15 @@ class ClaudeCLIEngine:
                     timeout or self.timeout,
                 )
             except TimeoutError as e:
-                proc.kill()
+                oscompat.kill_tree(proc.pid)  # the CLI and its node/helper processes
+                await proc.wait()  # before the temp folder is removed (Windows can't delete it in use)
                 raise EngineError("Claude CLI timed out") from e
         if proc.returncode and not out:
             raise EngineError(err.decode(errors="replace").strip() or f"claude exited {proc.returncode}")
         return out.decode(errors="replace")
 
     async def status(self) -> dict:
-        if not shutil.which(self.binary) and not os.path.exists(self.binary):
+        if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
             return {"engine": self.name, "ready": False, "detail": "Claude Code CLI not found"}
         try:
             raw = await self._run(["auth", "status"], timeout=20)
@@ -88,11 +117,11 @@ class ClaudeCLIEngine:
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
         args = [
             "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
-            "--system-prompt", system, *ISOLATION_ARGS,
+            "--system-prompt-file", "{system.md}", *ISOLATION_ARGS,
         ]
         if self.model:
             args += ["--model", self.model]
-        raw = await self._run(args, stdin=prompt)
+        raw = await self._run(args, stdin=prompt, files={"system.md": system})
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as e:

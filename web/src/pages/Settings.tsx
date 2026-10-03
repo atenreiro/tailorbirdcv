@@ -1,34 +1,44 @@
 import { useEffect, useState } from 'react'
-import { api, type PdfEngine, type PdfEngineInfo, type Settings as SettingsData } from '../api'
+import { api, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData } from '../api'
 import { cx, useTitle } from '../lib'
-import { cacheSettings, loadSettings } from '../settings'
+import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { ErrorNote, Spinner } from '../ui'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
 
-const ABOUT: Record<PdfEngine, { lead: string; points: string[]; missing: string }> = {
-  word: {
-    lead: 'Word’s own layout, exactly.',
-    points: [
-      'Opens hidden in the background; its icon shows in the Dock for a few seconds.',
-      'The first time, macOS may ask Word for file access or ask you to allow AutoCV to control Word.',
-    ],
-    missing: 'Not installed on this Mac.',
-  },
-  libreoffice: {
+type About = { lead: string; points: string[]; missing: string }
+
+function about(id: PdfEngine, platform?: Platform): About {
+  const here = thisComputer(platform)
+  if (id === 'word') {
+    return {
+      lead: 'Word’s own layout, exactly.',
+      points: platform === 'windows'
+        ? ['Runs invisibly in the background; nothing appears on screen.',
+           'If Word still needs activation or sign-in, open it once yourself first.']
+        : ['Opens hidden in the background; its icon shows in the Dock for a few seconds.',
+           'The first time, macOS may ask Word for file access or ask you to allow AutoCV to control Word.'],
+      missing: platform === 'linux' ? 'Microsoft Word isn’t available on Linux. Use LibreOffice.' : `Not installed on ${here}.`,
+    }
+  }
+  return {
     lead: 'Nothing opens: about a second per resume.',
     points: [
-      'Uses the same fonts (including Word’s Calibri and Aptos when Word is installed), so line breaks match Word’s.',
+      platform === 'macos'
+        ? 'Uses the same fonts (including Word’s Calibri and Aptos when Word is installed), so line breaks match Word’s.'
+        : 'Uses the same fonts as Word, or free look-alikes with identical letter widths when they’re missing, so line breaks match Word’s.',
       'Runs with its own settings, separate from any LibreOffice you open yourself.',
     ],
-    missing: 'Not installed. Get it free from libreoffice.org, then Detect again.',
-  },
+    missing: platform === 'linux'
+      ? 'Not installed. Install it with your package manager (e.g. libreoffice-writer), then Detect again.'
+      : 'Not installed. Get it free from libreoffice.org, then Detect again.',
+  }
 }
 
-function EngineCard({ e, chosen, effective, busy, onChoose }: {
-  e: PdfEngineInfo; chosen: boolean; effective: boolean; busy: boolean; onChoose: () => void
+function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
+  e: PdfEngineInfo; chosen: boolean; effective: boolean; busy: boolean; platform?: Platform; onChoose: () => void
 }) {
-  const about = ABOUT[e.id]
+  const info = about(e.id, platform)
   return (
     <label className={cx('relative flex min-w-0 flex-col gap-3 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
       !e.available ? 'cursor-not-allowed border-rule bg-wash' : chosen
@@ -56,12 +66,12 @@ function EngineCard({ e, chosen, effective, busy, onChoose }: {
       </span>
       {e.available ? (
         <span className="flex min-w-0 flex-col gap-1.5 pl-[30px] text-[13px] leading-[1.45] text-body">
-          <span className="font-semibold text-ink">{about.lead}</span>
-          {about.points.map((p) => <span key={p} className="text-muted text-pretty">{p}</span>)}
+          <span className="font-semibold text-ink">{info.lead}</span>
+          {info.points.map((p) => <span key={p} className="text-muted text-pretty">{p}</span>)}
           {e.path && <span className="truncate font-mono text-[11px] text-faint" title={e.path}>{e.path}</span>}
         </span>
       ) : (
-        <span className="pl-[30px] text-[13px] text-muted text-pretty">{about.missing}</span>
+        <span className="pl-[30px] text-[13px] text-muted text-pretty">{info.missing}</span>
       )}
     </label>
   )
@@ -107,7 +117,7 @@ export default function Settings() {
     <div className="flex flex-col gap-7">
       <div className="animate-rise flex flex-col gap-2.5">
         <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Settings</h1>
-        <p className="text-lg text-body">How AutoCV works on this Mac.</p>
+        <p className="text-lg text-body">How AutoCV works on {s ? thisComputer(s.platform) : 'this computer'}.</p>
       </div>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
@@ -120,7 +130,7 @@ export default function Settings() {
               <p className={cx(label, 'text-accent')}>PDF export</p>
               <h2 id="pdf-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which app makes your PDF</h2>
               <p className="text-sm leading-[1.5] text-muted text-pretty">
-                AutoCV renders your resume as a Word document (.docx), then an app on this Mac converts it to PDF and
+                AutoCV renders your resume as a Word document (.docx), then an app on {thisComputer(s.platform)} converts it to PDF and
                 counts the pages. When both are installed, Microsoft Word is the default.
               </p>
             </div>
@@ -146,7 +156,7 @@ export default function Settings() {
           <div role="radiogroup" aria-labelledby="pdf-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
             {s.pdf_engines.map((e) => (
               <EngineCard key={e.id} e={e} chosen={chosen === e.id} effective={s.pdf_effective === e.id}
-                busy={!!busy} onChoose={() => choose(e.id)} />
+                busy={!!busy} platform={s.platform} onChoose={() => choose(e.id)} />
             ))}
           </div>
         </section>

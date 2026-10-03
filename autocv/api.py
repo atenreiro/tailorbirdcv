@@ -21,12 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, pdf as pdfmod
+from . import ai, ats, critique as hm, factcheck, oscompat, pdf as pdfmod
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import AppAnswer, Knowledge, Preference, TailoredResume
-from .store import (OUTCOMES, ROOT, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, RetiredIdReused, Store,
+from .store import (OUTCOMES, ROOT, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
                     next_id)
 
 log = logging.getLogger("autocv")
@@ -242,7 +242,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             effective = pdfmod.resolve(settings["pdf_engine"], engines)
         except RuntimeError:
             effective = None
-        return {**settings, "pdf_engines": engines, "pdf_effective": effective}
+        return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM}
 
     @api.get("/settings")
     async def get_settings():
@@ -252,7 +252,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def put_settings(patch: SettingsPatch):
         if patch.pdf_engine and not any(e["id"] == patch.pdf_engine and e["available"]
                                         for e in await asyncio.to_thread(pdfmod.detect)):
-            raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this Mac.")
+            raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this computer.")
         store.save_settings(patch.model_dump(include=patch.model_fields_set))
         return await asyncio.to_thread(settings_payload)
 
@@ -567,7 +567,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             report = factcheck.check(profile, tailored)
             if not report.ok:
                 raise HTTPException(409, "Fact-check failed — fix the errors before building.")
-            store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
+            try:
+                store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
+            except OutputInUse as e:
+                raise HTTPException(409, str(e))
             docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
             pages = None
             if pdf:
@@ -714,10 +717,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/applications/{app_id}/reveal", status_code=204)
     def reveal(app_id: str, snapshot: str | None = None):
-        """Open the application folder (or a sent copy) in Finder with the PDF selected, so
-        the exact file can be uploaded from there — no "(1)" duplicates from Downloads."""
-        import subprocess
-        import sys
+        """Show the application folder (or a sent copy) in Finder / Explorer / the file manager with
+        the PDF selected, so the exact file can be uploaded from there — no "(1)" duplicates."""
         app_id = need_app(app_id)
         path = store.app_path(app_id)
         if snapshot:
@@ -730,15 +731,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             files = store.files(app_id)
         pdf = next((path / f for f in files if f.endswith(".pdf")), None)
         target = pdf or next((path / f for f in files if f.endswith(".docx")), None)
-        if sys.platform == "darwin":
-            cmd = ["open", "-R", str(target)] if target else ["open", str(path)]
-        elif sys.platform.startswith("win"):
-            cmd = ["explorer", f"/select,{target}"] if target else ["explorer", str(path)]
-        else:
-            cmd = ["xdg-open", str(path)]
         try:
-            subprocess.run(cmd, check=False, timeout=10)
-        except (OSError, subprocess.TimeoutExpired) as e:
+            oscompat.reveal(target, path)
+        except OSError as e:
             raise HTTPException(500, f"Couldn't open the folder: {e}")
 
     @api.get("/applications/{app_id}/files/{name}")

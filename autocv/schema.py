@@ -19,6 +19,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .oscompat import replace as _replace
+
 Track = Literal["manager", "ic", "hybrid"]
 Source = Literal["resume", "prep_guide", "interview"]
 
@@ -273,11 +275,11 @@ def dump_yaml(data: dict, path: Path) -> None:
     text = yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=100)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:  # same bytes on every OS
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise

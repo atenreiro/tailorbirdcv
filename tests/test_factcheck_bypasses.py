@@ -140,8 +140,8 @@ def test_spelled_number_matching_source_digits_passes(profile, tailored):
 
 # ---- 3. invisible / format characters -----------------------------------------------------------
 
-@pytest.mark.parametrize("ch", ["­", "​", "‌", "‍", "⁠", "﻿", "⁡", "⁤",
-                                "‪", "‮", "⁦", "⁩", "‎", "‏"])
+@pytest.mark.parametrize("ch", ["\xad", "\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u2061", "\u2064",
+                                "\u202a", "\u202e", "\u2066", "\u2069", "\u200e", "\u200f"])
 def test_invisible_characters_are_rejected(profile, tailored, ch):
     text = f"Rebuilt Splunk detection logic, cutting false positives by over 65%{ch} to roughly nine a month."
     errs = acme_bullet(profile, tailored, text)
@@ -149,13 +149,13 @@ def test_invisible_characters_are_rejected(profile, tailored, ch):
 
 
 def test_invisible_character_inside_a_word_is_rejected(profile, tailored):
-    errs = acme_bullet(profile, tailored, "Rebuilt Kuber­netes detection logic.")
+    errs = acme_bullet(profile, tailored, "Rebuilt Kuber\xadnetes detection logic.")
     assert any("invisible" in e for e in errs)
 
 
 def test_invisible_character_in_competency_label_and_item_is_rejected(profile, tailored):
-    tailored.competencies[1].label = "Plat​forms"
-    tailored.competencies[1].items[0] = "Splunk​"
+    tailored.competencies[1].label = "Plat\u200bforms"
+    tailored.competencies[1].items[0] = "Splunk\u200b"
     errs = [str(e) for e in check(profile, tailored).errors]
     assert any("competencies[1].label" in e and "invisible" in e for e in errs), errs
     assert any("competencies[1].items[0]" in e and "invisible" in e for e in errs), errs

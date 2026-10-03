@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - run: npm --prefix web run lint
+      - run: npm --prefix web run build
+
+  libreoffice:
+    name: Real PDF · LibreOffice · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install LibreOffice (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
+      - name: Install LibreOffice (Windows)
+        if: runner.os == 'Windows'
+        run: choco install libreoffice-fresh -y --no-progress
+      - run: uv sync --locked
+      - run: uv run pytest -q tests/test_pdf_real.py tests/test_pdf.py tests/test_oscompat.py -rs
+        env:
+          AUTOCV_EXPECT_LIBREOFFICE: "1"

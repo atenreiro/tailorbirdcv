@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import oscompat
 from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
                      load_profile, load_tailored, load_yaml)
 
@@ -63,6 +64,10 @@ class NeedsBuild(Exception):
 
 class AppNotFound(KeyError):
     """No application with this id (or the id isn't a valid one)."""
+
+
+class OutputInUse(RuntimeError):
+    """A built file can't be replaced because another app has it open (Windows)."""
 
 
 class CorruptApp(Exception):
@@ -105,11 +110,11 @@ def file_version(path: Path) -> str:
 def _write_json_atomic(path: Path, data: dict) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:  # same bytes on every OS
             json.dump(data, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        oscompat.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
@@ -140,8 +145,13 @@ def next_id(prefix: str, taken: set[str]) -> str:
     return f"{prefix}{n}"
 
 
+# Names Windows reserves for devices: a folder called "con" or "com1" can't be created there.
+_WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+
+
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return f"{s}-co" if s in _WINDOWS_RESERVED else s
 
 
 SLUG_MAX = 60  # per folder-name part, so long company/role names can't exceed file-name limits
@@ -553,7 +563,7 @@ class Store:
         with _LOCK:
             path = self.app_path(app_id)
             canonical = self.app_id_for(path)
-            shutil.rmtree(path)
+            oscompat.rmtree(path)  # sent copies are read-only on purpose
             self._prune(path.parent)
             legacy = self._legacy_ids()
             gone = [old for old, new in legacy.items() if new == canonical]
@@ -569,12 +579,12 @@ class Store:
             app_id, path = self._new_folder(company, f"{dt.date.today():%Y-%m-%d}", role)
             path.mkdir(parents=True)
             try:
-                (path / "jd.md").write_text(jd, encoding="utf-8")
+                (path / "jd.md").write_text(jd, encoding="utf-8", newline="\n")
                 now = dt.datetime.now().isoformat(timespec="seconds")
                 self._write_meta(path, {"company": company, "role": role, "url": url, "status": "draft",
                                         "created": now, "updated": now})
             except BaseException:
-                shutil.rmtree(path, ignore_errors=True)  # never leave a half-created folder behind
+                oscompat.rmtree(path, ignore_errors=True)  # never leave a half-created folder behind
                 self._prune(path.parent)
                 raise
             return app_id
@@ -721,7 +731,10 @@ class Store:
     def clear_outputs(self, app_id: str) -> None:
         for f in self.app_path(app_id).iterdir():
             if f.suffix in (".docx", ".pdf"):
-                f.unlink()
+                try:
+                    f.unlink()
+                except PermissionError as e:  # Windows locks files that are open in another app
+                    raise OutputInUse(f"{f.name} is open in another app. Close it, then build again.") from e
 
     def outputs_stale(self, app_id: str) -> bool:
         """Built files exist but the tailored resume or the profile changed after they were built."""
@@ -985,7 +998,7 @@ class Store:
                       "company": meta.get("company"), "role": meta.get("role"), "pages": meta.get("pages"),
                       "tailored_hash": self.tailored_hash(app_id), "profile_version": meta.get("built_profile"),
                       "files": copied}
-            (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+            (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8", newline="\n")
             for f in dest.iterdir():
                 f.chmod(0o444)  # read-only: this is the record of what was sent
             return record

@@ -1,6 +1,6 @@
 # AutoCV
 
-Tailors a master resume to a job description, **without inventing anything**. A local web UI (FastAPI + React) handles the workflow. The AI work runs on your own Claude Code CLI login, so it uses your Claude subscription with no API key and no per-call billing. Deterministic Python handles the fact-check gate, renders your exact Word design, measures ATS keyword coverage, and converts to PDF through Word.
+Tailors a master resume to a job description, **without inventing anything**. A local web UI (FastAPI + React) handles the workflow. The AI work runs on your own Claude Code CLI login, so it uses your Claude subscription with no API key and no per-call billing. Deterministic Python handles the fact-check gate, renders your exact Word design, measures ATS keyword coverage, and converts to PDF through Microsoft Word or LibreOffice. Runs on macOS, Windows and Linux.
 
 ## How it works
 ```
@@ -15,6 +15,17 @@ JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► 
 - **Hiring-manager review**: on demand in Review, the AI reads the draft as the role's hiring manager and a recruiter skimming the top third would. You get a verdict, scores, and specific fixes pinned to lines. Every suggested rewrite is fact-checked before you see it, and you accept or reject each one.
 - **Sent copies and history**: marking an application *applied* freezes a read-only copy of exactly what you sent. Every change to your profile and answers is kept in Master profile → History, with a diff and one-click (undoable) restore.
 - **Rendering**: reproduces the original resume's formatting exactly (verified pixel-identical via `autocv baseline`).
+
+## Requirements
+- [uv](https://docs.astral.sh/uv/) (Python), [Node.js](https://nodejs.org/) 20+ (to build the web UI), and [Claude Code](https://claude.com/claude-code) logged in with a Claude subscription. On Windows, use the native Claude Code installer (`claude.exe`).
+- A PDF engine, chosen in Settings (Word is the default when both are installed):
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| Microsoft Word | ✓ (hidden, via AppleScript) | ✓ (hidden, via COM) | — |
+| LibreOffice | ✓ | ✓ | ✓ (`libreoffice-writer` package) |
+
+  Without Microsoft's fonts (typically Linux), LibreOffice uses free look-alikes with identical letter widths (Carlito, and Gelasio which ships with AutoCV), so page breaks still match Word's.
 
 ## Setup (once)
 ```bash
@@ -31,7 +42,8 @@ claude          # in a terminal, then /login, so the CLI has a valid session
 uv run autocv serve        # opens http://127.0.0.1:8000 in your default browser (--no-browser to skip)
 ```
 - Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).
-- Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001`.
+- Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001` (PowerShell: `$env:AUTOCV_ENGINE="fake"; uv run autocv serve --port 8001`).
+- LibreOffice in an unusual location: set `AUTOCV_SOFFICE` to its `soffice` (Windows: `soffice.com`) path.
 - Job URLs: Lever/Greenhouse/Ashby APIs → embedded JobPosting data → page text → headless Chromium fallback (`AUTOCV_BROWSER_FALLBACK=0` disables it). Every request, browser ones included, is limited to public addresses.
 - `AUTOCV_MODEL` picks the model (e.g. `opus`); the default is the CLI's own default.
 

@@ -24,6 +24,7 @@ import json
 import os
 import re
 import socket
+import sys
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -464,7 +465,8 @@ async def render_page(url: str) -> Rendered:
         try:
             browser = await p.chromium.launch(headless=True)
         except PWError:
-            raise FetchError("The headless browser isn't installed — run `uv run playwright install chromium`.")
+            hint = " --with-deps" if sys.platform.startswith("linux") else ""  # Linux also needs system libraries
+            raise FetchError(f"The headless browser isn't installed — run `uv run playwright install{hint} chromium`.")
         try:
             context = await browser.new_context(user_agent=BROWSER_UA, service_workers="block", locale="en-US")
             await context.route("**/*", guard)

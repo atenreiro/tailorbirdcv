@@ -124,9 +124,14 @@ def test_reveal_a_sent_copy(env, monkeypatch):
     client, store, app_id, _ = env
     snap = client.post(f"/api/applications/{app_id}/freeze?build=true").json()["sent"][0]["id"]
     calls = []
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+    monkeypatch.setattr(subprocess, "run", run)
     assert client.post(f"/api/applications/{app_id}/reveal?snapshot={snap}").status_code == 204
-    assert f"/sent/{snap}/" in calls[0][-1]
+    shown = calls[0] if isinstance(calls[0], str) else " ".join(calls[0])
+    sent = store.sent_dir(app_id) / snap
+    assert str(sent) in shown or sent.resolve().as_uri() in shown  # Path, not "/": works on Windows too
     assert client.post(f"/api/applications/{app_id}/reveal?snapshot=nope").status_code == 404
 
 

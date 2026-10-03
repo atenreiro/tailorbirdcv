@@ -224,10 +224,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-browser", action="store_true", help="don't open the web UI in the default browser")
     p.set_defaults(fn=cmd_serve)
     args = parser.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
     if args.cmd != "serve":  # serve migrates when the API starts
         try:
             for old, new in STORE.migrate_layout().items():
-                print(f"moved application {old} → {new.replace('~', '/')}")
+                print(f"moved application {old} → {STORE.app_path(new).relative_to(STORE.apps_dir)}")
         except Exception as e:  # noqa: BLE001 — never block a command on housekeeping
             print(f"warning: application folder migration failed ({e})", file=sys.stderr)
     return args.fn(args)

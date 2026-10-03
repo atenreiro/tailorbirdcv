@@ -133,7 +133,8 @@ export interface EngineStatus { engine: string; ready: boolean; model?: string; 
 export type PdfEngine = 'word' | 'libreoffice'
 export interface PdfEngineInfo { id: PdfEngine; name: string; available: boolean; path: string | null; version: string | null }
 /** pdf_engine: the user's choice (null = automatic: Word when installed); pdf_effective: what builds use now. */
-export interface Settings { pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null }
+export type Platform = 'macos' | 'windows' | 'linux'
+export interface Settings { pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }

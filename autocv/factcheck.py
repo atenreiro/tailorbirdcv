@@ -35,13 +35,13 @@ Checks (errors block the build):
 
 Limitations (covered by Claude's self-review + the candidate's read-through): ordinary
 lowercase rewording is not verified semantically, and the units/meaning attached to a
-number ("six a month" vs "six a week") are not compared. The unknown-word check needs
-the system word list (/usr/share/dict/words, standard on macOS); without it the check
-is skipped and the report carries a warning.
+number ("six a month" vs "six a week") are not compared. The unknown-word check uses the
+bundled public-domain word list (data/words.txt.gz), so it behaves the same on every OS.
 """
 
 from __future__ import annotations
 
+import gzip
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -203,9 +203,9 @@ advisory consulting oversight planning design research reporting training awaren
 
 # Typographic characters always allowed in claim text (dashes/quotes are canonicalised).
 _ALLOWED_SYMBOLS = set(
-    " ¢£¥§©®°±·«»×"
+    "\xa0¢£¥§©®°±·«»×"
     "‐‑‒–—―‘’‚‛“”„‟"
-    "•…′″™←↑→↓−≈≤≥ "
+    "•…′″™←↑→↓−≈≤≥\u202f"
     "€₹₩₫₦₱₽₺﹘﹣－"
 ) | {chr(c) for c in range(0x2000, 0x200B)}
 _DASH_RE = re.compile("[‐‑‒–—―−﹘﹣－]")
@@ -244,7 +244,7 @@ def canon(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
     text = _DASH_RE.sub("-", text).replace("×", "x")
-    text = re.sub(r"[  -‍ ⁠﻿]", " ", text)
+    text = re.sub(r"[\xa0\u2000-\u200d\u202f\u2060\ufeff]", " ", text)
     return text
 
 
@@ -398,12 +398,15 @@ def _shown(value: float) -> str:
     return f"{value:.3g}"
 
 
+WORDS_FILE = Path(__file__).resolve().parent / "data" / "words.txt.gz"  # public-domain web2 list, see data/README.md
+
+
 @lru_cache(maxsize=1)
 def _system_words() -> frozenset[str]:
-    path = Path("/usr/share/dict/words")
-    if not path.exists():
-        return frozenset()
-    return frozenset(w for w in path.read_text(errors="ignore").split() if w[:1].islower())
+    """Ordinary lowercase English words. Bundled (not /usr/share/dict) so the gate behaves the same on
+    every OS; it's the same list macOS ships."""
+    with gzip.open(WORDS_FILE, "rt", encoding="utf-8", errors="ignore") as f:
+        return frozenset(w for w in f.read().split() if w[:1].islower())
 
 
 @lru_cache(maxsize=1)
@@ -675,7 +678,7 @@ class FactChecker:
                 report.error(where, f'"{word}" is not an ordinary English word and isn\'t in cited sources '
                                     f"{claim.sources} — tools, products and names must come from the evidence")
         elif not any(w.message.startswith("system dictionary") for w in report.warnings):
-            report.warn("factcheck", "system dictionary (/usr/share/dict/words) not found — lowercase "
+            report.warn("factcheck", "system dictionary (the bundled word list) not found — lowercase "
                                      "tool/product names were not checked")
 
     def _lower_word_ok(self, word: str, corpus: str) -> bool:

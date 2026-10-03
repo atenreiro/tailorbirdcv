@@ -4,6 +4,7 @@ Skipped if Playwright's Chromium isn't installed."""
 
 import asyncio
 import http.server
+import os
 import threading
 from pathlib import Path
 
@@ -13,8 +14,10 @@ from autocv import jobfetch
 from autocv.jobfetch import BlockedURL, FetchError, render_page
 
 pytest.importorskip("playwright")
-if not list((Path.home() / "Library/Caches/ms-playwright").glob("chromium*")) and \
-        not list((Path.home() / ".cache/ms-playwright").glob("chromium*")):
+_CACHES = [Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])] if os.environ.get("PLAYWRIGHT_BROWSERS_PATH") else [
+    Path.home() / "Library/Caches/ms-playwright", Path.home() / ".cache/ms-playwright",
+    Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ms-playwright"]
+if not any(list(c.glob("chromium*")) for c in _CACHES):
     pytest.skip("Playwright Chromium not installed", allow_module_level=True)
 
 LAN_PORT = {"port": 0}

@@ -89,7 +89,7 @@ def test_word_script_never_activates_or_touches_other_documents():
 
 
 # -- LibreOffice ----------------------------------------------------------------------
-FAKE_SOFFICE = """#!{python}
+FAKE_SOFFICE = """
 import sys, pathlib, json, zipfile
 args = sys.argv[1:]
 src = pathlib.Path(args[-1]); out = pathlib.Path(args[args.index("--outdir") + 1])
@@ -102,10 +102,9 @@ pathlib.Path({log!r}).write_text(json.dumps({{"args": args, "xml": xml}}))
 @pytest.fixture
 def soffice(tmp_path, monkeypatch):
     log = tmp_path / "soffice.json"
-    exe = tmp_path / "bin" / "soffice"
+    exe = tmp_path / "bin" / "soffice.py"  # run through Python, so it works on every OS
     exe.parent.mkdir()
-    exe.write_text(FAKE_SOFFICE.format(python=sys.executable, log=str(log)))
-    exe.chmod(0o755)
+    exe.write_text(FAKE_SOFFICE.format(log=str(log)))
     monkeypatch.setattr(pdf, "soffice", lambda: exe)
     fonts = tmp_path / "fonts"
     fonts.mkdir()
@@ -113,6 +112,7 @@ def soffice(tmp_path, monkeypatch):
                  "Aptos-Black.ttf", "Arial.ttf", "Leelawadee.ttf", "notes.txt"]:
         (fonts / name).write_bytes(b"font")
     monkeypatch.setattr(pdf, "font_dirs", lambda: [fonts, tmp_path / "missing"])
+    monkeypatch.setattr(pdf, "system_font_dirs", lambda: [fonts])  # the "installed" fonts
     return log
 
 
@@ -141,14 +141,13 @@ def test_libreoffice_links_only_the_fonts_the_document_uses(docx, soffice, tmp_p
     linked = tmp_path / "lo-profile" / "user" / "fonts"
     assert sorted(p.name for p in linked.iterdir()) == ["Aptos-Bold-Italic.ttf", "Calibri.ttf", "Calibrib.ttf",
                                                         "Georgia Bold.ttf"]  # not Black, Arial or script fonts
-    assert all(p.is_symlink() for p in linked.iterdir())
+    assert all(p.is_symlink() or p.is_file() for p in linked.iterdir())  # copies where symlinks aren't allowed
     pdf.to_pdf(docx, timeout=10, engine="libreoffice")  # idempotent
 
 
 def test_libreoffice_failure_is_reported(docx, soffice, monkeypatch, tmp_path):
-    bad = tmp_path / "bin" / "bad"
-    bad.write_text(f"#!{sys.executable}\nprint('Error: source file could not be loaded')\n")
-    bad.chmod(0o755)
+    bad = tmp_path / "bin" / "bad.py"
+    bad.write_text("print('Error: source file could not be loaded')\n")
     monkeypatch.setattr(pdf, "soffice", lambda: bad)
     with pytest.raises(RuntimeError, match="LibreOffice did not produce the PDF: Error: source file could not be loaded"):
         pdf.to_pdf(docx, timeout=10, engine="libreoffice")
@@ -222,3 +221,65 @@ def test_settings_need_the_autocv_header(client):
     bare = TestClient(client.app, base_url="http://127.0.0.1")
     assert bare.put("/api/settings", json={"pdf_engine": "word"}).status_code == 403
 
+
+
+# -- fonts: stand-ins for missing fonts ------------------------------------------------
+XCU_WITH_OTHER = ('<?xml version="1.0" encoding="UTF-8"?>\n<oor:items xmlns:oor="http://openoffice.org/2001/registry">\n'
+                  '<item oor:path="/org.openoffice.Office.Common/Misc"><prop oor:name="UseOpenCL" oor:op="fuse">'
+                  '<value>false</value></prop></item>\n</oor:items>\n')
+
+
+def test_a_missing_font_gets_its_open_stand_in_and_loses_it_once_installed(tmp_path, monkeypatch):
+    xcu = tmp_path / "user" / "registrymodifications.xcu"
+    xcu.parent.mkdir(parents=True)
+    xcu.write_text(XCU_WITH_OTHER)
+    monkeypatch.setattr(pdf, "installed", lambda family: family != "Georgia")
+    pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri", "Aptos"})
+    text = xcu.read_text()
+    assert '<node oor:name="autocv-georgia"' in text and "<value>Gelasio</value>" in text
+    assert '<prop oor:name="Replacement" oor:op="fuse"><value>true</value>' in text
+    assert "autocv-calibri" not in text and "UseOpenCL" in text  # installed fonts and other settings untouched
+    pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})  # idempotent: one rule, not two
+    assert xcu.read_text().count("autocv-georgia") == 1
+    monkeypatch.setattr(pdf, "installed", lambda family: True)  # Georgia got installed
+    pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})
+    assert xcu.read_text() == XCU_WITH_OTHER
+
+
+def test_a_new_profile_gets_the_rules_before_libreoffice_first_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf, "installed", lambda family: False)
+    pdf.configure_substitutes(tmp_path, {"Georgia"})
+    assert "autocv-georgia" in (tmp_path / "user" / "registrymodifications.xcu").read_text()
+    other = tmp_path / "other"
+    monkeypatch.setattr(pdf, "installed", lambda family: True)
+    pdf.configure_substitutes(other, {"Georgia"})  # nothing missing: LibreOffice creates its own file
+    assert not (other / "user" / "registrymodifications.xcu").exists()
+
+
+def test_the_bundled_stand_in_is_linked_for_libreoffice(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf, "font_dirs", lambda: [pdf.DATA / "fonts"])
+    pdf.sync_fonts(tmp_path, {"Georgia"})
+    assert sorted(p.name for p in (tmp_path / "user" / "fonts").iterdir()) == [
+        "Gelasio-Bold.ttf", "Gelasio-BoldItalic.ttf", "Gelasio-Italic.ttf", "Gelasio-Regular.ttf"]
+
+
+# -- Word on Windows / Linux -----------------------------------------------------------
+def test_windows_word_runs_hidden_through_com_and_only_touches_our_document(monkeypatch):
+    import base64
+    monkeypatch.setattr(pdf, "IS_WINDOWS", True)
+    monkeypatch.setattr(pdf, "IS_MAC", False)
+    cmd = pdf._command(Path("C:/work/it's.docx"), Path("C:/work/out.pdf"))
+    assert cmd[1:6] == ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]
+    script = base64.b64decode(cmd[-1]).decode("utf-16-le")
+    assert "$src = 'C:/work/it''s.docx'" in script.replace("\\", "/")  # quotes escaped, never interpolated
+    assert "ExportAsFixedFormat($dst, 17)" in script and "$doc.Close(0)" in script
+    assert "if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }" in script
+    assert ".Activate" not in script and "Documents.Item(" not in script  # never by position
+
+
+def test_word_is_not_offered_on_linux(monkeypatch):
+    monkeypatch.setattr(pdf, "IS_WINDOWS", False)
+    monkeypatch.setattr(pdf, "IS_MAC", False)
+    assert pdf.word_app() is None
+    with pytest.raises(RuntimeError, match="isn't available on Linux"):
+        pdf._command(Path("a.docx"), Path("a.pdf"))

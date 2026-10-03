@@ -287,8 +287,22 @@ def test_reveal_opens_only_this_applications_folder(env, monkeypatch):
     app_id = composed_app(client)
     client.post(f"/api/applications/{app_id}/build?pdf=false")
     calls = []
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+    monkeypatch.setattr(subprocess, "run", run)
     assert client.post(f"/api/applications/{app_id}/reveal").status_code == 204
-    assert str(store.app_path(app_id)) in calls[0][-1]
+    shown = calls[0] if isinstance(calls[0], str) else " ".join(calls[0])
+    assert str(store.app_path(app_id)) in shown or store.app_path(app_id).resolve().as_uri() in shown
     assert client.post("/api/applications/..%2F..%2Fetc/reveal").status_code == 404
     assert calls[1:] == []
+
+
+def test_reveal_failure_is_reported(env, monkeypatch):
+    import subprocess
+    client, store, _ = env
+    app_id = composed_app(client)
+    client.post(f"/api/applications/{app_id}/build?pdf=false")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, b"", b"no file manager"))
+    r = client.post(f"/api/applications/{app_id}/reveal")
+    assert r.status_code == 500 and "no file manager" in r.json()["detail"]

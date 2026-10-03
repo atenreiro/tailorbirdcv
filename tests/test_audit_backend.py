@@ -550,7 +550,10 @@ def test_case_aliases_and_non_applications_are_not_ids(env):
     (store.apps_dir / company / "notes").mkdir()                 # not an application (no meta.json)
     assert client.delete(f"/api/applications/{company}{APP_SEP}notes").status_code == 404
     assert (store.apps_dir / company / "notes").exists()
-    os.symlink(store.app_path(app_id), store.apps_dir / company / "alias")
+    try:
+        os.symlink(store.app_path(app_id), store.apps_dir / company / "alias")
+    except OSError:  # Windows without Developer Mode can't create symlinks (so can't be tricked by one)
+        return
     with pytest.raises(KeyError):
         store.app_path(f"{company}{APP_SEP}alias")
     assert store.app_path(app_id).exists()

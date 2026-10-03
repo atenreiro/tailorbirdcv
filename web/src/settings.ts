@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Settings } from './api'
+import { api, type Platform, type Settings } from './api'
 
 // Settings are read once per page load and shared; the Settings page refreshes the cache.
 let cache: Promise<Settings> | null = null
@@ -23,3 +23,10 @@ export function useSettings() {
 
 /** The app that will make the PDF ("Microsoft Word", "LibreOffice"), once known. */
 export const pdfEngineName = (s: Settings | null) => s?.pdf_engines.find((e) => e.id === s.pdf_effective)?.name
+
+/** Platform wording: "this Mac" vs "this computer", Finder vs File Explorer. */
+export const thisComputer = (p?: Platform) => (p === 'macos' ? 'this Mac' : 'this computer')
+export const showInFolder = (p?: Platform) =>
+  p === 'macos' ? 'Show in Finder' : p === 'windows' ? 'Show in File Explorer' : 'Show in folder'
+export const fileManager = (p?: Platform) =>
+  p === 'macos' ? 'Finder' : p === 'windows' ? 'File Explorer' : 'your file manager'

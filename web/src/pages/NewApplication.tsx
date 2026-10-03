@@ -27,7 +27,8 @@ const HOW = [
   ['Verify', 'A fact-check blocks any number, tool or name not in your evidence.'],
   ['Export', 'Your exact resume design, as .docx and .pdf.'],
 ]
-const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+const MAC = typeof navigator !== 'undefined' &&
+  /Mac|iPhone|iPad/.test((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.userAgent)
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
 
 export default function NewApplication() {

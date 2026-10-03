@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { api, ApiError, type Profile, type Tailored } from '../../api'
 import { cx, fmtDate } from '../../lib'
-import { pdfEngineName, useSettings } from '../../settings'
+import { fileManager, pdfEngineName, showInFolder, useSettings } from '../../settings'
 import { Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
@@ -76,7 +76,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
           </div>
           {unsaved && <p className="rounded-lg bg-[#f6ead2] px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
           {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
-          {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF{via}.{settings?.pdf_effective === 'word' ? ' The first run may ask macOS for permission to control Word.' : ''}</p>}
+          {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF{via}.{settings?.pdf_effective === 'word' && settings.platform === 'macos' ? ' The first run may ask macOS for permission to control Word.' : ''}</p>}
           {ok && !docx && overBudget && (
             <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
@@ -105,10 +105,10 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
                 ))}
                 <button className={fileLink} onClick={() => api.reveal(app.id).catch(() => {})}
                   title="Opens this application's folder with the PDF selected, so you upload exactly this file">
-                  <span>Show in Finder</span><span aria-hidden>↗</span>
+                  <span>{showInFolder(settings?.platform)}</span><span aria-hidden>↗</span>
                 </button>
               </div>
-              <p className="text-xs text-faint">Tip: upload from Finder. Repeated downloads get “(1)” added to the name.</p>
+              <p className="text-xs text-faint">Tip: upload from {fileManager(settings?.platform)}. Repeated downloads get “(1)” added to the name.</p>
             </>
           )}
           <div className="flex flex-wrap gap-2">
@@ -144,7 +144,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
                     <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className={`${chip} hover:bg-accent-soft hover:text-accent`}>↓ {f.split('.').pop()}</a>
                   ))}
                   <button className={`${chip} cursor-pointer hover:bg-accent-soft hover:text-accent`} onClick={() => api.reveal(app.id, c.id).catch(() => {})}
-                    title="Opens this sent copy's folder, read-only">Show in Finder</button>
+                    title="Opens this sent copy's folder, read-only">{showInFolder(settings?.platform)}</button>
                 </div>
               </div>
             ))

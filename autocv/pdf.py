@@ -1,31 +1,38 @@
-"""docx → PDF through Microsoft Word or LibreOffice, plus page counting.
+"""docx → PDF through Microsoft Word or LibreOffice, plus page counting, on macOS, Windows and Linux.
 
 Either engine converts in one fixed working folder (`private/word/`) and one conversion runs at a
-time. `resolve()` picks the engine: the user's choice when it's installed, otherwise Word, then
-LibreOffice (so Word is the default whenever both are installed).
+time (a thread lock plus a file lock, so the CLI and a running server take turns). `resolve()`
+picks the engine: the user's choice when it's installed, otherwise Word, then LibreOffice (so Word
+is the default whenever both are installed).
 
-- **Word** is driven quietly: launched hidden and in the background (never activated), only our
-  own document is opened and closed, and Word is quit afterwards only if it wasn't already
-  running. Using one folder means Word's sandbox asks for file access ("Grant File Access") at
-  most once.
+- **Word** is driven quietly and never touches the user's own documents:
+  - macOS: AppleScript (JXA) through `osascript`. Word is launched hidden in the background,
+    our document is addressed only by its unique name, and Word is quit only if AutoCV started
+    it and nothing else is open. One fixed folder means Word's sandbox asks for file access
+    ("Grant File Access") at most once.
+  - Windows: PowerShell COM automation. Our document opens in an invisible window, is closed
+    through its own object, and Word is quit only if AutoCV created that Word instance and
+    nothing else is open in it.
+  - Linux: not available.
 - **LibreOffice** runs headless (no window) with its own profile (`private/libreoffice/`), so it
   never touches a LibreOffice the user has open. The fonts the resume names (Georgia, Calibri,
-  Aptos…) are linked into that profile from the system and from Word, if installed, so the layout
-  matches Word's. Number ranges ("2–4") are glued in LibreOffice's copy only, because it would
-  otherwise break a line inside them where Word doesn't.
+  Aptos…) are linked into that profile (from the system and, on macOS, from inside Word), and when
+  one is missing a metric-compatible open font stands in (Georgia → Gelasio, shipped with AutoCV;
+  Calibri → Carlito, shipped with LibreOffice), so line breaks and page counts match Word's.
+  Number ranges ("2–4") are glued in LibreOffice's copy only, because it would otherwise break a
+  line inside them where Word doesn't.
 
 Each conversion runs in its own process group with a time limit: if the engine stalls (e.g. Word
-waiting on a permission dialog), it's killed and a clear error is raised instead of hanging.
+waiting on a dialog), the whole process tree is killed and a clear error is raised instead of hanging.
 """
 
 from __future__ import annotations
 
-import fcntl
+import base64
 import os
 import plistlib
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -35,15 +42,19 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from . import oscompat
+from .oscompat import IS_MAC, IS_WINDOWS
+
 PDF_TIMEOUT = float(os.environ.get("AUTOCV_PDF_TIMEOUT", "120"))
 ENGINES = ("word", "libreoffice")  # order = default preference
 NAMES = {"word": "Microsoft Word", "libreoffice": "LibreOffice"}
 WORD_ID = "com.microsoft.Word"
+DATA = Path(__file__).resolve().parent / "data"
 _APPS = [Path("/Applications"), Path.home() / "Applications"]
 _lock = threading.Lock()  # one conversion at a time (Word is shared; a LibreOffice profile is single-user);
 # a file lock in the work folder does the same across processes (server + CLI)
 
-# JXA run by osascript with argv = [docx, pdf]. Never calls activate(), never touches other documents.
+# macOS: JXA run by osascript with argv = [docx, pdf]. Never calls activate(), never touches other documents.
 _WORD_JXA = r"""
 // Our document is always addressed by its unique name, never by position: a document the user
 // opens meanwhile shifts positions, and closing "document 1" could then close theirs.
@@ -76,6 +87,38 @@ function run(argv) {
 }
 """
 
+# Windows: Windows PowerShell 5.1 (.NET Framework, which has GetActiveObject) driving Word over COM.
+# __SRC__ / __DST__ are replaced with single-quoted PowerShell literals.
+_WORD_PS = r"""
+$ErrorActionPreference = 'Stop'
+$src = __SRC__
+$dst = __DST__
+$missing = [System.Reflection.Missing]::Value
+$word = $null
+$created = $false
+try { $word = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application') } catch { }
+if ($null -eq $word) {
+  $word = New-Object -ComObject Word.Application
+  $created = $true
+  $word.Visible = $false
+}
+$alerts = $word.DisplayAlerts
+$word.DisplayAlerts = 0
+$doc = $null
+try {
+  # Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, ..., Visible=$false): never shown
+  $doc = $word.Documents.Open($src, $false, $true, $false, $missing, $missing, $missing, $missing,
+                              $missing, $missing, $missing, $false)
+  $doc.ExportAsFixedFormat($dst, 17)  # wdExportFormatPDF
+} finally {
+  if ($null -ne $doc) { $doc.Close(0) }  # our document, by its own object; wdDoNotSaveChanges
+  $word.DisplayAlerts = $alerts
+  # Quit only a Word we created, and only when nothing else is open in it (-2: ask to save).
+  if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }
+  [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)
+}
+"""
+
 
 # -- locations ------------------------------------------------------------------------
 def _private() -> Path:
@@ -92,36 +135,87 @@ def lo_profile() -> Path:
 
 
 # -- detection ------------------------------------------------------------------------
-def word_app() -> Path | None:
-    if sys.platform != "darwin":
-        return None  # driven through AppleScript
-    for base in _APPS:
-        if (app := base / "Microsoft Word.app").is_dir():
-            return app
-    try:
-        out = subprocess.run(["/usr/bin/mdfind", f"kMDItemCFBundleIdentifier == '{WORD_ID}'"],
-                             capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
+def _winreg_value(path: str, name: str = "") -> str | None:
+    """A value from HKCU or HKLM (Windows only)."""
+    if not IS_WINDOWS:
         return None
-    return next((Path(p) for p in out.splitlines() if p.endswith(".app") and Path(p).is_dir()), None)
+    import winreg  # pragma: no cover - Windows only
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):  # pragma: no cover
+        try:
+            with winreg.OpenKey(hive, path) as key:
+                return str(winreg.QueryValueEx(key, name)[0])
+        except OSError:
+            continue
+    return None  # pragma: no cover
+
+
+def _program_dirs() -> list[Path]:
+    return [Path(p) for p in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")) if p]
+
+
+def word_app() -> Path | None:
+    """Word's app bundle (macOS) or WINWORD.EXE (Windows); never on Linux."""
+    if IS_MAC:
+        for base in _APPS:
+            if (app := base / "Microsoft Word.app").is_dir():
+                return app
+        try:
+            out = subprocess.run(["/usr/bin/mdfind", f"kMDItemCFBundleIdentifier == '{WORD_ID}'"],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return next((Path(p) for p in out.splitlines() if p.endswith(".app") and Path(p).is_dir()), None)
+    if IS_WINDOWS:  # pragma: no cover - Windows only
+        if (exe := _winreg_value(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Winword.exe")) \
+                and Path(exe).is_file():
+            return Path(exe)
+        for base in _program_dirs():
+            for sub in ("Microsoft Office/root/Office16", "Microsoft Office/Office16"):
+                if (exe := base / sub / "WINWORD.EXE").is_file():
+                    return exe
+    return None
 
 
 def soffice() -> Path | None:
+    """The LibreOffice executable (soffice.com on Windows, which waits and reports errors)."""
     if env := os.environ.get("AUTOCV_SOFFICE"):
         return Path(env) if Path(env).is_file() else None
-    for base in _APPS:
-        if (exe := base / "LibreOffice.app" / "Contents" / "MacOS" / "soffice").is_file():
+    candidates: list[Path] = []
+    if IS_MAC:
+        candidates += [base / "LibreOffice.app" / "Contents" / "MacOS" / "soffice" for base in _APPS]
+    elif IS_WINDOWS:  # pragma: no cover - Windows only
+        if program := _winreg_value(r"SOFTWARE\LibreOffice\UNO\InstallPath"):
+            candidates.append(Path(program) / "soffice.com")
+        candidates += [base / "LibreOffice" / "program" / "soffice.com" for base in _program_dirs()]
+    else:
+        candidates += [Path("/usr/lib/libreoffice/program/soffice"), Path("/usr/lib64/libreoffice/program/soffice")]
+        candidates += sorted(Path("/opt").glob("libreoffice*/program/soffice"), reverse=True)
+    for exe in candidates:
+        if exe.is_file():
             return exe
     found = shutil.which("soffice") or shutil.which("libreoffice")
     return Path(found) if found else None
 
 
 def _version(path: Path | None) -> str | None:
-    app = next((p for p in ([path] + list(path.parents) if path else []) if p.suffix == ".app"), None)
-    try:
-        return plistlib.loads((app / "Contents" / "Info.plist").read_bytes()).get("CFBundleShortVersionString")
-    except (OSError, TypeError, AttributeError, plistlib.InvalidFileException):
+    if path is None:
         return None
+    app = next((p for p in [path, *path.parents] if p.suffix == ".app"), None)
+    if app:  # macOS bundle
+        try:
+            return plistlib.loads((app / "Contents" / "Info.plist").read_bytes()).get("CFBundleShortVersionString")
+        except (OSError, plistlib.InvalidFileException):
+            return None
+    for name in ("version.ini", "versionrc"):  # LibreOffice on Windows / Linux
+        try:
+            text = (path.parent / name).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if m := re.search(r"^(?:MsiProductVersion|ProductVersion)=(.+)$", text, re.M):
+            return m[1].strip()
+    if IS_WINDOWS and path.name.upper() == "WINWORD.EXE":  # pragma: no cover
+        return _winreg_value(r"SOFTWARE\Microsoft\Office\ClickToRun\Configuration", "VersionToReport")
+    return None
 
 
 def detect() -> list[dict]:
@@ -146,11 +240,10 @@ def resolve(preferred: str | None = None, engines: list[dict] | None = None) -> 
 def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, engine: str | None = None) -> Path:
     """Convert with `engine` (a preference, see resolve()); returns the PDF path next to the docx."""
     pdf = pdf or docx.with_suffix(".pdf")
-    pdf.unlink(missing_ok=True)
+    _remove_output(pdf)
     work = work_dir().resolve()
     work.mkdir(parents=True, exist_ok=True)
-    with _lock, open(work / ".lock", "w") as held:
-        fcntl.flock(held, fcntl.LOCK_EX)  # also serializes the CLI with a running server
+    with _lock, oscompat.FileLock(work / ".lock"):  # also serializes the CLI with a running server
         engine = resolve(engine)
         tag = uuid.uuid4().hex[:12]
         src, dst = work / f"autocv-{tag}.docx", work / f"autocv-{tag}.pdf"
@@ -161,39 +254,72 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
             else:
                 _lo_copy(docx, src)
                 _run(_lo_command(src, work), timeout, dst, engine, work)
-            shutil.move(dst, pdf)
+            try:
+                shutil.move(dst, pdf)
+            except PermissionError as e:  # Windows: the old PDF is open in a viewer
+                raise RuntimeError(f"Couldn't save {pdf.name}: it's open in another app. "
+                                   "Close it in your PDF viewer, then rebuild.") from e
             return pdf
         finally:
-            src.unlink(missing_ok=True)
-            dst.unlink(missing_ok=True)
+            for f in (src, dst):
+                try:
+                    f.unlink(missing_ok=True)
+                except OSError:  # Windows: still held by a helper that is exiting
+                    pass
+
+
+def _remove_output(pdf: Path) -> None:
+    try:
+        pdf.unlink(missing_ok=True)
+    except PermissionError as e:  # Windows locks files open in a viewer
+        raise RuntimeError(f"Couldn't replace {pdf.name}: it's open in another app. "
+                           "Close it in your PDF viewer, then rebuild.") from e
 
 
 def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path) -> None:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **oscompat.group_kwargs())
     try:
         out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)  # the helper and anything it started
+        oscompat.kill_tree(proc.pid)  # the helper and anything it started
         proc.wait()
         if engine == "word":
-            raise RuntimeError(
-                f"Word didn't finish within {int(timeout)} s. It may be waiting on a dialog: the first "
-                f"time, macOS asks Word for access to {work} (“Grant File Access”, click Select), or "
-                "to allow AutoCV to control Word. Answer it in Word, then rebuild.")
+            raise RuntimeError(f"Word didn't finish within {int(timeout)} s. {_word_dialog_hint(work)}")
         raise RuntimeError(f"LibreOffice didn't finish within {int(timeout)} s and was stopped. Try again, "
-                           "or switch the PDF engine to Microsoft Word in Settings.")
+                           "or switch the PDF engine in Settings.")
     if not dst.exists():
         lines = [ln.strip() for ln in (out or b"").decode(errors="replace").splitlines() if ln.strip()]
         if engine == "word":
-            detail = lines[-1] if lines else (f"Word may be showing a dialog (e.g. “Grant File Access” for "
-                                              f"{work}). Answer it in Word, then rebuild.")
+            detail = lines[-1] if lines else _word_dialog_hint(work)
         else:
             detail = lines[-1] if lines else "no output was produced."
         raise RuntimeError(f"{NAMES[engine]} did not produce the PDF: {detail}")
 
 
+def _word_dialog_hint(work: Path) -> str:
+    if IS_MAC:
+        return (f"It may be waiting on a dialog: the first time, macOS asks Word for access to {work} "
+                "(“Grant File Access”, click Select), or to allow AutoCV to control Word. Answer it in Word, "
+                "then rebuild.")
+    return ("It may be waiting on a dialog (activation, sign-in or a repair prompt). Open Word once, "
+            "answer it, then rebuild.")
+
+
+def _ps_literal(path: Path) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
 def _command(src: Path, dst: Path) -> list[str]:
-    return ["/usr/bin/osascript", "-l", "JavaScript", "-e", _WORD_JXA, str(src), str(dst)]
+    if IS_WINDOWS:
+        script = _WORD_PS.replace("__SRC__", _ps_literal(src)).replace("__DST__", _ps_literal(dst))
+        root = os.environ.get("SystemRoot", r"C:\Windows")
+        powershell = Path(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        return [str(powershell) if powershell.is_file() else "powershell.exe", "-NoProfile", "-NonInteractive",
+                "-ExecutionPolicy", "Bypass", "-EncodedCommand",
+                base64.b64encode(script.encode("utf-16-le")).decode("ascii")]
+    if IS_MAC:
+        return ["/usr/bin/osascript", "-l", "JavaScript", "-e", _WORD_JXA, str(src), str(dst)]
+    raise RuntimeError("Microsoft Word isn't available on Linux. Use LibreOffice.")
 
 
 def _lo_command(src: Path, outdir: Path) -> list[str]:
@@ -201,16 +327,17 @@ def _lo_command(src: Path, outdir: Path) -> list[str]:
     if exe is None:
         raise RuntimeError("LibreOffice is not installed.")
     profile = lo_profile().resolve()
-    sync_fonts(profile, _fonts_in(src))
-    return [str(exe), f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore", "--nologo",
+    families = _fonts_in(src)
+    sync_fonts(profile, families)
+    configure_substitutes(profile, families)
+    launcher = [sys.executable, str(exe)] if exe.suffix == ".py" else [str(exe)]  # .py: a stand-in (tests)
+    return [*launcher, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore", "--nologo",
             "--nodefault", "--nolockcheck", "--convert-to", "pdf", "--outdir", str(outdir), str(src)]
 
 
 # Digit–digit ranges ("2–4", "2019-2021"): LibreOffice may break a line inside them, Word doesn't.
-_RANGE = re.compile(r"(?<=\d)([\u2013\u2014-])(?=\d)")
-_WJ = "\u2060"  # WORD JOINER: invisible, forbids a line break, and isn't extracted as text
-
-
+_RANGE = re.compile(r"(?<=\d)([\N{EN DASH}\N{EM DASH}-])(?=\d)")
+_WJ = "\N{WORD JOINER}"  # invisible, forbids a line break, and isn't extracted as text
 _TEXT = re.compile(r"(<w:t(?:\s[^>]*)?>)([^<]*)(</w:t>)")
 
 
@@ -230,12 +357,39 @@ def _lo_copy(docx: Path, dst: Path) -> None:
 
 
 # -- fonts for LibreOffice -------------------------------------------------------------
+# Metric-compatible open fonts: same character widths, so line breaks and page counts don't move.
+SUBSTITUTES = {"Georgia": "Gelasio", "Calibri": "Carlito", "Cambria": "Caladea"}
+
+
+def system_font_dirs() -> list[Path]:
+    """Where this OS keeps fonts (searched recursively)."""
+    if IS_MAC:
+        dirs = [Path.home() / "Library" / "Fonts", Path("/Library/Fonts"),
+                Path("/System/Library/Fonts/Supplemental"), Path("/System/Library/Fonts")]
+        if app := word_app():
+            dirs.append(app / "Contents" / "Resources" / "DFonts")  # Calibri, Aptos… ship inside Word
+        return dirs
+    if IS_WINDOWS:  # pragma: no cover - Windows only
+        return [Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
+                Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Microsoft" / "Windows" / "Fonts"]
+    return [Path.home() / ".local" / "share" / "fonts", Path.home() / ".fonts",
+            Path("/usr/local/share/fonts"), Path("/usr/share/fonts")]
+
+
 def font_dirs() -> list[Path]:
-    dirs = [Path.home() / "Library" / "Fonts", Path("/Library/Fonts"),
-            Path("/System/Library/Fonts/Supplemental"), Path("/System/Library/Fonts")]
-    if app := word_app():
-        dirs.append(app / "Contents" / "Resources" / "DFonts")  # Calibri, Aptos… ship inside Word
-    return dirs
+    """Folders whose matching fonts are linked into the LibreOffice profile.
+
+    On macOS LibreOffice doesn't see the Supplemental fonts or the ones inside Word, so they're
+    linked in; on Windows and Linux it already sees the system fonts. AutoCV's own open fonts
+    (the substitutes) are linked everywhere."""
+    return (system_font_dirs() if IS_MAC else []) + [DATA / "fonts"]
+
+
+def _font_files(folder: Path) -> list[Path]:
+    try:
+        return [f for f in folder.rglob("*") if f.suffix.lower() in (".ttf", ".otf", ".ttc")]
+    except OSError:
+        return []
 
 
 def _fonts_in(docx: Path) -> set[str]:
@@ -261,20 +415,69 @@ def _matches(file: Path, families: set[str]) -> bool:
     return any(stem.startswith(f) and _STYLE.fullmatch(stem[len(f):]) for f in map(_norm, families))
 
 
+def installed(family: str) -> bool:
+    """Whether LibreOffice will find `family` (in the system font folders)."""
+    return any(_matches(f, {family}) for d in system_font_dirs() for f in _font_files(d))
+
+
 def sync_fonts(profile: Path, families: set[str]) -> None:
-    """Link the font files for `families` into the profile's user/fonts (LibreOffice loads them)."""
+    """Link the font files for `families` (and their substitutes) into the profile's user/fonts,
+    where LibreOffice loads them. Copies instead where symlinks aren't allowed (Windows)."""
+    families = families | {SUBSTITUTES[f] for f in families if f in SUBSTITUTES}
     dest = profile / "user" / "fonts"
     dest.mkdir(parents=True, exist_ok=True)
     for folder in font_dirs():
-        try:
-            files = [f for f in folder.iterdir() if f.suffix.lower() in (".ttf", ".otf", ".ttc")]
-        except OSError:
-            continue
-        for f in files:
+        for f in _font_files(folder):
             link = dest / f.name
-            if _matches(f, families) and not link.exists():
-                link.unlink(missing_ok=True)  # a dangling link left by a moved font
+            if not _matches(f, families) or link.exists():
+                continue
+            link.unlink(missing_ok=True)  # a dangling link left by a moved font
+            try:
                 link.symlink_to(f)
+            except OSError:  # Windows without Developer Mode
+                shutil.copy2(f, link)
+
+
+_XCU = "registrymodifications.xcu"
+_XCU_EMPTY = ('<?xml version="1.0" encoding="UTF-8"?>\n<oor:items xmlns:oor="http://openoffice.org/2001/registry" '
+              'xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
+              '</oor:items>\n')
+_SUBST_PATH = "/org.openoffice.Office.Common/Font/Substitution"
+_OURS = re.compile(r'<item oor:path="' + re.escape(_SUBST_PATH) + r'(?:/FontPairs"><node oor:name="autocv-[^"]*"'
+                   r'|"><prop oor:name="Replacement")[^\n]*?</item>\n?')
+
+
+def configure_substitutes(profile: Path, families: set[str]) -> None:
+    """LibreOffice replacement rules for fonts the document names but this machine lacks.
+
+    A rule is only added for a missing font (it applies "always", so it must never replace a
+    font that is installed). Rules are rewritten each time, so installing the real font later
+    removes the stand-in."""
+    rules = {f: s for f, s in SUBSTITUTES.items() if f in families and not installed(f)}
+    path = profile / "user" / _XCU
+    try:
+        old = path.read_text(encoding="utf-8")
+    except OSError:
+        old = _XCU_EMPTY if rules else ""
+    if not old:
+        return
+    text = _OURS.sub("", old)
+    if rules:
+        items = [f'<item oor:path="{_SUBST_PATH}"><prop oor:name="Replacement" oor:op="fuse"><value>true</value>'
+                 "</prop></item>\n"]
+        for family, sub in sorted(rules.items()):
+            items.append(
+                f'<item oor:path="{_SUBST_PATH}/FontPairs"><node oor:name="autocv-{family.lower()}" oor:op="replace">'
+                '<prop oor:name="Always" oor:op="fuse"><value>true</value></prop>'
+                '<prop oor:name="OnScreenOnly" oor:op="fuse"><value>false</value></prop>'
+                f'<prop oor:name="ReplaceFont" oor:op="fuse"><value>{family}</value></prop>'
+                f'<prop oor:name="SubstituteFont" oor:op="fuse"><value>{sub}</value></prop></node></item>\n')
+        text = text.replace("</oor:items>", "".join(items) + "</oor:items>")
+    if text != old:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(text, encoding="utf-8", newline="\n")
+        oscompat.replace(tmp, path)
 
 
 def page_count(pdf: Path) -> int:
