@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
+import { setUnsaved } from '../unsaved'
 import { ErrorNote, Spinner } from '../ui'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
@@ -46,7 +48,7 @@ function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
         : 'cursor-pointer border-rule bg-sheet hover:border-[#9aa3b5]')}>
       <input type="radio" name="pdf-engine" value={e.id} className="sr-only" checked={chosen}
         aria-label={`${e.name}${e.available ? (e.version ? `, version ${e.version}` : '') : ', not installed'}`}
-        disabled={!e.available || busy} onChange={onChoose} />
+        disabled={!e.available} onChange={() => { if (!busy) onChoose() }} />
       <span className="flex items-start gap-3">
         <span aria-hidden className={cx('mt-[3px] grid size-[18px] flex-none place-items-center rounded-full border-2',
           chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
@@ -97,12 +99,21 @@ function Segmented<T extends string | number>({ label: name, options, value, onC
 
 /** Who the resume is for. Steers the AI (what to emphasise, which vocabulary, spelling, length);
  *  it's never a source of facts. */
-function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
-  const [t, setT] = useState<Targets>(settings.targets)
+/** Who the resume is for. With `onContinue` (the setup wizard) it starts from `initial` (suggested
+ *  from the CV) and saves on "Save and continue". */
+export function YourTargets({ settings, onSaved, initial, onContinue }: {
+  settings: SettingsData; onSaved: (s: SettingsData) => void; initial?: Targets; onContinue?: () => void
+}) {
+  const [t, setT] = useState<Targets>(initial ?? settings.targets)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [flash, setFlash] = useState(false)
   const dirty = JSON.stringify(t) !== JSON.stringify(settings.targets)
+  useEffect(() => {
+    if (onContinue) return
+    setUnsaved('settings-targets', dirty)
+    return () => setUnsaved('settings-targets', false)
+  }, [dirty, onContinue])
   const set = <K extends keyof Targets>(k: K, v: Targets[K]) => { setT((x) => ({ ...x, [k]: v })); setFlash(false) }
   const save = async () => {
     setBusy(true)
@@ -113,6 +124,7 @@ function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (
       onSaved(next)
       setT(next.targets)
       setFlash(true)
+      onContinue?.()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -127,8 +139,8 @@ function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (
     </label>
   )
   return (
-    <section aria-labelledby="targets-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
-      <div className="flex max-w-[640px] flex-col gap-1.5">
+    <section aria-labelledby="targets-title" className={onContinue ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
+      <div className={cx('flex max-w-[640px] flex-col gap-1.5', onContinue && 'sr-only')}>
         <p className={cx(label, 'text-accent')}>Your targets</p>
         <h2 id="targets-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Who the resume is for</h2>
         <p className="text-sm leading-[1.5] text-muted text-pretty">
@@ -160,8 +172,9 @@ function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       <div className="flex items-center gap-3">
-        <button className="btn btn-primary" onClick={save} disabled={!dirty || busy}>{busy && <Spinner />}Save targets</button>
-        {dirty && <button className="btn btn-ghost" onClick={() => setT(settings.targets)} disabled={busy}>Discard</button>}
+        <button className="btn btn-primary" onClick={save} disabled={(!dirty && !onContinue) || busy}>
+          {busy && <Spinner />}{onContinue ? 'Save and continue' : 'Save targets'}</button>
+        {dirty && !onContinue && <button className="btn btn-ghost" onClick={() => setT(settings.targets)} disabled={busy}>Discard</button>}
         {flash && !dirty && <span role="status" className="font-mono text-xs text-ok">✓ Saved</span>}
       </div>
     </section>
@@ -183,7 +196,7 @@ function ThemeSample({ t }: { t: ThemeInfo }) {
   )
 }
 
-function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsData; onSaved: (s: SettingsData) => void; bare?: boolean }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const save = async (patch: Parameters<typeof api.saveSettings>[0]) => {
@@ -202,9 +215,9 @@ function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: 
   const current = settings.themes.find((t) => t.id === settings.theme) ?? settings.themes[0]
   const paper = settings.paper ?? current?.paper ?? 'letter'
   return (
-    <section aria-labelledby="design-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+    <section aria-labelledby="design-title" className={bare ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="flex max-w-[640px] flex-col gap-1.5">
+        <div className={cx('flex max-w-[640px] flex-col gap-1.5', bare && 'sr-only')}>
           <p className={cx(label, 'text-accent')}>Resume design</p>
           <h2 id="design-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">How your resume looks</h2>
           <p className="text-sm leading-[1.5] text-muted text-pretty">Applies to the next build. Already-built files and sent copies keep the design they were made with.</p>
@@ -222,8 +235,8 @@ function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: 
           return (
             <label key={t.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-3 rounded-xl border px-4 py-4 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
               chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
-              <input type="radio" name="theme" className="sr-only" checked={chosen} disabled={busy} aria-label={t.name}
-                onChange={() => save({ theme: t.id })} />
+              <input type="radio" name="theme" className="sr-only" checked={chosen} aria-label={t.name}
+                onChange={() => { if (!busy) void save({ theme: t.id }) }} />
               <ThemeSample t={t} />
               <span className="flex items-center gap-2">
                 <span aria-hidden className={cx('grid size-4 flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
@@ -241,7 +254,7 @@ function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: 
   )
 }
 
-function AIEngine({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; onSaved: (s: SettingsData) => void; bare?: boolean }) {
   const [key, setKey] = useState('')
   const [model, setModel] = useState(settings.api_model ?? '')
   const [busy, setBusy] = useState<string | null>(null)
@@ -276,15 +289,15 @@ function AIEngine({ settings, onSaved }: { settings: SettingsData; onSaved: (s: 
   }
   const usingApi = settings.ai_engine === 'anthropic-api'
   const k = settings.api_key
-  const options: { id: SettingsData['ai_engine']; name: string; lead: string; detail: string }[] = [
+  const options: { id: SettingsData['ai_engine']; name: string; lead: string; detail: ReactNode }[] = [
     { id: 'claude-cli', name: 'Claude Code', lead: 'Your Claude subscription. No extra cost.',
-      detail: 'Uses the `claude` command on this computer. Install Claude Code, run `claude`, then /login.' },
+      detail: <>Uses the <code className="font-mono text-[12.5px]">claude</code> command on this computer: install Claude Code, run <code className="font-mono text-[12.5px]">claude</code>, then <code className="font-mono text-[12.5px]">/login</code>.</> },
     { id: 'anthropic-api', name: 'Anthropic API key', lead: 'Pay per use on your Anthropic account.',
-      detail: 'For people without Claude Code. Create a key at console.anthropic.com; it’s stored in this computer’s keychain, never in AutoCV’s files.' },
+      detail: 'For people without Claude Code. Create a key at console.anthropic.com; AutoCV keeps it in your system’s secure credential store (Keychain, Credential Manager or Secret Service), never in its files.' },
   ]
   return (
-    <section aria-labelledby="ai-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <section aria-labelledby="ai-title" className={bare ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
+      <div className={cx('flex flex-wrap items-start justify-between gap-x-6 gap-y-3', bare && 'hidden')}>
         <div className="flex max-w-[640px] flex-col gap-1.5">
           <p className={cx(label, 'text-accent')}>AI engine</p>
           <h2 id="ai-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which Claude does the writing</h2>
@@ -302,8 +315,8 @@ function AIEngine({ settings, onSaved }: { settings: SettingsData; onSaved: (s: 
           return (
             <label key={o.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
               chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
-              <input type="radio" name="ai-engine" className="sr-only" checked={chosen} disabled={!!busy} aria-label={o.name}
-                onChange={() => apply('engine', () => api.saveSettings({ ai_engine: o.id }))} />
+              <input type="radio" name="ai-engine" className="sr-only" checked={chosen} aria-label={o.name}
+                onChange={() => { if (!busy) void apply('engine', () => api.saveSettings({ ai_engine: o.id })) }} />
               <span className="flex items-center gap-2.5">
                 <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
                   {chosen && <span className="size-2 rounded-full bg-accent" />}
@@ -356,7 +369,7 @@ const TONE: Record<DoctorCheck['status'], [string, string]> = {
   ok: ['bg-ok', 'text-ok'], warn: ['bg-[#d08a1c]', 'text-warn'], error: ['bg-bad', 'text-bad'],
 }
 
-function SystemCheck() {
+export function SystemCheck({ bare }: { bare?: boolean }) {
   const [checks, setChecks] = useState<DoctorCheck[] | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -369,10 +382,10 @@ function SystemCheck() {
   }
   const problems = checks?.filter((c) => c.status !== 'ok').length ?? 0
   return (
-    <section aria-labelledby="doctor-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+    <section aria-labelledby="doctor-title" className={bare ? 'flex min-w-0 flex-col gap-4' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex max-w-[640px] flex-col gap-1.5">
-          <p className={cx(label, 'text-accent')}>System check</p>
+          <p className={cx(label, 'text-accent', bare && 'sr-only')}>System check</p>
           <h2 id="doctor-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">
             {checks ? (problems ? `${problems} thing${problems > 1 ? 's' : ''} to look at` : 'Everything’s ready') : 'Checking…'}
           </h2>
@@ -388,7 +401,7 @@ function SystemCheck() {
               <span aria-hidden className={cx('mt-[7px] size-2 flex-none rounded-full', TONE[c.status][0])} />
               <span className="flex min-w-0 flex-col gap-0.5 text-[13px]">
                 <span className="text-ink"><span className="font-semibold">{c.label}</span>
-                  <span className={cx('ml-2 font-mono text-[11px] uppercase tracking-[0.06em]', TONE[c.status][1])}>{c.status === 'ok' ? 'ok' : c.status === 'warn' ? 'optional' : 'needs attention'}</span></span>
+                  <span className={cx('ml-2 font-mono text-[11px] uppercase tracking-[0.06em]', TONE[c.status][1])}>{c.status === 'ok' ? 'ok' : c.status === 'warn' ? (c.id === 'profile' ? 'to do' : 'optional') : 'needs attention'}</span></span>
                 <span className="break-words text-muted">{c.detail}</span>
                 {c.fix && c.status !== 'ok' && <span className="text-body">→ {c.fix}</span>}
               </span>
@@ -440,7 +453,7 @@ export default function Settings() {
     <div className="flex flex-col gap-7">
       <div className="animate-rise flex flex-col gap-2.5">
         <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Settings</h1>
-        <p className="text-lg text-body">How AutoCV works on {s ? thisComputer(s.platform) : 'this computer'}.</p>
+        <p className="text-lg text-body">How AutoCV works on {s ? thisComputer(s.platform) : 'this computer'}. <Link to="/setup" className="text-[15px] text-accent hover:text-accent-strong">Run the setup wizard again</Link></p>
       </div>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />

@@ -1,10 +1,10 @@
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import Applications from './pages/Applications'
 import Funnel from './pages/Funnel'
 import NewApplication from './pages/NewApplication'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
-import Welcome from './pages/Welcome'
+import SetupWizard from './pages/setup/SetupWizard'
 import Workspace from './pages/Workspace'
 import { cx } from './lib'
 import { EngineBadge } from './ui'
@@ -25,6 +25,17 @@ function Logo() {
 }
 
 function Masthead() {
+  const { pathname } = useLocation()
+  if (pathname.startsWith('/setup')) {  // the wizard keeps the focus on itself: no app navigation
+    return (
+      <header className="sticky top-0 z-30 bg-ink text-white">
+        <div className={cx('mx-auto flex h-14 items-center gap-4', FRAME)}>
+          <span aria-label="AutoCV" className="flex items-center"><Logo /></span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#9aa3b5]">Setup</span>
+        </div>
+      </header>
+    )
+  }
   const link = ({ isActive }: { isActive: boolean }) =>
     cx('flex shrink-0 items-center px-1.5 transition-colors sm:px-3', isActive ? 'text-white shadow-[inset_0_-3px_0_#4d6bff]' : 'text-[#9aa3b5] hover:text-white')
   return (
@@ -52,6 +63,18 @@ function Masthead() {
   )
 }
 
+/** Shown once after the setup wizard: where to start. */
+function FirstTip() {
+  const [params, setParams] = useSearchParams()
+  if (params.get('welcome') !== '1') return null
+  return (
+    <div role="status" className="animate-rise mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-[#cfd8f7] bg-accent-soft px-4 py-3 text-[14px] text-ink">
+      <span className="flex-1"><strong>You’re all set.</strong> Paste a job description in <Link to="/new" className="text-accent hover:text-accent-strong">New tailoring</Link> to make your first tailored resume.</span>
+      <button className="text-[13px] text-muted hover:text-ink" onClick={() => setParams({}, { replace: true })}>Dismiss</button>
+    </div>
+  )
+}
+
 export default function App() {
   useUnsavedGuard()
   useFirstRun()
@@ -59,6 +82,7 @@ export default function App() {
     <>
       <Masthead />
       <main className={cx('mx-auto pb-24 pt-10', FRAME)}>
+        <FirstTip />
         <Routes>
           <Route path="/" element={<Applications />} />
           <Route path="/funnel" element={<Funnel />} />
@@ -66,7 +90,8 @@ export default function App() {
           <Route path="/a/:id" element={<Workspace />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/welcome" element={<Welcome />} />
+          <Route path="/setup" element={<SetupWizard />} />
+          <Route path="/welcome" element={<Navigate to="/setup" replace />} />
         </Routes>
       </main>
     </>

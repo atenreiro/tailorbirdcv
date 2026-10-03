@@ -100,7 +100,7 @@ def new_user(tmp_path):
 
 def test_import_returns_a_draft_and_saves_nothing(new_user):
     client, private, engine = new_user
-    assert client.get("/api/setup").json() == {"has_profile": False}
+    assert client.get("/api/setup").json()["has_profile"] is False
     r = client.post("/api/profile/import", json={"filename": "cv.txt", "data": base64.b64encode(RESUME.encode()).decode()})
     assert r.status_code == 200
     body = r.json()
@@ -112,9 +112,12 @@ def test_import_returns_a_draft_and_saves_nothing(new_user):
 def test_the_reviewed_draft_becomes_the_profile(new_user):
     client, private, _ = new_user
     draft = client.post("/api/profile/import", json={"text": RESUME}).json()["profile"]
-    saved = client.post("/api/profile/create", json={"profile": draft})
+    refused = client.post("/api/profile/create", json={"profile": draft})  # a2 says "40%", the CV doesn't
+    assert refused.status_code == 422 and refused.json()["detail"]["paths"] == ["northwind-bank.a2"]
+    assert not (private / "profile.yaml").exists()
+    saved = client.post("/api/profile/create", json={"profile": draft, "confirmed": ["northwind-bank.a2"]})
     assert saved.status_code == 200 and (private / "profile.yaml").exists()
-    assert client.get("/api/setup").json() == {"has_profile": True}
+    assert client.get("/api/setup").json()["has_profile"] is True
     assert client.post("/api/profile/create", json={"profile": draft}).status_code == 409   # never overwrites
     assert client.post("/api/profile/import", json={"text": RESUME}).status_code == 409
 
@@ -146,7 +149,8 @@ def test_the_demo_engine_works_for_a_brand_new_user(tmp_path, monkeypatch):
     client = client_for(create_app(Store(tmp_path / "private"), demo_engine()))
     draft = client.post("/api/profile/import", json={"text": RESUME}).json()
     assert draft["profile"]["contact"]["name"] == "Jordan Rivera"
-    assert client.post("/api/profile/create", json={"profile": draft["profile"]}).status_code == 200
+    saved = client.post("/api/profile/create", json={"profile": draft["profile"], "confirmed": draft["unverified"]})
+    assert saved.status_code == 200
     app_id = client.post("/api/applications", json={"jd": "Designer — Contoso\n" + "x " * 80}).json()["id"]
     assert client.post(f"/api/applications/{app_id}/analyze").status_code == 200
     composed = client.post(f"/api/applications/{app_id}/compose", json={}).json()

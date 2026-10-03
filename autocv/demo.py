@@ -132,7 +132,9 @@ def _import(prompt: str) -> dict:
             "headline": lines[1] if len(lines) > 1 else "", "summary": "", "highlights": [], "skills": [],
             "roles": [{"employer": "(demo) Employer", "location": "", "title": lines[1] if len(lines) > 1 else "(demo) Title",
                        "dates": "", "scope": "", "achievements": bullets[:6], "sub_roles": []}],
-            "projects": [], "education": [], "extras": []}
+            "projects": [], "education": [], "extras": [],
+            "suggested_targets": {"field": "", "seniority": "", "roles": lines[1] + " roles" if len(lines) > 1 else "",
+                                  "region": "", "spelling": "US"}}
 
 
 def demo_engine() -> FakeEngine:

@@ -249,9 +249,61 @@ class Store:
                     data[key] = {**data[key], **{k: v for k, v in value.items() if k in self.SETTINGS[key]}}
                 else:
                     data[key] = value
+            try:  # the setup wizard's progress lives in the same file; keep it
+                setup = json.loads(self.settings_path.read_text(encoding="utf-8")).get("setup")
+            except (OSError, ValueError, AttributeError):
+                setup = None
+            self.private.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(self.settings_path, {**data, "setup": setup} if setup is not None else data)
+            return data
+
+    # -- first-run setup wizard -------------------------------------------------------
+    SETUP_STEPS = ("welcome", "connect", "upload", "review", "targets", "design", "checks")
+
+    def setup_state(self) -> dict:
+        """{completed, step}. An install that has a profile but predates the wizard counts as set up."""
+        try:
+            saved = json.loads(self.settings_path.read_text(encoding="utf-8")).get("setup")
+        except (OSError, ValueError, AttributeError):
+            saved = None
+        if not isinstance(saved, dict):
+            return {"completed": self.profile_path.exists(), "step": "welcome"}
+        step = saved.get("step") if saved.get("step") in self.SETUP_STEPS else "welcome"
+        return {"completed": bool(saved.get("completed")), "step": step}
+
+    def save_setup_state(self, **changes) -> dict:
+        with self.lock:
+            state = {**self.setup_state(), **changes}
+            try:
+                data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+                data = data if isinstance(data, dict) else {}
+            except (OSError, ValueError):
+                data = {}
+            data["setup"] = state
             self.private.mkdir(parents=True, exist_ok=True)
             _write_json_atomic(self.settings_path, data)
-            return data
+            return state
+
+    @property
+    def setup_draft_path(self) -> Path:
+        return self.private / "setup" / "draft.json"
+
+    def setup_draft(self) -> dict | None:
+        """The imported (not yet saved) profile with its source text, kept so a refresh never loses it."""
+        try:
+            data = json.loads(self.setup_draft_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def save_setup_draft(self, draft: dict) -> None:
+        with self.lock:
+            self.setup_draft_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(self.setup_draft_path, draft)
+
+    def clear_setup_draft(self) -> None:
+        with self.lock:
+            self.setup_draft_path.unlink(missing_ok=True)
 
     # -- profile -------------------------------------------------------------------
     def profile(self) -> MasterProfile:

@@ -13,7 +13,7 @@ import json, os, sys
 args = sys.argv[1:]
 prompt = sys.stdin.read()
 system = open(args[args.index("--system-prompt-file") + 1], encoding="utf-8").read() if "--system-prompt-file" in args else None
-json.dump({{"args": args, "cwd_files": os.listdir("."), "prompt": prompt, "system": system}}, open({log!r}, "w"))
+json.dump({{"args": args, "cwd_files": os.listdir("."), "prompt": prompt, "system": system, "api_key": os.environ.get("ANTHROPIC_API_KEY")}}, open({log!r}, "w"))
 if os.environ.get("FAKE_MODE") == "error":
     print(json.dumps({{"is_error": True, "result": "Failed to authenticate"}}))
 else:
@@ -29,8 +29,9 @@ def fake_claude(tmp_path):
     return [sys.executable, str(script)], log  # runs the same on every OS (no shebang/chmod)
 
 
-def test_engine_runs_isolated_and_returns_structured_output(fake_claude):
+def test_engine_runs_isolated_and_returns_structured_output(fake_claude, monkeypatch):
     binary, log = fake_claude
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-should-not-reach-the-cli")
     out = asyncio.run(ClaudeCLIEngine(command=binary).complete("SYS", "TASK: x\nsecret profile", {"type": "object"}))
     assert out == {"status": "OK"}
     call = json.loads(log.read_text(encoding="utf-8"))
@@ -43,6 +44,7 @@ def test_engine_runs_isolated_and_returns_structured_output(fake_claude):
     assert call["cwd_files"] == []                       # empty working directory: no CLAUDE.md
     assert "secret profile" not in " ".join(args)        # the prompt goes over stdin, not argv
     assert call["prompt"].endswith("secret profile")
+    assert call["api_key"] is None                       # the subscription is used, never an API key
     assert call["system"] == "SYS"                       # system prompt from a file, not the command line
     assert "SYS" not in args
 

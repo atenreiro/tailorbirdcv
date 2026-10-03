@@ -20,22 +20,23 @@ KEY = "sk-ant-api03-" + "x" * 40
 
 
 class FakeClient:
-    def __init__(self, reply=None, error=None):
-        self.calls, self.retrieved, self.reply, self.error = [], [], reply, error
+    """Stands in for anthropic.AsyncAnthropic: `replies` are returned in order (an Exception is raised)."""
+
+    def __init__(self, *replies):
+        self.calls, self.replies = [], list(replies)
         self.messages = SimpleNamespace(create=self._create)
-        self.models = SimpleNamespace(retrieve=self._retrieve)
 
     async def _create(self, **kw):
         self.calls.append(kw)
-        if self.error:
-            raise self.error
-        return self.reply
+        reply = self.replies.pop(0) if self.replies else json_reply({})
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
-    async def _retrieve(self, model):
-        self.retrieved.append(model)
-        if self.error:
-            raise self.error
-        return {"id": model}
+
+def json_reply(data, stop="end_turn"):
+    import json
+    return SimpleNamespace(stop_reason=stop, content=[SimpleNamespace(type="text", text=json.dumps(data))])
 
 
 def tool_reply(data, stop="tool_use"):
@@ -47,35 +48,70 @@ def engine_with(client, key=KEY, model=None):
     return AnthropicAPIEngine(model=model, key=lambda: key, client_factory=lambda k: client)
 
 
-def test_structured_output_comes_from_a_forced_tool_call():
-    client = FakeClient(tool_reply({"status": "OK"}))
-    schema = {"type": "object", "properties": {"status": {"type": "string"}}}
-    out = asyncio.run(engine_with(client).complete("SYSTEM", "TASK: x\nsecret profile", schema))
+SCHEMA = {"type": "object", "properties": {"status": {"type": "string"},
+                                           "items": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+                                           "score": {"type": "integer", "minimum": 1, "maximum": 10}}}
+
+
+def bad_request(message):
+    import anthropic
+    response = httpx.Response(400, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    return anthropic.BadRequestError(message, response=response, body={"error": {"message": message}})
+
+
+def test_answers_come_back_as_structured_output_never_forced_tool_use():
+    client = FakeClient(json_reply({"status": "OK"}))
+    out = asyncio.run(engine_with(client).complete("SYSTEM", "TASK: x\nsecret profile", SCHEMA))
     assert out == {"status": "OK"}
     call = client.calls[0]
     assert call["system"] == "SYSTEM" and call["messages"] == [{"role": "user", "content": "TASK: x\nsecret profile"}]
-    assert call["tools"][0]["input_schema"] == schema and call["tool_choice"] == {"type": "tool", "name": "answer"}
-    assert call["model"] == "claude-sonnet-5-5"
+    assert call["model"] == "claude-sonnet-5-5" and "tool_choice" not in call and "tools" not in call
+    sent = call["output_config"]["format"]
+    assert sent["type"] == "json_schema" and sent["schema"]["additionalProperties"] is False
+    props = sent["schema"]["properties"]
+    assert "maxItems" not in props["items"] and "minimum" not in props["score"]  # unsupported → dropped
 
 
-def test_errors_are_explained():
+def test_a_schema_the_api_cant_compile_falls_back_to_a_tool_call_once():
+    client = FakeClient(bad_request("output_config.format.schema: too complex"), tool_reply({"status": "OK"}),
+                        tool_reply({"status": "again"}))
+    engine = engine_with(client)
+    assert asyncio.run(engine.complete("S", "TASK: x", SCHEMA)) == {"status": "OK"}
+    assert client.calls[1]["tool_choice"] == {"type": "auto"} and "answer" in client.calls[1]["system"]
+    assert asyncio.run(engine.complete("S", "TASK: x", SCHEMA)) == {"status": "again"}
+    assert "output_config" not in client.calls[2]  # remembered: no second failing request
+
+
+def test_errors_and_refusals_are_explained():
     import anthropic
     conn = anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com"))
     with pytest.raises(EngineError, match="internet connection"):
-        asyncio.run(engine_with(FakeClient(error=conn)).complete("S", "TASK: x", {"type": "object"}))
+        asyncio.run(engine_with(FakeClient(conn)).complete("S", "TASK: x", SCHEMA))
+    with pytest.raises(EngineError, match="declined"):
+        asyncio.run(engine_with(FakeClient(json_reply({}, stop="refusal"))).complete("S", "TASK: x", SCHEMA))
     with pytest.raises(EngineError, match="cut off"):
-        asyncio.run(engine_with(FakeClient(tool_reply({}, stop="max_tokens"))).complete("S", "TASK: x", {"type": "object"}))
+        asyncio.run(engine_with(FakeClient(json_reply({}, stop="max_tokens"))).complete("S", "TASK: x", SCHEMA))
     with pytest.raises(EngineError, match="No Anthropic API key"):
-        asyncio.run(engine_with(FakeClient(), key=None).complete("S", "TASK: x", {"type": "object"}))
+        asyncio.run(engine_with(FakeClient(), key=None).complete("S", "TASK: x", SCHEMA))
+    with pytest.raises(EngineError, match="error \\(400\\)"):  # a 400 that isn't about the schema: no fallback
+        asyncio.run(engine_with(FakeClient(bad_request("messages: invalid"))).complete("S", "TASK: x", SCHEMA))
 
 
-def test_status_checks_the_key_once_and_caches_it():
+def test_status_makes_one_tiny_real_request_and_caches_success():
     client = FakeClient()
     engine = engine_with(client, model="claude-opus-5-5")
     assert asyncio.run(engine.status())["ready"] is True
     assert asyncio.run(engine.status())["ready"] is True
-    assert client.retrieved == ["claude-opus-5-5"]  # cached: one cheap call, no tokens
+    assert len(client.calls) == 1 and client.calls[0]["max_tokens"] == 1 and client.calls[0]["model"] == "claude-opus-5-5"
     assert asyncio.run(engine_with(FakeClient(), key=None).status())["ready"] is False
+
+
+def test_the_subscription_engine_never_passes_an_api_key_on(monkeypatch):
+    from autocv.engine import cli_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token")
+    env = cli_env()
+    assert "ANTHROPIC_API_KEY" not in env and "ANTHROPIC_AUTH_TOKEN" not in env and "PATH" in env
 
 
 def test_the_key_lives_in_the_keychain(memory_keyring, monkeypatch):

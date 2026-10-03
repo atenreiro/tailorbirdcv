@@ -47,6 +47,11 @@ export interface Profile {
 export interface ProfileResponse { profile: Profile; evidence: Record<string, string>; version: string }
 /** A draft profile read from a resume by the AI: nothing is saved until the user confirms it. */
 export interface ImportDraft { profile: Profile; unverified: string[] }
+export type SetupStep = 'welcome' | 'connect' | 'upload' | 'review' | 'targets' | 'design' | 'checks'
+export interface SetupState {
+  has_profile: boolean; completed: boolean; step: SetupStep
+  draft?: ImportDraft; suggested_targets: (Partial<Targets> & { pack?: string }) | null; pages: number | null
+}
 
 export interface Requirement {
   text: string; priority: 'must' | 'nice'; status: 'strong' | 'partial' | 'gap'; evidence: string[]; note: string
@@ -158,10 +163,12 @@ export type Outcome = 'rejected' | 'no_response' | 'role_closed' | 'withdrew' | 
 export class ApiError extends Error {
   status: number
   code?: string
-  constructor(status: number, message: string, code?: string) {
+  detail?: Record<string, unknown>
+  constructor(status: number, message: string, code?: string, detail?: Record<string, unknown>) {
     super(message)
     this.status = status
     this.code = code
+    this.detail = detail
   }
 }
 
@@ -178,13 +185,20 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
   if (!res.ok) {
     let msg = res.statusText
     let code: string | undefined
+    let detail: Record<string, unknown> | undefined
     try {
       const data = await res.json()
       if (typeof data.detail === 'string') msg = data.detail
-      else if (data.detail && typeof data.detail.message === 'string') { msg = data.detail.message; code = data.detail.code }
-      else msg = JSON.stringify(data.detail)
+      else if (data.detail && typeof data.detail.message === 'string') {
+        msg = data.detail.message; code = data.detail.code; detail = data.detail
+      } else if (Array.isArray(data.detail)) {
+        // Validation errors: show what's wrong, never the submitted value (it can be a whole file).
+        msg = data.detail.map((d: { msg?: string; loc?: unknown[] }) =>
+          [d.loc?.slice(1).join('.'), d.msg].filter(Boolean).join(': ')).join('; ') || 'Invalid request'
+      } else msg = 'Request failed'
     } catch { /* not json */ }
-    throw new ApiError(res.status, msg, code)
+    if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('autocv:no-profile'))
+    throw new ApiError(res.status, msg, code, detail)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
@@ -197,9 +211,15 @@ export const api = {
   saveApiKey: (key: string) => req<Settings>('PUT', '/settings/api-key', { key }),
   deleteApiKey: () => req<Settings>('DELETE', '/settings/api-key'),
   profile: () => req<ProfileResponse>('GET', '/profile'),
-  setup: () => req<{ has_profile: boolean }>('GET', '/setup'),
-  importProfile: (b: { filename?: string; data?: string; text?: string }) => req<ImportDraft>('POST', '/profile/import', b),
-  createProfile: (b: { profile: Profile } | { blank: { name: string; location: string; headline: string } }) =>
+  setup: () => req<SetupState>('GET', '/setup'),
+  setupStep: (step: SetupStep) => req<SetupState>('PUT', '/setup', { step }),
+  finishSetup: () => req<SetupState>('POST', '/setup/finish'),
+  discardDraft: () => req<SetupState>('DELETE', '/setup/draft'),
+  browserStatus: () => req<{ state: 'idle' | 'running' | 'done' | 'failed'; detail: string }>('GET', '/setup/browser'),
+  installBrowser: () => req<{ state: string; detail: string }>('POST', '/setup/browser'),
+  importProfile: (b: { filename?: string; data?: string; text?: string }) =>
+    req<ImportDraft & { suggested_targets: SetupState['suggested_targets']; pages: number | null }>('POST', '/profile/import', b),
+  createProfile: (b: { profile: Profile; confirmed: string[] } | { blank: { name: string; location: string; headline: string } }) =>
     req<ProfileResponse>('POST', '/profile/create', b),
   saveProfile: (p: Profile, version: string) => req<ProfileResponse>('PUT', '/profile', p, { 'If-Match': version }),
   profileYaml: () => req<{ yaml: string; version: string }>('GET', '/profile/yaml'),

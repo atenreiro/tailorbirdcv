@@ -72,11 +72,22 @@ def _docx_text(data: bytes) -> str:
 
 def _pdf_text(data: bytes) -> str:
     from pypdf import PdfReader
-    from pypdf.errors import PdfReadError
+    from pypdf.errors import PyPdfError
     try:
         return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
-    except (PdfReadError, ValueError) as e:
-        raise ImportError_("That PDF couldn't be read.") from e
+    except (PyPdfError, ValueError, KeyError) as e:  # damaged, password-protected or AES-encrypted
+        raise ImportError_("That PDF couldn't be read (is it password-protected?). Paste the text instead.") from e
+
+
+def pdf_pages(filename: str, data: bytes) -> int | None:
+    """Page count of an uploaded PDF (suggests the page limit); None for other files or on error."""
+    if not filename.lower().endswith(".pdf"):
+        return None
+    from pypdf import PdfReader
+    try:
+        return len(PdfReader(io.BytesIO(data)).pages)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # --------------------------------------------------------------------------- AI transcription
@@ -92,7 +103,7 @@ def import_schema() -> dict:
     return {
         "type": "object", "additionalProperties": False,
         "required": ["contact", "headline", "summary", "highlights", "skills", "roles", "projects", "education",
-                     "extras"],
+                     "extras", "suggested_targets"],
         "properties": {
             "contact": {"type": "object", "additionalProperties": False,
                         "required": ["name", "location", "phone", "email", "links"],
@@ -110,6 +121,10 @@ def import_schema() -> dict:
                 "properties": {"employer": s, "location": s, "title": s, "dates": s, "scope": s,
                                "achievements": strs, "sub_roles": _lead_items()}}},
             "projects": _lead_items(), "education": _lead_items(), "extras": _lead_items(),
+            "suggested_targets": {"type": "object", "additionalProperties": False,
+                                  "required": ["field", "seniority", "roles", "region", "spelling"],
+                                  "properties": {"field": s, "seniority": s, "roles": s, "region": s,
+                                                 "spelling": {"type": "string", "enum": ["US", "UK", ""]}}},
         },
     }
 
@@ -137,6 +152,12 @@ with a bold-style label ("Label: text" or "Label — text") inside a role goes i
 - projects / education / extras (awards, languages, certifications, publications, volunteering): \
 label = the item's name or degree, text = the rest of the line (dates, institution, details).
 
+- suggested_targets (not part of the profile; a starting point the candidate will edit): field = their \
+profession in a few words (e.g. "cybersecurity", "product design"), seniority (e.g. "senior", "mid-level", \
+"executive"), roles = the kind of next roles this CV points to in one short phrase, region = where they're \
+based or looking (city/country/region as the CV shows), spelling = "US" or "UK" from the CV's own spelling \
+(e.g. "organization" vs "organisation"). Infer only from the CV; leave a value empty if unsure.
+
 RESUME:
 {text}
 """
@@ -146,7 +167,19 @@ async def import_profile(engine: Engine, text: str) -> dict:
     """Ask the AI to transcribe, then assign ids and verify against the original text."""
     raw = await engine.complete(SYSTEM, _prompt(text), import_schema())
     profile = build_profile(raw)
-    return {"profile": profile, "unverified": unverified(profile, text)}
+    return {"profile": profile, "unverified": unverified(profile, text),
+            "suggested_targets": suggested_targets(raw.get("suggested_targets"))}
+
+
+def suggested_targets(raw) -> dict:
+    """The AI's guesses for Settings → Your targets, cleaned (steer emphasis only, never facts)."""
+    raw = raw if isinstance(raw, dict) else {}
+    out = {k: _clean(raw.get(k))[:limit] for k, limit in (("field", 80), ("seniority", 80), ("roles", 240),
+                                                          ("region", 80))}
+    out["spelling"] = raw.get("spelling") if raw.get("spelling") in ("US", "UK") else "US"
+    if "cyber" in out["field"].lower() or "security" in out["field"].lower():
+        out["pack"] = "cybersecurity"
+    return out
 
 
 # --------------------------------------------------------------------------- ids + verification
@@ -220,52 +253,95 @@ def build_profile(raw: dict) -> dict:
     return profile
 
 
-_DASHES = str.maketrans({c: "-" for c in "‐‑‒–—―−"} |
-                        {c: "'" for c in "‘’‛′"} | {c: '"' for c in "“”‟″"})
+_DASHES = str.maketrans({c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"} |
+                        {c: "'" for c in "\u2018\u2019\u201b\u2032"} | {c: '"' for c in "\u201c\u201d\u201f\u2033"})
 
 
-def _norm(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text).translate(_DASHES).lower()
-    return re.sub(r"[\s•·▪●◦*|]+", " ", text).strip()
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"\w+", unicodedata.normalize("NFKC", text or "").translate(_DASHES).lower())
+
+
+class _Source:
+    """The original resume text, for whole-word matching."""
+
+    def __init__(self, text: str):
+        tokens = _tokens(text)
+        self.spaced = " " + " ".join(tokens) + " "
+        self.joined = "".join(tokens)
+
+    def has(self, text: str) -> bool:
+        tokens = _tokens(text)
+        if not tokens:
+            return True
+        if " " + " ".join(tokens) + " " in self.spaced:  # the same words, in order, as whole words
+            return True
+        joined = "".join(tokens)
+        # PDFs split words at line ends ("detec- tion"): long items may also match without word breaks.
+        return len(joined) >= 12 and joined in self.joined
+
+
+def _url_text(url: str) -> str:
+    return re.sub(r"^(?:https?://)?(?:www\.)?|/+$", "", url.strip(), flags=re.I)
+
+
+def checkable(profile: dict) -> list[tuple[str, str]]:
+    """Every (path, text) the import produced, in resume order. Paths are what the review UI shows
+    and what `confirmed` lists; evidence items use their id."""
+    out: list[tuple[str, str]] = []
+    c = profile.get("contact", {})
+    for key in ("name", "location", "phone", "email"):
+        if c.get(key):
+            out.append((f"contact.{key}", c[key]))
+    for i, link in enumerate(c.get("links") or []):
+        out += [(f"contact.links[{i}].text", link["text"]), (f"contact.links[{i}].url", _url_text(link["url"]))]
+    out += [(f"headlines[{i}]", h["text"]) for i, h in enumerate(profile.get("headlines") or [])]
+    for key in ("summary_facts", "highlights"):
+        out += [(e["id"], e["text"]) for e in profile.get(key) or []]
+    for g, group in enumerate(profile.get("skills") or []):
+        if group.get("category") != "Skills":  # the default for an unlabelled list
+            out.append((f"skills[{g}].category", group["category"]))
+        out += [(f"skills[{g}].items[{j}]", item) for j, item in enumerate(group.get("items") or [])]
+    for r in profile.get("roles") or []:
+        out += [(f"{r['id']}.{f}", r[f]) for f in ("employer", "location", "title", "dates") if r.get(f) and r[f] != "—"]
+        if r.get("scope"):
+            out.append((r["scope"]["id"], r["scope"]["text"]))
+        out += [(a["id"], a["text"]) for a in r.get("achievements") or []]
+        for sub in r.get("sub_roles") or []:
+            out += [(sub["id"], part) for part in (sub["label"], sub["text"]) if part]
+    for key in ("projects", "education", "extras"):
+        for item in profile.get(key) or []:
+            out += [(item["id"], part) for part in (item["label"], item["text"]) if part]
+    return out
 
 
 def unverified(profile: dict, source: str) -> list[str]:
-    """Paths of extracted texts that don't appear word-for-word in the original (for the user to check)."""
-    hay = _norm(source)
-    hay_nospace = hay.replace(" ", "")
-    out = []
-
-    def check(path: str, text: str) -> None:
-        t = _norm(text)
-        # PDFs often lose or add spaces at line wraps: also compare without any spaces.
-        if t and t not in hay and t.replace(" ", "") not in hay_nospace:
+    """Paths whose text isn't in the original resume word-for-word (whole words, in order)."""
+    src = _Source(source)
+    out: list[str] = []
+    for path, text in checkable(profile):
+        if not src.has(text) and path not in out:
             out.append(path)
+    return out
 
-    check("contact.name", profile["contact"]["name"])
-    for i, h in enumerate(profile["headlines"]):
-        check(f"headlines[{i}]", h["text"])
-    for key in ("summary_facts", "highlights"):
-        for i, e in enumerate(profile[key]):
-            check(f"{key}[{i}]", e["text"])
-    for g in profile["skills"]:
-        for j, item in enumerate(g["items"]):
-            check(f"skills.{g['category']}[{j}]", item)
-    for r in profile["roles"]:
-        for field in ("employer", "title", "dates"):
-            if r[field] != "—":
-                check(f"{r['id']}.{field}", r[field])
-        if r.get("scope"):
-            check(r["scope"]["id"], r["scope"]["text"])
-        for a in r["achievements"]:
-            check(a["id"], a["text"])
-        for sub in r["sub_roles"]:
-            for part in (sub["label"], sub["text"]):
-                check(sub["id"], part)
+
+CONFIRMED_NOTE = "confirmed by you at import (not word-for-word in the original file)"
+
+
+def mark_confirmed(profile: dict, paths: set[str]) -> dict:
+    """Record provenance on evidence the user confirmed although it didn't match the file."""
+    def visit(items):
+        for item in items or []:
+            if item.get("id") in paths:
+                item["note"] = CONFIRMED_NOTE
+    visit(profile.get("summary_facts"))
+    visit(profile.get("highlights"))
+    for r in profile.get("roles") or []:
+        visit([r["scope"]] if r.get("scope") else [])
+        visit(r.get("achievements"))
+        visit(r.get("sub_roles"))
     for key in ("projects", "education", "extras"):
-        for item in profile[key]:
-            for part in (item["label"], item["text"]):
-                check(item["id"], part)
-    return sorted(set(out), key=out.index)
+        visit(profile.get(key))
+    return profile
 
 
 def blank_profile(name: str, location: str, headline: str = "") -> dict:

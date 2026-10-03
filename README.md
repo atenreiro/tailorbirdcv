@@ -39,10 +39,16 @@ autocv install-browser         # optional: headless browser for job pages that n
 ```
 Update with `uv tool upgrade autocv-app` (or `pipx upgrade autocv-app`).
 
-## First run
-1. **Import your resume** on the Welcome page: a Word file, a PDF or pasted text, in any layout. The AI copies it into your master profile word-for-word (it doesn't rewrite anything), and anything that doesn't match your file exactly is highlighted for you to check. Nothing is saved until you click *Save as my profile*. Or start with a blank profile.
-2. **Settings → Your targets**: your field, seniority, the roles you're aiming for, region, US or UK spelling, and the page limit (1–3). These steer what the AI emphasises; they never add facts. A *domain pack* adds field-specific emphasis (currently: General, Cybersecurity). **Resume design**: Classic, Modern or Compact, on US Letter or A4.
-3. **New tailoring**: paste a job description (or its URL) and follow the steps.
+## First run: the setup wizard
+The first time you open AutoCV, a short wizard (about 5 minutes) gets you ready:
+1. **Connect Claude**: your Claude Code login, or an Anthropic API key. The page notices on its own when you've logged in.
+2. **Upload your CV** (.docx, PDF or text, any layout). The AI copies it into your master profile word-for-word; it doesn't rewrite anything.
+3. **Review**: every line is shown. Anything that doesn't match your file word-for-word is highlighted, and you fix, remove or confirm it before *Save my profile* (AutoCV checks again when saving). Or start with a blank profile.
+4. **Your targets**, suggested from your CV: field, seniority, the roles you're aiming for, region, US/UK spelling, page limit, domain pack. They steer what the AI emphasises; they never add facts.
+5. **Design**: Classic, Modern or Compact, on A4 or US Letter.
+6. **Final checks**: PDF engine, fonts, and an optional headless browser you can install from there.
+
+Then paste a job description in **New tailoring**. Everything can be changed later under Settings, where you can also run the wizard again.
 
 ## Your data stays on your computer
 AutoCV runs only on `127.0.0.1`; there's no account, server or telemetry. Your profile, applications and settings live in:

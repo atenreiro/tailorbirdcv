@@ -60,6 +60,15 @@ def _windows_command(binary: str) -> list[str]:
                       "for Windows (claude.exe), or set AUTOCV_CLAUDE_BIN to claude.exe.")
 
 
+# In `claude -p` an API key in the environment always wins over the subscription login, which would
+# silently bill the key. The subscription engine never passes one on.
+_API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def cli_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
+
+
 class ClaudeCLIEngine:
     name = "claude-cli"
 
@@ -84,7 +93,7 @@ class ClaudeCLIEngine:
             args = [str(inputs / a[1:-1]) if a[:1] == "{" and a[1:-1] in (files or {}) else a for a in args]
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    *(self.command or _windows_command(self.binary)), *args, cwd=cwd,
+                    *(self.command or _windows_command(self.binary)), *args, cwd=cwd, env=cli_env(),
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE, **oscompat.group_kwargs(),
                 )
@@ -147,8 +156,9 @@ DEFAULT_API_MODEL = "claude-sonnet-5-5"
 
 
 class AnthropicAPIEngine:
-    """Claude through the Anthropic API with the user's own key (pay per use). Structured output via
-    a forced tool call whose input schema is AutoCV's JSON schema."""
+    """Claude through the Anthropic API with the user's own key (pay per use), answering through
+    structured outputs (JSON matching AutoCV's schema). Forced tool choice isn't used: current models
+    (Opus 5.5, Sonnet 5.5, Fable 5.1) reject it."""
 
     name = "anthropic-api"
 
@@ -159,6 +169,7 @@ class AnthropicAPIEngine:
         self._key = key or (lambda: apikey.get()[0])
         self._client_factory = client_factory
         self._checked: tuple[str, float, dict] | None = None  # (key, when, status) — status is cached briefly
+        self._tool_fallback: set[str] = set()  # schemas the API couldn't compile for structured outputs
 
     def _client(self, key: str):
         if self._client_factory:
@@ -184,15 +195,18 @@ class AnthropicAPIEngine:
         return str(e)
 
     async def status(self) -> dict:
+        """Checks the key with a one-token request (cached: 5 minutes when it works, 15 s when not)."""
         import time
-        key = self._key()
+        key = await asyncio.to_thread(self._key)
         base = {"engine": self.name, "model": self.model}
         if not key:
             return {**base, "ready": False, "detail": "No API key yet — add one in Settings → AI engine."}
-        if self._checked and self._checked[0] == key and time.monotonic() - self._checked[1] < 300:
+        if self._checked and self._checked[0] == key and time.monotonic() - self._checked[1] < \
+                (300 if self._checked[2]["ready"] else 15):
             return self._checked[2]
         try:
-            await self._client(key).models.retrieve(self.model)
+            await self._client(key).messages.create(model=self.model, max_tokens=1,
+                                                    messages=[{"role": "user", "content": "ping"}])
             result = {**base, "ready": True, "detail": "API key works"}
         except Exception as e:  # noqa: BLE001
             result = {**base, "ready": False, "detail": self._explain(e)}
@@ -200,25 +214,87 @@ class AnthropicAPIEngine:
         return result
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
-        key = self._key()
+        """Structured outputs (the response is JSON matching the schema). A schema the API can't
+        compile falls back to an ordinary tool call; AutoCV validates every answer either way."""
+        key = await asyncio.to_thread(self._key)
         if not key:
             raise EngineError("No Anthropic API key — add one in Settings → AI engine.")
+        client, strict = self._client(key), api_schema(schema)
+        signature = json.dumps(strict, sort_keys=True)
+        if signature not in self._tool_fallback:
+            try:
+                msg = await client.messages.create(
+                    model=self.model, max_tokens=16000, system=system,
+                    messages=[{"role": "user", "content": prompt}],
+                    output_config={"format": {"type": "json_schema", "schema": strict}})
+                return _structured(msg)
+            except EngineError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                if not _schema_rejected(e):
+                    raise EngineError(self._explain(e)) from e
+                self._tool_fallback.add(signature)
         try:
-            msg = await self._client(key).messages.create(
-                model=self.model, max_tokens=16000, system=system,
+            msg = await client.messages.create(
+                model=self.model, max_tokens=16000,
+                system=system + "\n\nAnswer by calling the `answer` tool exactly once with the complete result.",
                 messages=[{"role": "user", "content": prompt}],
-                tools=[{"name": "answer", "description": "Return the result as JSON matching the schema.",
+                tools=[{"name": "answer", "description": "Return the complete result as JSON matching the schema.",
                         "input_schema": schema}],
-                tool_choice={"type": "tool", "name": "answer"},
-            )
+                tool_choice={"type": "auto"})
         except Exception as e:  # noqa: BLE001
             raise EngineError(self._explain(e)) from e
-        if getattr(msg, "stop_reason", None) == "max_tokens":
-            raise EngineError("The answer was cut off (too long). Try again, or shorten the job description.")
+        _check_stop(msg)
         for block in msg.content:
             if getattr(block, "type", None) == "tool_use":
                 return block.input
-        raise EngineError("The model did not return structured output.")
+        raise EngineError("The model did not return structured output. Try again.")
+
+
+_UNSUPPORTED = ("maxItems", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum",
+                "exclusiveMaximum", "multipleOf", "maxProperties", "minProperties")
+
+
+def api_schema(schema: Any) -> Any:
+    """AutoCV's JSON schema adapted to structured outputs: unsupported constraints dropped (AutoCV
+    validates the answer itself) and every object closed with additionalProperties: false."""
+    if isinstance(schema, list):
+        return [api_schema(x) for x in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: api_schema(v) for k, v in schema.items() if k not in _UNSUPPORTED}
+    if out.get("minItems", 0) > 1:
+        out["minItems"] = 1
+    if out.get("type") == "object" or "properties" in out:
+        out["additionalProperties"] = False
+    return out
+
+
+def _check_stop(msg) -> None:
+    reason = getattr(msg, "stop_reason", None)
+    if reason == "refusal":
+        raise EngineError("Claude declined this request (its safety checks flagged it). Try again, or switch to "
+                          "the Claude Code engine in Settings → AI engine.")
+    if reason == "max_tokens":
+        raise EngineError("The answer was cut off (too long). Try again, or shorten the job description.")
+
+
+def _structured(msg) -> Any:
+    _check_stop(msg)
+    text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", None) == "text").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise EngineError("The model's answer wasn't valid JSON. Try again.") from e
+
+
+def _schema_rejected(e: Exception) -> bool:
+    """A 400 about the schema itself (too complex, unsupported keyword): retry with a tool call."""
+    try:
+        import anthropic
+    except ImportError:  # pragma: no cover
+        return False
+    return isinstance(e, anthropic.BadRequestError) and "schema" in str(e).lower()
 
 
 class SwitchingEngine:

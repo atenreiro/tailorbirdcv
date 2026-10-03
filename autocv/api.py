@@ -49,6 +49,10 @@ class ProfileImport(BaseModel):
     text: str = Field("", max_length=200_000)      # or pasted text
 
 
+class SetupStep(BaseModel):
+    step: Literal[tuple(Store.SETUP_STEPS)]  # type: ignore[valid-type]
+
+
 class BlankProfile(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     location: str = Field("", max_length=120)
@@ -338,10 +342,70 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def get_profile():
         return profile_payload(need_profile())
 
-    # -- first run: import a resume or start blank --------------------------------------
+    # -- first run: the setup wizard ----------------------------------------------------
+    def setup_payload() -> dict:
+        draft = store.setup_draft() or {}
+        has_profile = store.profile_path.exists()
+        out = {"has_profile": has_profile, **store.setup_state(),
+               "suggested_targets": draft.get("suggested_targets"), "pages": draft.get("pages")}
+        if draft and not has_profile:  # the imported profile awaiting review (survives a refresh)
+            out["draft"] = {"profile": draft["profile"], "unverified": draft["unverified"]}
+        return out
+
     @api.get("/setup")
     def get_setup():
-        return {"has_profile": store.profile_path.exists()}
+        return setup_payload()
+
+    @api.put("/setup")
+    def put_setup(body: SetupStep):
+        store.save_setup_state(step=body.step)
+        return setup_payload()
+
+    @api.post("/setup/finish")
+    def finish_setup():
+        need_profile()
+        store.save_setup_state(completed=True, step="checks")
+        store.clear_setup_draft()
+        return setup_payload()
+
+    @api.delete("/setup/draft")
+    def delete_setup_draft():
+        """Start over: forget the imported draft (nothing was saved from it)."""
+        store.clear_setup_draft()
+        return setup_payload()
+
+    browser_install: dict = {"state": "idle", "detail": ""}
+
+    @api.get("/setup/browser")
+    def browser_status():
+        from .doctor import browser_installed
+        if browser_install["state"] == "idle" and browser_installed():
+            return {"state": "done", "detail": "Installed."}
+        return browser_install
+
+    @api.post("/setup/browser", status_code=202)
+    async def install_browser():
+        """Install the optional headless browser (same as `autocv install-browser`), in the background."""
+        import sys
+        if browser_install["state"] == "running":
+            return browser_install
+
+        async def run():
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "playwright", "install", "chromium",
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                out, _ = await asyncio.wait_for(proc.communicate(), 900)
+                lines = [ln for ln in out.decode(errors="replace").splitlines() if ln.strip()]
+                ok = proc.returncode == 0
+                browser_install.update(state="done" if ok else "failed",
+                                       detail="Installed." if ok else (lines[-1] if lines else "Install failed."))
+            except Exception as e:  # noqa: BLE001
+                browser_install.update(state="failed", detail=str(e) or "Install failed.")
+
+        browser_install.update(state="running", detail="Downloading (about 100 MB)…")
+        asyncio.get_running_loop().create_task(run())
+        return browser_install
 
     def no_profile_yet():
         if store.profile_path.exists():
@@ -349,7 +413,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/profile/import")
     async def import_resume(body: ProfileImport):
-        """Read a resume with the AI into a DRAFT profile. Nothing is saved: the user reviews it first."""
+        """Read a resume with the AI into a DRAFT profile, kept in the data folder until the user
+        reviews and saves it (or starts over). Nothing becomes part of the profile here."""
         import base64
         import binascii
 
@@ -357,13 +422,14 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         no_profile_yet()
         try:
             if body.text.strip():
-                text = importer.extract_text("pasted.txt", body.text.encode("utf-8"))
+                filename, raw = "pasted.txt", body.text.encode("utf-8")
             else:
                 try:
-                    raw = base64.b64decode(body.data, validate=True)
+                    filename, raw = body.filename, base64.b64decode(body.data, validate=True)
                 except (binascii.Error, ValueError):
                     raise HTTPException(422, "The file couldn't be read.")
-                text = importer.extract_text(body.filename, raw)
+            text = await asyncio.to_thread(importer.extract_text, filename, raw)
+            pages = await asyncio.to_thread(importer.pdf_pages, filename, raw)
         except importer.ImportError_ as e:
             raise HTTPException(422, str(e))
         try:
@@ -374,11 +440,15 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             MasterProfile.model_validate(result["profile"])
         except ValidationError as e:
             raise HTTPException(502, f"The AI's reading of the resume wasn't usable ({e.error_count()} problems). Try again.")
-        return result
+        store.save_setup_draft({**result, "source": text, "pages": pages})
+        store.save_setup_state(step="review")
+        return {**result, "pages": pages}
 
     @api.post("/profile/create")
     def create_profile(body: dict):
-        """Save the first profile (a reviewed import, or a blank one: {"blank": {...}})."""
+        """Save the first profile: the reviewed import ({"profile", "confirmed": [paths]}) or a blank
+        one ({"blank": {...}}). Lines that don't match the original file word-for-word are refused
+        unless the user confirmed them — checked here against the stored source, not trusted from the UI."""
         from . import importer
         with store.lock:  # check-then-create as one step
             return _create_profile(body, importer)
@@ -392,11 +462,22 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 raise HTTPException(422, str(e))
             data, cause = importer.blank_profile(blank.name, blank.location, blank.headline), "blank profile"
         else:
-            data, cause = body.get("profile") or {}, "resume import"
+            draft = store.setup_draft()
+            if not draft or not draft.get("source"):
+                raise HTTPException(409, "Import your CV first (Setup → Upload your CV).")
+            data = body.get("profile") if isinstance(body.get("profile"), dict) else {}
+            confirmed = {p for p in body.get("confirmed") or [] if isinstance(p, str)}
+            pending = [p for p in importer.unverified(data, draft["source"]) if p not in confirmed]
+            if pending:
+                raise HTTPException(422, {"code": "unconfirmed", "paths": pending,
+                                          "message": f"{len(pending)} line(s) don't match your file word-for-word. "
+                                                     "Fix, remove or confirm each one before saving."})
+            data, cause = importer.mark_confirmed(data, confirmed), "resume import"
         try:
             profile = store.save_profile(data, cause=cause)
         except (ValidationError, RetiredIdReused) as e:
             raise HTTPException(422, str(e))
+        store.save_setup_state(step="targets")
         return profile_payload(profile)
 
     @api.put("/profile")
