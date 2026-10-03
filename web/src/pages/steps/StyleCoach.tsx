@@ -37,8 +37,8 @@ export default function StyleCoach({ app }: { app: Application }) {
   }
 
   return (
-    <section className="animate-rise flex flex-col gap-2.5 rounded border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rust">Teach AutoCV your style</p>
+    <section className="animate-rise flex flex-col gap-2.5 rounded-lg border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Teach AutoCV your style</p>
       <p className="text-muted">
         You changed {app.edits} claim{app.edits === 1 ? '' : 's'} from the AI draft{guidance ? ' and gave guidance' : ''}.
         AutoCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
@@ -52,7 +52,7 @@ export default function StyleCoach({ app }: { app: Application }) {
           {note && <li className="text-muted">{note}</li>}
         </ul>
       )}
-      <Link to="/profile?tab=prefs" className="self-start text-xs text-muted hover:text-rust">Manage all preferences →</Link>
+      <Link to="/profile?tab=prefs" className="self-start text-xs text-muted hover:text-accent">Manage all preferences →</Link>
     </section>
   )
 }
@@ -61,12 +61,12 @@ function ProposalRow({ p, onDecide }: { p: Preference; onDecide: (p: Preference,
   const [text, setText] = useState(p.text)
   const active = p.status === 'active'
   return (
-    <li className={cx('flex flex-col gap-1.5 rounded border p-2.5', active ? 'border-ok/40 bg-ok-soft/40' : 'border-rule bg-sheet')}>
+    <li className={cx('flex flex-col gap-1.5 rounded-lg border p-2.5', active ? 'border-ok/40 bg-ok-soft/40' : 'border-rule bg-sheet')}>
       {active ? (
         <p className="text-ink">{text}</p>
       ) : (
         <textarea aria-label="Preference" title="Edit the wording before approving" rows={Math.max(2, Math.ceil(text.length / 36))}
-          className="field resize-none border-transparent bg-transparent px-1.5 py-1 text-[13px] leading-[1.4] text-ink hover:border-rule focus:border-rust"
+          className="field resize-none border-transparent bg-transparent px-1.5 py-1 text-[13px] leading-[1.4] text-ink hover:border-rule focus:border-accent"
           value={text} onChange={(e) => setText(e.target.value)} />
       )}
       {p.rationale && <p className="text-[11px] text-faint">{p.rationale}</p>}

@@ -14,8 +14,8 @@ function move<T>(list: T[], i: number, d: number): T[] {
   return out
 }
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
-const card = 'rounded border border-rule bg-sheet'
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
+const card = 'rounded-lg border border-rule bg-sheet'
 // The sheet reads like the real resume (Calibri), not like the app chrome.
 const SHEET_FONT: CSSProperties = { fontFamily: "Calibri, Carlito, 'IBM Plex Sans', sans-serif" }
 
@@ -127,7 +127,7 @@ function LineEditor({ line, evidence, roleIds, issues, review, actions, onChange
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">Cites</p>
       {claim.sources.map((s) => (
         <div key={s} className="grid grid-cols-[minmax(0,100px)_minmax(0,1fr)_14px] items-start gap-2.5 text-xs">
-          <span className={cx('break-all font-mono', evidence[s] ? 'text-rust' : 'text-bad')}>{s}</span>
+          <span className={cx('break-all font-mono', evidence[s] ? 'text-accent' : 'text-bad')}>{s}</span>
           <span className="text-body">{evidence[s]?.split('\n')[0] ?? 'Unknown evidence id'}</span>
           <button className="cursor-pointer text-faint hover:text-bad" onClick={() => onChange({ ...claim, sources: claim.sources.filter((x) => x !== s) })}
             aria-label={`Remove source ${s}`}>×</button>
@@ -135,7 +135,7 @@ function LineEditor({ line, evidence, roleIds, issues, review, actions, onChange
       ))}
       {!claim.sources.length && <p className="text-xs text-bad">No sources: this claim can’t be verified.</p>}
       <select
-        className="chip w-auto max-w-full cursor-pointer self-start border-dashed border-rule bg-transparent hover:border-rust hover:text-rust"
+        className="chip w-auto max-w-full cursor-pointer self-start border-dashed border-rule bg-transparent hover:border-accent hover:text-accent"
         value=""
         onChange={(e) => e.target.value && onChange({ ...claim, sources: [...claim.sources, e.target.value] })}
         aria-label="Add a source"
@@ -158,7 +158,7 @@ function LineEditor({ line, evidence, roleIds, issues, review, actions, onChange
 
 function AddFromEvidence({ evidence, ids, onAdd, label }: { evidence: Record<string, string>; ids: string[]; onAdd: (id: string) => void; label: string }) {
   return (
-    <select className="mt-1 block w-auto max-w-full cursor-pointer truncate rounded border border-dashed border-rule bg-transparent px-2 py-1 font-sans text-xs text-muted hover:border-rust hover:text-rust" value="" onChange={(e) => e.target.value && onAdd(e.target.value)} aria-label={label}>
+    <select className="mt-1 block w-auto max-w-full cursor-pointer truncate rounded-lg border border-dashed border-rule bg-transparent px-2 py-1 font-sans text-xs text-muted hover:border-accent hover:text-accent" value="" onChange={(e) => e.target.value && onAdd(e.target.value)} aria-label={label}>
       <option value="">+ {label}</option>
       {ids.map((id) => <option key={id} value={id}>{id}: {(evidence[id] ?? id).split('\n')[0].slice(0, 90)}</option>)}
     </select>
@@ -175,7 +175,7 @@ function ItemsField({ items, onCommit, ariaLabel }: { items: string[]; onCommit:
     <AutoText
       ariaLabel={ariaLabel}
       value={value}
-      className="-mx-1 rounded-[3px] border border-transparent bg-transparent px-1 leading-[1.45] hover:border-rule focus:border-rust focus:bg-sheet focus:outline-none"
+      className="-mx-1 rounded-[3px] border border-transparent bg-transparent px-1 leading-[1.45] hover:border-rule focus:border-accent focus:bg-sheet focus:outline-none"
       onFocus={() => { setText(joined); setEditing(true) }}
       onChange={setText}
       onBlur={() => {
@@ -328,14 +328,14 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
           onClick={() => setFocus(path)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocus(path) } }}
           className={cx('-mx-1.5 flex cursor-pointer gap-2 rounded-[3px] px-1.5 py-[3px] leading-[1.45] text-body transition-colors',
-            on ? 'bg-rust-soft ring-1 ring-inset ring-rust/30' : errs.length ? 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30 hover:bg-bad-soft' : 'hover:bg-paper')}>
+            on ? 'bg-accent-soft ring-1 ring-inset ring-accent/30' : errs.length ? 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30 hover:bg-bad-soft' : 'hover:bg-paper')}>
           {bullet && <span className="flex-none text-faint">•</span>}
           <span className={cx('min-w-0 flex-1 break-words', l.italic && 'italic text-muted')}>{l.claim.text || <span className="italic text-faint">(empty line)</span>}</span>
           {(changed(path) || errs.length > 0 || hm > 0) && (
             <span className="flex flex-none items-center gap-1 self-start pt-[5px]">
               {changed(path) && <span title="Unsaved edit" className="size-1.5 rounded-full bg-warn" />}
               {errs.length > 0 && <span title={errs.map((e) => e.message).join('\n')} className="rounded-[3px] bg-bad-soft px-[5px] font-mono text-[10px] leading-4 text-bad">FIX</span>}
-              {hm > 0 && <span title="Hiring-manager suggestion" className="rounded-[3px] border border-rust/30 bg-rust-soft px-[5px] font-mono text-[10px] leading-4 text-rust">HM</span>}
+              {hm > 0 && <span title="Hiring-manager suggestion" className="rounded-[3px] border border-accent/30 bg-accent-soft px-[5px] font-mono text-[10px] leading-4 text-accent">HM</span>}
             </span>
           )}
         </div>
@@ -351,9 +351,9 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
       {/* ---------------------------------------------------------------- the sheet */}
-      <article className="sheet animate-rise flex min-w-0 flex-col gap-[18px] rounded px-4 py-7 text-[14px] sm:px-12 sm:py-10" style={SHEET_FONT}>
+      <article className="sheet animate-rise flex min-w-0 flex-col gap-[18px] rounded-lg px-4 py-7 text-[14px] sm:px-12 sm:py-10" style={SHEET_FONT}>
         {app.sent.length > 0 && (
-          <p className="rounded bg-ok-soft px-3 py-2 font-sans text-xs text-ok">
+          <p className="rounded-lg bg-ok-soft px-3 py-2 font-sans text-xs text-ok">
             You sent a frozen copy on {new Date(app.sent[0].created).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}.
             Edits here won’t change it. Find it under Export → Sent copies.
           </p>
@@ -366,7 +366,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
           </p>
           <select
             aria-label="Headline"
-            className="mt-1.5 w-auto min-w-0 max-w-full cursor-pointer rounded-[3px] border border-transparent bg-transparent px-1 text-center text-[14px] font-semibold text-rust [text-align-last:center] hover:border-rule"
+            className="mt-1.5 w-auto min-w-0 max-w-full cursor-pointer rounded-[3px] border border-transparent bg-transparent px-1 text-center text-[14px] font-semibold text-accent [text-align-last:center] hover:border-rule"
             value={draft.headline}
             onChange={(e) => update((d) => { d.headline = e.target.value })}
           >
@@ -404,7 +404,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
                     <span className="inline-grid">
                       <span className="invisible col-start-1 row-start-1 whitespace-pre border border-transparent px-px" aria-hidden>{g.label || 'Group'}</span>
                       <input aria-label={`Competency group ${i + 1}`} size={1}
-                        className="col-start-1 row-start-1 w-full min-w-0 rounded-[3px] border border-transparent bg-transparent px-px hover:border-rule focus:border-rust focus:outline-none"
+                        className="col-start-1 row-start-1 w-full min-w-0 rounded-[3px] border border-transparent bg-transparent px-px hover:border-rule focus:border-accent focus:outline-none"
                         value={g.label} onChange={(e) => update((d) => { d.competencies[i].label = e.target.value })} />
                     </span>
                     :
@@ -437,7 +437,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
                   </p>
                   <p className="shrink-0 text-[13px] text-muted">{role.dates}</p>
                 </div>
-                <p className="font-semibold text-rust">{role.title}</p>
+                <p className="font-semibold text-accent">{role.title}</p>
                 {tr.scope && line(`experience[${i}].scope`, false)}
                 {tr.bullets.map((_, j) => line(`experience[${i}].bullets[${j}]`))}
                 {tr.sub_roles.map((sr) => {
@@ -486,7 +486,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
               const on = draft[key].includes(item.id)
               return (
                 <label key={item.id} className={cx('flex cursor-pointer gap-2 leading-[1.45]', !on && 'text-faint line-through')}>
-                  <input type="checkbox" className="mt-1 accent-rust" checked={on} onChange={() => update((d) => { d[key] = on ? d[key].filter((x) => x !== item.id) : p[key].map((x) => x.id).filter((x) => x === item.id || d[key].includes(x)) })} />
+                  <input type="checkbox" className="mt-1 accent-accent" checked={on} onChange={() => update((d) => { d[key] = on ? d[key].filter((x) => x !== item.id) : p[key].map((x) => x.id).filter((x) => x === item.id || d[key].includes(x)) })} />
                   <span><span className="font-semibold">{item.label}</span> {item.text}</span>
                 </label>
               )

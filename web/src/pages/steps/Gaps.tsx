@@ -4,12 +4,12 @@ import { cx, ErrorNote } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
-const card = 'rounded border border-rule bg-sheet'
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
+const card = 'rounded-lg border border-rule bg-sheet'
 const CHIP: Record<GapState, [string, string]> = {
   open: ['open', 'bg-bad-soft text-bad'],
   draft: ['draft', 'bg-warn-soft text-warn'],
-  pending: ['to approve', 'bg-rust-soft text-rust'],
+  pending: ['to approve', 'bg-accent-soft text-accent'],
   approved: ['evidence', 'bg-ok-soft text-ok'],
   no_experience: ['no exp.', 'bg-wash text-muted'],
 }
@@ -208,14 +208,14 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
                   <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">{q.requirement}</span>
                   <span className={cx('flex-none rounded-full px-2 py-px text-[10px] font-semibold uppercase tracking-[0.06em]', chipCls)}>{chip}</span>
                 </span>
-                <span className="font-serif text-base leading-[1.3] text-ink">{q.question}</span>
+                <span className="text-[15px] font-medium leading-[1.3] text-ink">{q.question}</span>
               </button>
             )
           })}
           {!questions.length && <p className="px-4 py-3.5 text-sm text-muted">No questions for this role.</p>}
         </div>
         {answered.length > 1 && (
-          <button className="btn btn-ghost self-start px-2 py-1 text-[13px] text-rust" onClick={() => draftEvidence(answered)}>
+          <button className="btn btn-ghost self-start px-2 py-1 text-[13px] text-accent" onClick={() => draftEvidence(answered)}>
             Turn all {answered.length} answers into evidence
           </button>
         )}
@@ -236,7 +236,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
                   <li key={g.knowledge_id} className="flex flex-col gap-1 px-4 py-3">
                     <span className="text-sm text-ink">{g.requirement}</span>
                     <span className="text-xs text-muted">You answered “no real experience”{k.company ? ` for ${k.company}` : ''} on {fmt(k.date)}.</span>
-                    <button className="cursor-pointer self-start text-xs text-rust hover:text-[#63230d]"
+                    <button className="cursor-pointer self-start text-xs text-accent hover:text-accent-strong"
                       onClick={() => (reopened ? select(qid) : reopen(g.requirement, g.knowledge_id))}>
                       {reopened ? 'Asked again ↑' : 'This has changed. Ask me again'}
                     </button>
@@ -253,17 +253,17 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
         <ErrorNote error={error} onDismiss={() => setError(null)} />
 
         {sel ? (
-          <section key={sel.id} className="sheet animate-rise flex flex-col gap-3.5 rounded p-5 sm:p-6">
+          <section key={sel.id} className="sheet animate-rise flex flex-col gap-3.5 rounded-lg p-5 sm:p-6">
             <p className={label}>{sel.requirement}</p>
-            <p className="font-serif text-2xl leading-[1.3] text-pretty text-ink">{sel.question}</p>
+            <p className="text-xl font-semibold leading-[1.3] text-pretty text-ink">{sel.question}</p>
             {prefill && st !== 'approved' && (
               <p className="text-xs text-muted">↺ Pre-filled from your answer{prefill.company ? ` for ${prefill.company}` : ''} on {fmt(prefill.date)}. Confirm or update it.</p>
             )}
 
             {st === 'no_experience' && (
-              <div className="flex flex-wrap items-center gap-3 rounded bg-wash px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-wash px-3.5 py-3">
                 <p className="min-w-0 flex-1 text-[13px] text-body">Marked as no real experience. Future analyses won’t ask about this again.</p>
-                <button className="cursor-pointer text-[13px] text-rust hover:text-[#63230d]" onClick={() => update(sel, { status: 'draft' }, true)}>Undo</button>
+                <button className="cursor-pointer text-[13px] text-accent hover:text-accent-strong" onClick={() => update(sel, { status: 'draft' }, true)}>Undo</button>
               </div>
             )}
 
@@ -310,9 +310,9 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             )}
           </section>
         ) : (
-          <section className="sheet animate-rise flex flex-col gap-2 rounded p-6">
+          <section className="sheet animate-rise flex flex-col gap-2 rounded-lg p-6">
             <p className={label}>Gaps</p>
-            <p className="font-serif text-2xl text-ink">No new gaps to ask about</p>
+            <p className="font-display text-[26px] text-ink">No new gaps to ask about</p>
             <p className="text-muted">Your profile and past answers cover every must-have. You can go straight to composing.</p>
             {/* proposals can't exist without questions, but never hide one that blocks composing */}
             {shown.map(({ d, i }) => (
@@ -359,26 +359,26 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
   const approved = d.state === 'approved'
   const target = d.target === 'general' ? 'General' : roles.find((r) => r.id === d.target)?.employer ?? d.target
   return (
-    <div className={cx('flex flex-col gap-2 rounded border px-4 py-3.5', approved ? 'border-ok/40 bg-ok-soft/50' : 'border-rule bg-paper')}>
+    <div className={cx('flex flex-col gap-2 rounded-lg border px-4 py-3.5', approved ? 'border-ok/40 bg-ok-soft/50' : 'border-rule bg-paper')}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
           Proposed evidence ·
           {live ? (
-            <select aria-label="Belongs to" className="cursor-pointer rounded border border-rule bg-sheet px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink"
+            <select aria-label="Belongs to" className="cursor-pointer rounded-lg border border-rule bg-sheet px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink"
               value={d.target} onChange={(e) => onPatch({ target: e.target.value })}>
               {roles.map((r) => <option key={r.id} value={r.id}>{r.employer}</option>)}
               <option value="general">General (not role-specific)</option>
             </select>
           ) : <span>{target}</span>}
         </p>
-        {d.id && <span className="font-mono text-[11px] text-rust">{d.id}</span>}
+        {d.id && <span className="font-mono text-[11px] text-accent">{d.id}</span>}
       </div>
       {question && <p className="text-xs text-muted">For: {question.question}</p>}
       {live ? (
-        <textarea aria-label="Proposed evidence wording" className="field min-h-[104px] resize-y font-serif text-base leading-[1.4]"
+        <textarea aria-label="Proposed evidence wording" className="field min-h-[104px] resize-y text-[15px] leading-[1.45]"
           value={d.text} onChange={(e) => onPatch({ text: e.target.value })} />
       ) : (
-        <p className="font-serif text-base leading-[1.4] text-ink">{d.text}</p>
+        <p className="text-[15px] leading-[1.45] text-ink">{d.text}</p>
       )}
       {d.skills.length > 0 && (
         <div className="flex flex-wrap gap-1">

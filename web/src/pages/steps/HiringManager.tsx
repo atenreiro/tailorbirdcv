@@ -24,17 +24,17 @@ export interface ReviewActions {
 export function ReviewIssue({ issue, actions, compact = false }: { issue: CritiqueIssue; actions: ReviewActions; compact?: boolean }) {
   const editable = issue.action !== 'advice'
   return (
-    <div className={cx('rounded border border-rust/25 bg-rust-soft/40 p-3 text-xs', !compact && 'mt-2')}>
+    <div className={cx('rounded-lg border border-accent/25 bg-accent-soft/40 p-3 text-xs', !compact && 'mt-2')}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold uppercase tracking-wider text-rust">Hiring manager</span>
+        <span className="font-semibold uppercase tracking-wider text-accent">Hiring manager</span>
         <span className={cx('rounded-full px-2 py-0.5 text-[10px] font-semibold', SEV[issue.severity])}>{KIND_LABEL[issue.kind] ?? issue.kind}</span>
         {issue.note_for && <span className="chip">note for {issue.note_for === 'cover_letter' ? 'cover letter' : 'interview'}</span>}
       </div>
       <p className="mt-1.5 text-body">{issue.problem}</p>
       {issue.action === 'rewrite' && issue.rewrite && (
-        <div className="mt-2 rounded bg-sheet p-2">
+        <div className="mt-2 rounded-lg bg-sheet p-2">
           <p className="text-[10px] uppercase tracking-wider text-faint">Suggested · fact-checked</p>
-          <p className="mt-0.5 font-serif text-[14px] leading-snug text-ink">{issue.rewrite.text}</p>
+          <p className="mt-0.5 text-[14px] leading-snug text-ink">{issue.rewrite.text}</p>
         </div>
       )}
       {(issue.action === 'remove' || issue.action === 'move_to_top') && (
@@ -67,15 +67,15 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
   const acceptable = open.filter((i) => i.action !== 'advice').length
   const r = critique?.latest
   return (
-    <section className="rounded border border-rule bg-sheet px-[18px] py-4">
+    <section className="rounded-lg border border-rule bg-sheet px-[18px] py-4">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rust">Hiring-manager review</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Hiring-manager review</p>
         {r && <span className={cx('rounded-sm border-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em]', VERDICT[r.verdict.decision].cls)}>{VERDICT[r.verdict.decision].label}</span>}
       </div>
       {!r && <p className="mt-2 text-[13px] text-muted">Read this draft as the role’s hiring manager and a recruiter skimming the top third would. Takes about 1–1.5 minutes. Every suggested fix is fact-checked before you see it.</p>}
       {r && (
         <>
-          {critique!.stale && <p className="mt-2 rounded bg-warn-soft px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
+          {critique!.stale && <p className="mt-2 rounded-lg bg-warn-soft px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
           <p className="mt-2 text-[13px] text-body">{r.verdict.reason}</p>
           <dl className="mt-3 space-y-1.5">
             {(Object.keys(SCORE_LABEL) as ScoreKey[]).map((k) => {
@@ -91,7 +91,7 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
                     </dd>
                   </div>
                   <div className="mt-[3px] h-1 overflow-hidden rounded-full bg-wash">
-                    <div className="h-full rounded-full bg-rust" style={{ width: `${r.scores[k].score * 10}%` }} />
+                    <div className="h-full rounded-full bg-accent" style={{ width: `${r.scores[k].score * 10}%` }} />
                   </div>
                 </div>
               )

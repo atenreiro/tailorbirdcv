@@ -32,7 +32,7 @@ export function useKnowledge() {
 
 type KnowledgeEdit = { k: Knowledge; setK: (k: Knowledge) => void }
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
 
 export function AnswersPanel({ k, setK }: KnowledgeEdit) {
   const edit = (id: string, patch: Partial<KnowledgeAnswer>) =>
@@ -48,19 +48,19 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
         similar questions are pre-filled. These are <em>not</em> resume facts: only approved evidence in your profile can be cited.
       </p>
       {k.answers.length === 0 && (
-        <div className="sheet rounded px-8 py-10 text-center text-muted">No answers yet. They’ll appear here after your first Gaps step.</div>
+        <div className="sheet rounded-lg px-8 py-10 text-center text-muted">No answers yet. They’ll appear here after your first Gaps step.</div>
       )}
       {gaps.length > 0 && (
         <section className="flex flex-col gap-2">
           <p className={label}>Known gaps · {gaps.length}</p>
-          <ul className="rounded border border-rule bg-sheet">
+          <ul className="rounded-lg border border-rule bg-sheet">
             {gaps.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-rule/70 px-[18px] py-3 last:border-b-0">
                 <div>
                   <p className="text-ink">{a.topic}</p>
                   <p className="text-xs text-muted">No real experience · {a.company ?? 'unknown role'} · {fmtDate(a.date)}</p>
                 </div>
-                <button className="btn btn-ghost px-2 py-1 text-[13px] text-rust" onClick={() => forget(a.id)}>No longer true. Forget it</button>
+                <button className="btn btn-ghost px-2 py-1 text-[13px] text-accent" onClick={() => forget(a.id)}>No longer true. Forget it</button>
               </li>
             ))}
           </ul>
@@ -70,7 +70,7 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
         <section className="flex flex-col gap-2.5">
           <p className={label}>Experience answers · {experience.length}</p>
           {experience.map((a) => (
-            <div key={a.id} className="flex flex-col gap-1.5 rounded border border-rule bg-sheet px-4 py-3.5">
+            <div key={a.id} className="flex flex-col gap-1.5 rounded-lg border border-rule bg-sheet px-4 py-3.5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-ink">{a.topic}</span>
                 <span className="text-xs text-muted">
@@ -83,7 +83,7 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
               <p className="text-xs text-faint">{a.question}</p>
               <textarea className="field min-h-[60px] text-[13px]" rows={2} aria-label={`Answer ${a.id}`} value={a.answer} onChange={(e) => edit(a.id, { answer: e.target.value })} />
               <div className="flex justify-between text-xs">
-                {a.app_id ? <Link to={`/a/${a.app_id}`} className="text-muted hover:text-rust">Open application →</Link> : <span />}
+                {a.app_id ? <Link to={`/a/${a.app_id}`} className="text-muted hover:text-accent">Open application →</Link> : <span />}
                 <button className="cursor-pointer text-faint hover:text-bad" onClick={() => forget(a.id)}>Forget</button>
               </div>
             </div>
@@ -122,7 +122,7 @@ export function PreferencesPanel({ k, setK }: KnowledgeEdit) {
         (Export step → “Teach AutoCV your style”). Only <strong>active</strong> ones are used, and they never override the fact rules.
       </p>
       {prefs.map((p) => (
-        <div key={p.id} className={cx('flex flex-col gap-2 rounded border border-rule bg-sheet px-4 py-3.5', p.status === 'dismissed' && 'opacity-50')}>
+        <div key={p.id} className={cx('flex flex-col gap-2 rounded-lg border border-rule bg-sheet px-4 py-3.5', p.status === 'dismissed' && 'opacity-50')}>
           <div className="flex justify-between gap-3">
             <span className={cx('text-[11px] font-semibold uppercase tracking-[0.08em]', STATUS_LABEL[p.status][1])}>{STATUS_LABEL[p.status][0]}</span>
             <span className="text-xs text-faint">{fmtDate(p.date)}</span>
@@ -137,7 +137,7 @@ export function PreferencesPanel({ k, setK }: KnowledgeEdit) {
           </div>
         </div>
       ))}
-      {prefs.length === 0 && <div className="sheet rounded px-8 py-10 text-center text-muted">No preferences yet.</div>}
+      {prefs.length === 0 && <div className="sheet rounded-lg px-8 py-10 text-center text-muted">No preferences yet.</div>}
       <div className="flex gap-2">
         <input className="field flex-1" placeholder="Add your own, e.g. “Prefer ‘led’ over ‘spearheaded’”" value={newText}
           onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} />

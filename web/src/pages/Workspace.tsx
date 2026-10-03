@@ -47,8 +47,8 @@ const enabledSteps = (a: Application): Record<Step, boolean> => ({
   export: !!a.tailored,
 })
 
-type Tone = 'ok' | 'warn' | 'bad' | 'rust' | 'none'
-const DOT: Record<Tone, string> = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-bad', rust: 'bg-rust', none: 'bg-faint' }
+type Tone = 'ok' | 'warn' | 'bad' | 'accent' | 'none'
+const DOT: Record<Tone, string> = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-bad', accent: 'bg-accent', none: 'bg-faint' }
 
 /** One-line status under each step label, derived from the application. */
 function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone]> {
@@ -67,7 +67,7 @@ function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone
     review: !app.tailored ? ['not drafted', 'none']
       : memo.review ? ['unsaved edits', 'warn']
       : errors ? [`${errors} to fix`, 'bad']
-      : c ? [`${verdict}${fixes ? ` · ${fixes} fix${fixes > 1 ? 'es' : ''}` : ''}`, fixes ? 'rust' : 'ok']
+      : c ? [`${verdict}${fixes ? ` · ${fixes} fix${fixes > 1 ? 'es' : ''}` : ''}`, fixes ? 'accent' : 'ok']
       : ['verified', 'ok'],
     export: !app.files.length ? [app.tailored ? 'not built' : 'not yet', 'none']
       : app.outputs_stale ? ['outdated', 'warn']
@@ -177,8 +177,8 @@ export default function Workspace() {
     <div className="flex flex-col gap-6">
       <div className="animate-rise flex flex-wrap items-end justify-between gap-5">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="self-start text-[13px] text-muted hover:text-rust">← Applications</Link>
-          <h1 className="break-words font-serif text-[34px] leading-none text-ink sm:text-[44px]">{app.meta.company}</h1>
+          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="self-start text-[13px] text-muted hover:text-accent">← Applications</Link>
+          <h1 className="break-words font-display text-[40px] leading-[0.95] text-ink sm:text-[56px]">{app.meta.company}</h1>
           <p className="text-[17px] text-muted">{app.meta.role}</p>
         </div>
         <div className="flex items-center gap-3 text-[13px] text-muted">
@@ -205,7 +205,7 @@ export default function Workspace() {
                 aria-current={on ? 'step' : undefined}
                 className="group flex min-w-0 flex-1 cursor-pointer items-baseline gap-1.5 px-1 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 sm:gap-3 sm:px-2"
               >
-                <span className={cx('font-serif text-xl italic sm:text-2xl', on ? 'text-rust' : 'text-faint')}>{i + 1}</span>
+                <span className={cx('font-mono text-base font-medium sm:text-lg', on ? 'text-accent' : 'text-faint')}>{i + 1}</span>
                 <span className="flex min-w-0 flex-col gap-px">
                   <span className={cx('flex items-center gap-1.5 font-medium', on ? 'text-ink' : 'text-muted group-hover:text-ink')}>
                     {s.label}
@@ -218,7 +218,7 @@ export default function Workspace() {
                   <span className="sr-only sm:hidden">{note}</span>
                 </span>
               </button>
-              <span className={cx('h-0.5 transition-colors', on ? 'bg-rust' : 'bg-transparent')} />
+              <span className={cx('h-0.5 transition-colors', on ? 'bg-accent' : 'bg-transparent')} />
             </li>
           )
         })}

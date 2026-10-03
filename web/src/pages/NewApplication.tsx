@@ -59,13 +59,13 @@ export default function NewApplication() {
       <div className="flex min-w-0 flex-[1_1_640px] flex-col gap-5">
         <div className="animate-rise flex flex-col gap-1.5">
           <p className="eyebrow">New tailoring</p>
-          <h1 className="font-serif text-[44px] leading-[1.1] text-ink">What role are we going after?</h1>
+          <h1 className="font-display text-[44px] leading-[0.95] sm:text-[56px] text-ink">What role are we going after?</h1>
         </div>
 
-        <div className="animate-rise flex gap-1 rounded border border-rule bg-wash p-1 text-sm" style={{ animationDelay: '60ms' }} role="tablist">
+        <div className="animate-rise flex gap-1 rounded-lg border border-rule bg-wash p-1 text-sm" style={{ animationDelay: '60ms' }} role="tablist">
           {(['paste', 'url'] as const).map((m) => (
             <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
-              className={cx('flex-1 cursor-pointer rounded px-4 py-1.5 transition', mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(23_23_23/0.08)]' : 'text-muted hover:text-ink')}>
+              className={cx('flex-1 cursor-pointer rounded-lg px-4 py-1.5 transition', mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(23_23_23/0.08)]' : 'text-muted hover:text-ink')}>
               {m === 'paste' ? 'Paste the description' : 'Fetch from a URL'}
             </button>
           ))}
@@ -73,9 +73,9 @@ export default function NewApplication() {
 
         <div className="animate-rise" style={{ animationDelay: '120ms' }}>
           {mode === 'paste' ? (
-            <div className="sheet rounded">
+            <div className="sheet rounded-lg">
               <textarea
-                className="block min-h-[440px] w-full resize-y bg-transparent px-[26px] py-[22px] font-serif text-[17px] leading-[1.6] text-ink placeholder:text-faint focus:outline-none"
+                className="block min-h-[440px] w-full resize-y bg-transparent px-[26px] py-[22px] text-[16px] leading-[1.6] text-ink placeholder:text-faint focus:outline-none"
                 placeholder="Paste the full job description here — title, company, responsibilities, requirements…"
                 aria-label="Job description" value={jd} onChange={(e) => setJd(e.target.value)} autoFocus />
               <div className="flex items-center justify-between gap-3 border-t border-rule px-[26px] py-2 font-mono text-xs text-faint">
@@ -103,7 +103,7 @@ export default function NewApplication() {
       </div>
 
       <aside className="animate-rise flex min-w-[260px] flex-[0_1_320px] flex-col gap-5 lg:pt-[108px]" style={{ animationDelay: '200ms' }}>
-        <section className="flex flex-col gap-2.5 rounded border border-rule bg-sheet px-[18px] py-4">
+        <section className="flex flex-col gap-2.5 rounded-lg border border-rule bg-sheet px-[18px] py-4">
           <p className="eyebrow">Detected</p>
           <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
             <span className="text-muted">Company</span><span className={cx('font-medium', dim)}>{det?.company ?? '—'}</span>
@@ -117,7 +117,7 @@ export default function NewApplication() {
           <p className="eyebrow">How it works</p>
           {HOW.map(([t, d], i) => (
             <div key={t} className="flex gap-3">
-              <span className="font-serif text-xl italic leading-none text-rust">{i + 1}</span>
+              <span className="font-mono text-[15px] font-medium leading-none text-accent">{i + 1}</span>
               <div className="flex flex-col gap-0.5">
                 <p className="font-medium text-ink">{t}</p>
                 <p className="text-muted text-pretty">{d}</p>

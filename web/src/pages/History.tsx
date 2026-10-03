@@ -53,10 +53,10 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
           Every save keeps a snapshot of the version <em>before</em> it. Restoring one replaces the current file; your current
           version is snapshotted first, so a restore can be undone. Deleted evidence ids stay retired either way.
         </p>
-        <div className="flex gap-1 rounded border border-rule bg-wash p-1 text-[13px]" role="tablist">
+        <div className="flex gap-1 rounded-lg border border-rule bg-wash p-1 text-[13px]" role="tablist">
           {(['profile', 'knowledge'] as const).map((k) => (
             <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
-              className={cx('cursor-pointer rounded px-3 py-1 transition', kind === k ? 'bg-sheet text-ink shadow-sm' : 'text-muted hover:text-ink')}>
+              className={cx('cursor-pointer rounded-lg px-3 py-1 transition', kind === k ? 'bg-sheet text-ink shadow-sm' : 'text-muted hover:text-ink')}>
               {k === 'profile' ? 'Master profile' : 'Answers & preferences'}
             </button>
           ))}
@@ -67,7 +67,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
       {entries === null ? (
         <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>
       ) : (
-        <div className="overflow-hidden rounded border border-rule bg-sheet">
+        <div className="overflow-hidden rounded-lg border border-rule bg-sheet">
           <div className={row}>
             <span className="font-mono text-xs text-muted">now</span>
             <div>
@@ -89,11 +89,11 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
               </div>
               {open?.id === e.id && (
                 <div className="animate-rise border-b border-rule/70 bg-paper/60 px-[18px] py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rust">Changed since this version</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Changed since this version</p>
                   <ul className="mt-2 space-y-1 text-sm text-body">{open.summary.map((l, i) => <li key={i}>• {l}</li>)}</ul>
                   <details className="mt-3">
                     <summary className="cursor-pointer text-sm text-muted hover:text-ink">Line-by-line diff</summary>
-                    <pre className="mt-2 max-h-[420px] overflow-auto rounded border border-rule bg-sheet p-3 font-mono text-[12px] leading-relaxed">
+                    <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-rule bg-sheet p-3 font-mono text-[12px] leading-relaxed">
                       {open.diff.split('\n').map((line, i) => (
                         <div key={i} className={line.startsWith('+') && !line.startsWith('+++') ? 'text-ok' : line.startsWith('-') && !line.startsWith('---') ? 'text-bad' : 'text-muted'}>{line || ' '}</div>
                       ))}

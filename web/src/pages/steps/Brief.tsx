@@ -8,7 +8,7 @@ import { gapQuestions, gapState, openGaps, questionFor } from './gapState'
 
 const STATUS_DOT = { strong: 'bg-ok', partial: 'bg-warn', gap: 'bg-bad' }
 const STATUS_LABEL = { strong: 'Strong', partial: 'Partial', gap: 'Gap' }
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
 
 export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
   const nav = useNavigate()
@@ -36,7 +36,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
         </button>
       </div>
       {showJd && (
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded border border-rule bg-sheet px-[18px] py-4 font-serif text-[15px] leading-[1.55] text-body">{app.jd}</pre>
+        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-lg border border-rule bg-sheet px-[18px] py-4 font-sans text-[15px] leading-[1.55] text-body">{app.jd}</pre>
       )}
     </section>
   )
@@ -44,8 +44,8 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
   if (!a) {
     return (
       <div className="flex flex-col gap-7">
-        <div className="sheet animate-rise rounded px-6 py-10 text-center sm:px-8">
-          <p className="font-serif text-2xl text-ink">Not analyzed yet.</p>
+        <div className="sheet animate-rise rounded-lg px-6 py-10 text-center sm:px-8">
+          <p className="font-display text-[26px] text-ink">Not analyzed yet.</p>
           <p className="mx-auto mt-1 max-w-xl text-muted">AutoCV will work out the industry, the IC vs manager track, and how your evidence stacks up against each requirement.</p>
           <button className="btn btn-primary mt-5" onClick={analyze}>Analyze the role</button>
         </div>
@@ -65,14 +65,14 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
       <div className="flex min-w-0 flex-[1_1_600px] flex-col gap-7">
         <section className="animate-rise flex flex-col gap-2">
           <p className={label}>The brief</p>
-          <p className="font-serif text-2xl leading-[1.35] text-pretty text-ink">{a.summary}</p>
+          <p className="text-xl font-medium leading-[1.4] text-pretty text-ink">{a.summary}</p>
         </section>
 
         <section className="animate-rise flex flex-col" style={{ animationDelay: '60ms' }}>
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-rule pb-2">
             <div>
               <p className={label}>Requirements</p>
-              <h2 className="font-serif text-2xl text-ink">How your evidence stacks up</h2>
+              <h2 className="font-display text-[26px] text-ink">How your evidence stacks up</h2>
             </div>
             <div className="flex gap-3.5 text-xs text-muted">
               {(['strong', 'partial', 'gap'] as const).map((s) => (
@@ -95,14 +95,14 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
                 <div className="flex flex-col gap-0.5">
                   <p className="text-ink">
                     {r.text}
-                    {r.priority === 'must' && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-rust">must</span>}
+                    {r.priority === 'must' && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-accent">must</span>}
                   </p>
                   {r.note && <p className="text-xs text-muted">{r.note}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
                   {r.evidence.map((e) => <Cite key={e} id={e} text={profile.evidence[e]} />)}
                   {q && (
-                    <button className="cursor-pointer text-xs text-rust hover:text-[#63230d]" onClick={() => ask(q.id)}>
+                    <button className="cursor-pointer text-xs text-accent hover:text-accent-strong" onClick={() => ask(q.id)}>
                       {settled ? 'See your answer →' : 'Answer in Gaps →'}
                     </button>
                   )}
@@ -114,7 +114,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
       </div>
 
       <aside className="animate-rise flex min-w-0 flex-[1_1_260px] flex-col gap-5 lg:max-w-[340px] lg:flex-[0_1_320px]" style={{ animationDelay: '120ms' }}>
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded border border-rule bg-rule">
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-rule bg-rule">
           {[['Industry lens', a.industry], ['Track', a.track], ['Seniority', a.seniority], ['Location', a.location]].map(([k, v]) => (
             <div key={k} className="bg-sheet px-4 py-3">
               <dt className="text-[11px] uppercase tracking-[0.06em] text-muted">{k}</dt>
@@ -129,7 +129,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
               <span
                 key={k.term}
                 title={k.aliases.length ? `also: ${k.aliases.join(', ')}` : undefined}
-                className={cx('rounded-full border px-2.5 py-[3px] text-[13px]', k.priority === 'must' ? 'border-rust/40 bg-rust-soft text-rust' : 'border-rule bg-sheet text-body')}
+                className={cx('rounded-full border px-2.5 py-[3px] text-[13px]', k.priority === 'must' ? 'border-accent/40 bg-accent-soft text-accent' : 'border-rule bg-sheet text-body')}
               >
                 {k.term}
               </span>

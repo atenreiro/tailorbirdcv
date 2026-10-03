@@ -1,31 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppSummary, type ScoreKey } from '../api'
 import { cx, ErrorNote, Spinner, StatusPill } from '../ui'
 import { changeStatus } from '../status'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
-type Filter = 'needs' | 'all' | Stage
+type View = 'board' | 'table'
 const STAGE: Record<string, Stage> = {
   draft: 'progress', analyzed: 'progress', composed: 'progress', built: 'ready',
   applied: 'flight', interview: 'flight', offer: 'flight', rejected: 'closed', withdrawn: 'closed',
 }
-const GROUPS: [Stage, string][] = [['progress', 'In progress'], ['ready', 'Ready to send'], ['flight', 'In flight'], ['closed', 'Closed']]
+const COLS: [Stage, string][] = [['progress', 'In progress'], ['ready', 'Ready to send'], ['flight', 'In flight'], ['closed', 'Closed']]
+const STAGE_TITLE = Object.fromEntries(COLS) as Record<Stage, string>
+const LANE_LIMIT = 5
 
 type Tone = 'warn' | 'act' | 'ok' | 'mute'
 type Kind = 'brief' | 'gaps' | 'review' | 'rebuild' | 'build' | 'critique' | 'apply'
 interface Next { text: string; short?: string; tone: Tone; cta?: string; kind?: Kind }
 // text colour, dot colour, soft background
 const TONE: Record<Tone, [string, string, string]> = {
-  warn: ['text-warn', 'bg-warn', 'bg-warn-soft'], act: ['text-rust', 'bg-rust', 'bg-rust-soft'],
-  ok: ['text-ok', 'bg-ok', 'bg-ok-soft'], mute: ['text-muted', 'bg-rule', 'bg-wash'],
+  warn: ['text-[#7a4700]', 'bg-[#c47a00]', 'bg-warn-soft'], act: ['text-accent', 'bg-accent', 'bg-accent-soft'],
+  ok: ['text-ok', 'bg-ok', 'bg-ok-soft'], mute: ['text-muted', 'bg-[#b8c0cd]', 'bg-[#f2f4f7]'],
 }
-const VERDICT = { interview: 'border-ok text-ok', borderline: 'border-warn text-warn', pass: 'border-bad text-bad' }
+// progress meter segment colours
+const BAR = { ok: 'bg-ok', warn: 'bg-[#c47a00]', act: 'bg-accent', bad: 'bg-bad', off: 'bg-rule' }
+const VERDICT = { interview: 'text-ok', borderline: 'text-warn', pass: 'text-bad' }
 const SCORES: ScoreKey[] = ['fit', 'impact', 'clarity', 'seniority']
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 const short = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : '')
 const hasPdf = (a: AppSummary) => a.files.some((f) => f.endsWith('.pdf'))
+const recent = (x: AppSummary, y: AppSummary) => (y.updated ?? '').localeCompare(x.updated ?? '') || (y.created ?? '').localeCompare(x.created ?? '')
 
 /** The one thing to do next for an application, derived from its real state. */
 function nextOf(a: AppSummary): Next {
@@ -55,6 +60,39 @@ function nextOf(a: AppSummary): Next {
 }
 const needsYou = (a: AppSummary) => { const n = nextOf(a); return n.tone === 'warn' || n.tone === 'act' || n.kind === 'apply' }
 
+/** Brief · Gaps · Review · Export, each with a bar colour and a short note. */
+function steps(a: AppSummary) {
+  const p = a.progress, built = a.files.length > 0, r = p?.requirements, d = p?.drafted
+  return [
+    { label: 'Brief', note: r ? plural(r, 'requirement') : 'not analyzed', bar: r ? BAR.ok : BAR.off, tone: r ? 'text-muted' : 'text-faint' },
+    { label: 'Gaps', note: !r ? '—' : p!.gaps_open ? `${p!.gaps_open} open` : 'answered',
+      bar: !r ? BAR.off : p!.gaps_open && !d ? BAR.warn : BAR.ok, tone: !r ? 'text-faint' : p!.gaps_open && !d ? 'text-[#7a4700]' : 'text-muted' },
+    { label: 'Review', note: !d ? '—' : p!.verified === false ? 'fact-check failing' : p!.critique ? p!.critique.verdict : 'verified',
+      bar: !d ? BAR.off : p!.verified === false ? BAR.bad : p!.critique && p!.critique.open && !p!.critique.stale ? BAR.act : BAR.ok,
+      tone: !d ? 'text-faint' : p!.verified === false ? 'text-bad' : 'text-muted' },
+    { label: 'Export', note: built ? (a.outputs_stale ? 'outdated' : a.files.map((f) => f.split('.').pop()!.toUpperCase()).join(' · ')) : 'not built',
+      bar: built ? (a.outputs_stale ? BAR.warn : BAR.ok) : BAR.off, tone: a.outputs_stale ? 'text-[#7a4700]' : built ? 'text-muted' : 'text-faint' },
+  ]
+}
+
+function Meter({ a }: { a: AppSummary }) {
+  return (
+    <div title="Brief · Gaps · Review · Export" className="grid flex-1 grid-cols-4 gap-[3px]">
+      {steps(a).map((s) => <span key={s.label} className={cx('h-1 rounded-sm', s.bar)} />)}
+    </div>
+  )
+}
+
+function NextLine({ a, working }: { a: AppSummary; working: boolean }) {
+  const n = nextOf(a)
+  return (
+    <p className={cx('flex min-w-0 items-center gap-2 text-[13px]', TONE[n.tone][0])}>
+      {working ? <Spinner className="size-[11px]" /> : <span className={cx('size-1.5 flex-none rounded-full', TONE[n.tone][1])} />}
+      <span className="truncate">{n.short ?? n.text}</span>
+    </p>
+  )
+}
+
 const BUSY_TEXT: Partial<Record<Kind, string>> = {
   rebuild: 'Rebuilding the PDF and DOCX from the current resume (Word opens briefly)…',
   build: 'Building the PDF and DOCX (Word opens briefly)…',
@@ -62,74 +100,79 @@ const BUSY_TEXT: Partial<Record<Kind, string>> = {
   apply: 'Building a fresh PDF and freezing the copy you’re sending…',
 }
 
+function savedView(): View {
+  try { return localStorage.getItem('acv3.view') === 'table' ? 'table' : 'board' } catch { return 'board' }
+}
+
 export default function Applications() {
   const nav = useNavigate()
   const [apps, setApps] = useState<AppSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<Filter>('all')
+  const [view, setViewState] = useState<View>(savedView)
   const [query, setQuery] = useState('')
+  const [needs, setNeeds] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<Application | null>(null)
   const [busy, setBusy] = useState<{ id: string; kind: Kind } | null>(null)
   const [notes, setNotes] = useState<string | null>(null)
-  const aside = useRef<HTMLElement>(null)
+  const [drag, setDrag] = useState<string | null>(null)
+  const [over, setOver] = useState<Stage | null>(null)
+  const [expanded, setExpanded] = useState<Partial<Record<Stage, boolean>>>({})
+  const closeBtn = useRef<HTMLButtonElement>(null)
 
   const reload = useCallback(() => api.applications().then(setApps).catch((e) => setError(e.message)), [])
   useEffect(() => { void reload() }, [reload])
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const list = (apps ?? [])
-      .filter((a) => filter === 'all' || (filter === 'needs' ? needsYou(a) : STAGE[a.status] === filter))
-      .filter((a) => !q || `${a.company} ${a.role}`.toLowerCase().includes(q))
-    return GROUPS.flatMap(([k]) => list.filter((a) => (STAGE[a.status] ?? 'progress') === k))
-  }, [apps, filter, query])
-  const selId = visible.some((a) => a.id === sel) ? sel : visible[0]?.id ?? null
-  const a = visible.find((x) => x.id === selId) ?? null
+  const setView = (v: View) => { try { localStorage.setItem('acv3.view', v) } catch { /* private mode */ } setViewState(v) }
 
-  // Full details (scores, keyword coverage, notes) for the selected application.
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (apps ?? []).filter((a) => !q || `${a.company} ${a.role}`.toLowerCase().includes(q)).sort(recent)
+  }, [apps, query])
+  // What ↑/↓ walk through: the table order, or the board's visible cards column by column.
+  const visible = useMemo(() => view === 'table' ? list : COLS.flatMap(([k]) => {
+    const rows = list.filter((a) => STAGE[a.status] === k)
+    return expanded[k] ? rows : rows.slice(0, LANE_LIMIT)
+  }), [list, view, expanded])
+  const a = (apps ?? []).find((x) => x.id === sel) ?? null
+
+  // Full details (scores, keyword coverage) for the open application.
   useEffect(() => {
     setDetail(null); setNotes(null)
-    if (!selId) return
+    if (!sel) return
     let live = true
-    api.get(selId).then((d) => { if (live) setDetail(d) }).catch(() => {})
+    api.get(sel).then((d) => { if (live) setDetail(d) }).catch(() => {})
     return () => { live = false }
-  }, [selId, apps])
+  }, [sel, apps])
 
-  // ↑ ↓ (or j k) move through the list; Enter opens the workspace.
+  useEffect(() => { if (open) closeBtn.current?.focus({ preventScroll: true }) }, [open])
+
+  // ↑ ↓ (or j k) move and open the sheet; Enter opens the workspace; Esc closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); return }
       if (/INPUT|TEXTAREA|SELECT/.test((document.activeElement as HTMLElement | null)?.tagName ?? '')) return
-      if (e.key === 'Enter' && selId) { nav(`/a/${selId}`); return }
+      if (e.key === 'Enter' && open && sel) { e.preventDefault(); nav(`/a/${sel}`); return }
       if (!['ArrowDown', 'ArrowUp', 'j', 'k'].includes(e.key) || !visible.length) return
       e.preventDefault()
-      const i = visible.findIndex((x) => x.id === selId)
+      const i = visible.findIndex((x) => x.id === sel)
       const d = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
       setSel(visible[Math.max(0, Math.min(visible.length - 1, i < 0 ? 0 : i + d))].id)
+      setOpen(true)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [visible, selId, nav])
+  }, [visible, sel, open, nav])
 
-  function select(id: string) {
-    setSel(id)
-    if (window.matchMedia('(max-width: 1023px)').matches) setTimeout(() => aside.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-  }
+  const show = (id: string) => { setSel(id); setOpen(true) }
 
-  async function act(app: AppSummary, n: Next) {
-    if (!n.kind || busy) return
-    if (n.kind === 'brief' || n.kind === 'gaps' || n.kind === 'review') { nav(`/a/${app.id}?step=${n.kind}`); return }
+  async function run(app: AppSummary, kind: Kind, fn: () => Promise<unknown>) {
+    if (busy) return
     setError(null)
-    setBusy({ id: app.id, kind: n.kind })
+    setBusy({ id: app.id, kind })
     try {
-      if (n.kind === 'rebuild' || n.kind === 'build') {
-        const r = await api.build(app.id)
-        if (r.build?.too_long) setError(`${app.company}: the PDF came out at ${r.build.pages} pages. Open the workspace to trim it.`)
-      } else if (n.kind === 'critique') {
-        await api.critique(app.id)
-      } else if (n.kind === 'apply') {
-        await changeStatus(app.id, 'applied')
-      }
+      await fn()
       await reload()
     } catch (e) {
       setError((e as Error).message)
@@ -138,16 +181,30 @@ export default function Applications() {
     }
   }
 
-  async function setStatus(app: AppSummary, status: string) {
-    setError(null)
-    try {
-      setBusy({ id: app.id, kind: 'apply' })
-      if (await changeStatus(app.id, status)) await reload()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(null)
-    }
+  function act(app: AppSummary, n: Next) {
+    if (!n.kind) return
+    if (n.kind === 'brief' || n.kind === 'gaps' || n.kind === 'review') { nav(`/a/${app.id}?step=${n.kind}`); return }
+    if (n.kind === 'rebuild' || n.kind === 'build') {
+      void run(app, n.kind, async () => {
+        const r = await api.build(app.id)
+        if (r.build?.too_long) setError(`${app.company}: the PDF came out at ${r.build.pages} pages. Open the workspace to trim it.`)
+      })
+    } else if (n.kind === 'critique') void run(app, 'critique', () => api.critique(app.id))
+    else if (n.kind === 'apply') void run(app, 'apply', () => changeStatus(app.id, 'applied'))
+  }
+
+  const setStatus = (app: AppSummary, status: string) => run(app, 'apply', () => changeStatus(app.id, status))
+
+  // Dropping a card on a column changes the status; it never claims work that hasn't happened.
+  function drop(app: AppSummary, to: Stage) {
+    if (STAGE[app.status] === to) return
+    const p = app.progress
+    if (to === 'progress') void setStatus(app, !p?.requirements ? 'draft' : !p.drafted ? 'analyzed' : 'composed')
+    else if (to === 'ready') {
+      if (!hasPdf(app) || app.outputs_stale) setError(`${app.company}: build an up-to-date PDF first (Export step), then move it to Ready to send.`)
+      else void setStatus(app, 'built')
+    } else if (to === 'flight') void setStatus(app, 'applied')
+    else void setStatus(app, 'rejected')
   }
 
   async function saveNotes(app: AppSummary) {
@@ -160,21 +217,37 @@ export default function Applications() {
     }
   }
 
-  const counts: Record<Filter, number> = { needs: 0, all: apps?.length ?? 0, progress: 0, ready: 0, flight: 0, closed: 0 }
-  for (const x of apps ?? []) { counts[STAGE[x.status] ?? 'progress']++; if (needsYou(x)) counts.needs++ }
-  const tabs: [Filter, string][] = [['needs', 'Needs you'], ['all', 'All'], ...GROUPS]
+  const all = apps ?? []
+  const needsCount = all.filter(needsYou).length
+  const active = all.filter((x) => STAGE[x.status] !== 'closed').length
+  const dim = (x: AppSummary) => (needs && !needsYou(x) ? 'opacity-[.38]' : drag === x.id ? 'opacity-50' : '')
 
   return (
     <div className="flex flex-col gap-7">
-      <div className="animate-rise flex flex-wrap items-end justify-between gap-5">
-        <div className="flex flex-col gap-1.5">
-          <p className="eyebrow">Applications</p>
-          <h1 className="font-serif text-[44px] leading-[1.1] text-ink">Every role, one dossier.</h1>
+      <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+        <div className="flex flex-col gap-2.5">
+          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Applications</h1>
+          {apps && <p className="font-mono text-xs text-muted">{active} active · {needsCount} need{needsCount === 1 ? 's' : ''} you · {all.length} total</p>}
         </div>
-        <div className="flex w-full items-center gap-2.5 sm:w-auto">
-          <input type="search" className="field min-w-0 flex-1 text-sm sm:w-[240px] sm:flex-none" placeholder="Search company or role"
-            aria-label="Search applications" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <Link to="/new" className="btn btn-primary shrink-0">+ New tailoring</Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div role="group" aria-label="View" className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]">
+            {(['board', 'table'] as const).map((v) => (
+              <button key={v} aria-pressed={view === v} onClick={() => setView(v)}
+                className={cx('h-[34px] cursor-pointer rounded-md px-3.5 font-medium capitalize transition-colors',
+                  view === v ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+                {v}
+              </button>
+            ))}
+          </div>
+          <input type="search" className="field h-10 w-[240px] max-w-full text-sm" placeholder="Search company or role" aria-label="Search applications"
+            value={query} onChange={(e) => setQuery(e.target.value)} />
+          <button aria-pressed={needs} onClick={() => setNeeds((x) => !x)}
+            className={cx('inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3.5 font-medium transition-colors',
+              needs ? 'border-ink bg-ink text-white' : 'border-[#cfd5de] bg-sheet text-ink hover:border-ink')}>
+            <span>Needs you</span>
+            <span className={cx('inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px]', needs ? 'bg-[#4d6bff] text-white' : 'bg-accent-soft text-accent')}>{needsCount}</span>
+          </button>
+          <Link to="/new" className="btn btn-primary h-10 px-4 hover:text-white">New tailoring</Link>
         </div>
       </div>
 
@@ -182,212 +255,246 @@ export default function Applications() {
       {apps === null && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>}
 
       {apps?.length === 0 && (
-        <div className="sheet animate-rise rounded px-10 py-16 text-center">
-          <p className="font-serif text-3xl text-ink">No applications yet.</p>
-          <p className="mx-auto mt-2 max-w-md text-muted">Paste a job description and AutoCV will tailor your resume to it, using only facts from your master profile.</p>
-          <Link to="/new" className="btn btn-primary mt-6">Start the first one</Link>
+        <div className="animate-rise rounded-[14px] border border-rule bg-sheet px-10 py-16 text-center">
+          <p className="font-display text-[36px] leading-none text-ink">No applications yet.</p>
+          <p className="mx-auto mt-3 max-w-md text-muted">Paste a job description and AutoCV will tailor your resume to it, using only facts from your master profile.</p>
+          <Link to="/new" className="btn btn-primary mt-6 hover:text-white">Start the first one</Link>
         </div>
       )}
 
-      {!!apps?.length && (
-        <div className="flex flex-wrap items-start gap-6">
-          <section className="flex min-w-0 flex-[1_1_600px] flex-col gap-3.5">
-            <div className="flex gap-1 overflow-x-auto border-b border-rule [scrollbar-width:none]" role="tablist">
-              {tabs.map(([k, label]) => (
-                <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)}
-                  className={cx('flex shrink-0 cursor-pointer items-baseline gap-1.5 whitespace-nowrap px-3 pb-2.5 pt-2 text-[13px] transition-colors hover:text-ink',
-                    filter === k ? 'text-ink shadow-[inset_0_-2px_0_var(--color-rust)]' : 'text-muted')}>
-                  <span>{label}</span>
-                  <span className={cx('font-mono text-[11px]', filter === k ? 'text-rust' : 'text-faint')}>{counts[k]}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="sheet animate-rise overflow-hidden rounded">
-              {GROUPS.map(([k, title]) => {
-                const rows = visible.filter((x) => (STAGE[x.status] ?? 'progress') === k)
-                if (!rows.length) return null
-                return (
-                  <div key={k}>
-                    <div className="flex items-baseline gap-2.5 border-b border-rule bg-paper px-5 pb-2 pt-3.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{title}</p>
-                      <span className="font-mono text-[11px] text-faint">{rows.length}</span>
-                    </div>
-                    {rows.map((x) => {
-                      const n = nextOf(x), on = x.id === selId
-                      return (
-                        <div key={x.id} role="button" tabIndex={0} aria-current={on ? 'true' : undefined}
-                          onClick={() => select(x.id)} onDoubleClick={() => nav(`/a/${x.id}`)}
-                          onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); select(x.id) } }}
-                          className={cx('grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-rule/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-wash md:grid-cols-[minmax(180px,1.3fr)_110px_minmax(160px,1.4fr)_64px]',
-                            on && 'bg-wash')}>
-                          <div className="min-w-0">
-                            <p className={cx('truncate font-serif text-lg', on ? 'text-rust' : 'text-ink')}>{x.company}</p>
-                            <p className="truncate text-[13px] text-muted">{x.role}</p>
-                          </div>
-                          <span className="justify-self-end md:justify-self-start"><StatusPill status={x.status} /></span>
-                          <p className={cx('col-span-2 flex min-w-0 items-center gap-2 text-[13px] md:col-span-1', TONE[n.tone][0])}>
-                            {busy?.id === x.id ? <Spinner /> : <span className={cx('size-1.5 flex-none rounded-full', TONE[n.tone][1])} />}
-                            <span className="truncate">{n.short ?? n.text}</span>
-                          </p>
-                          <span className="hidden justify-self-end whitespace-nowrap font-mono text-[11px] text-faint md:block">{short(x.updated)}</span>
+      {!!apps?.length && view === 'board' && (
+        <>
+          <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(272px,1fr))]">
+            {COLS.map(([k, title]) => {
+              const rows = list.filter((x) => STAGE[x.status] === k)
+              const shown = expanded[k] ? rows : rows.slice(0, LANE_LIMIT)
+              return (
+                <section key={k} aria-label={title}
+                  onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (over !== k) setOver(k) }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null) }}
+                  onDrop={(e) => { e.preventDefault(); const x = all.find((y) => y.id === drag); setDrag(null); setOver(null); if (x) drop(x, k) }}
+                  className={cx('flex min-w-0 flex-col gap-2.5 rounded-[14px] bg-lane p-3 transition-shadow', over === k && 'shadow-[inset_0_0_0_2px_var(--color-accent)]')}>
+                  <div className="flex items-baseline justify-between gap-2.5 px-1 pb-1.5 pt-1">
+                    <h2 className="font-display text-xl tracking-[-0.005em] text-ink">{title}</h2>
+                    <span className="font-mono text-xs text-muted">{rows.length}</span>
+                  </div>
+                  {shown.map((x) => {
+                    const on = open && x.id === sel
+                    return (
+                      <article key={x.id} draggable tabIndex={0} aria-current={on ? 'true' : undefined}
+                        onDragStart={(e: DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', x.id); setDrag(x.id) }}
+                        onDragEnd={() => { setDrag(null); setOver(null) }}
+                        onClick={() => show(x.id)} onDoubleClick={() => nav(`/a/${x.id}`)}
+                        onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id) } }}
+                        className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#aeb7c6]',
+                          on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(14_20_34/0.05)]', dim(x))}>
+                        <div className="flex items-baseline justify-between gap-2.5">
+                          <p className="min-w-0 truncate text-base font-semibold leading-[1.2] text-ink">{x.company}</p>
+                          <span className="flex-none font-mono text-[11px] text-faint">{short(x.updated)}</span>
                         </div>
-                      )
-                    })}
+                        <p className="text-[13px] leading-[1.3] text-muted text-pretty">{x.role}</p>
+                        <div className="flex items-center gap-2.5"><StatusPill status={x.status} /><Meter a={x} /></div>
+                        <div className={cx('-mx-1 -mb-1 mt-0.5 rounded-md px-2 py-[7px]', TONE[nextOf(x).tone][2])}>
+                          <NextLine a={x} working={busy?.id === x.id} />
+                        </div>
+                      </article>
+                    )
+                  })}
+                  {rows.length === 0 && (
+                    <div className="rounded-[10px] border-[1.5px] border-dashed border-[#b8c0cd] px-3 py-[22px] text-center text-[13px] text-faint">
+                      {query ? 'No matches' : 'Drop a card here'}
+                    </div>
+                  )}
+                  {rows.length > LANE_LIMIT && (
+                    <button onClick={() => setExpanded((s) => ({ ...s, [k]: !s[k] }))}
+                      className="h-9 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
+                      {expanded[k] ? 'Show fewer' : `Show ${rows.length - LANE_LIMIT} more`}
+                    </button>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+          <p className="hidden font-mono text-[11px] text-faint lg:block">Newest first · drag a card to another column to change its stage · ↑ ↓ to move · Enter to open · Esc to close</p>
+        </>
+      )}
+
+      {!!apps?.length && view === 'table' && (
+        <>
+          <div className="overflow-x-auto rounded-[14px] border border-rule bg-sheet">
+            <div role="table" aria-label="Applications" className="min-w-[860px]">
+              <div role="row" className="grid grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-line bg-wash px-5 py-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
+                <span role="columnheader">Application</span><span role="columnheader">Stage</span><span role="columnheader">Status</span>
+                <span role="columnheader">Progress</span><span role="columnheader">Next step</span><span role="columnheader" className="justify-self-end text-accent">Updated ↓</span>
+              </div>
+              {list.map((x) => {
+                const on = open && x.id === sel
+                return (
+                  <div key={x.id} role="row" tabIndex={0} aria-current={on ? 'true' : undefined}
+                    onClick={() => show(x.id)} onDoubleClick={() => nav(`/a/${x.id}`)}
+                    onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id) } }}
+                    className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#eef0f4] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
+                      on && 'bg-[#eef1fd] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
+                    <div role="cell" className="min-w-0">
+                      <p className="truncate text-[15px] font-semibold text-ink">{x.company}</p>
+                      <p className="truncate text-[13px] text-muted">{x.role}</p>
+                    </div>
+                    <span role="cell" className="text-[13px] text-body">{STAGE_TITLE[STAGE[x.status] ?? 'progress']}</span>
+                    <span role="cell" className="justify-self-start"><StatusPill status={x.status} /></span>
+                    <div role="cell" className="flex"><Meter a={x} /></div>
+                    <div role="cell" className="min-w-0"><NextLine a={x} working={busy?.id === x.id} /></div>
+                    <span role="cell" className="justify-self-end whitespace-nowrap font-mono text-[11px] text-faint">{short(x.updated)}</span>
                   </div>
                 )
               })}
-              {visible.length === 0 && (
-                <div className="flex flex-col gap-1.5 px-5 py-12 text-center">
-                  <p className="font-serif text-[22px] text-ink">Nothing here.</p>
-                  <p className="text-muted">No application matches this filter.</p>
-                </div>
-              )}
+              {list.length === 0 && <p className="px-5 py-10 text-center text-faint">No application matches this search.</p>}
             </div>
-            <p className="hidden font-mono text-[11px] text-faint lg:block">↑ ↓ to move through the list · Enter to open</p>
-          </section>
-
-          {a && (
-            <aside ref={aside} className="sheet flex min-w-[min(340px,100%)] max-w-full flex-[1_1_380px] scroll-mt-20 flex-col rounded lg:sticky lg:top-[84px] lg:max-w-[460px]">
-              <Dossier a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''}
-                onNotes={setNotes} onNotesBlur={() => saveNotes(a)} onStatus={(s) => setStatus(a, s)} onAct={(n) => act(a, n)} />
-            </aside>
-          )}
-        </div>
+          </div>
+          <p className="hidden font-mono text-[11px] text-faint lg:block">Newest first · ↑ ↓ to move · Enter to open · Esc to close</p>
+        </>
       )}
+
+      <div onClick={() => setOpen(false)} aria-hidden
+        className={cx('fixed inset-0 z-40 bg-[rgb(14_20_34/0.28)] transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')} />
+      <aside aria-label="Application detail" aria-hidden={!open} inert={!open}
+        className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
+          open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
+        {a && (
+          <Sheet a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
+            onClose={() => setOpen(false)} onNotes={setNotes} onNotesBlur={() => saveNotes(a)}
+            onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} />
+        )}
+      </aside>
     </div>
   )
 }
 
-function Dossier({ a, detail, busy, notes, onNotes, onNotesBlur, onStatus, onAct }: {
+function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct }: {
   a: AppSummary; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
-  onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string) => void; onAct: (n: Next) => void
+  closeRef: RefObject<HTMLButtonElement | null>
+  onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string) => void; onAct: (n: Next) => void
 }) {
   const p = a.progress
   const n = nextOf(a)
   const working = busy?.id === a.id
-  const built = a.files.length > 0
   const hm = detail?.critique ?? null
   const cov = detail?.ats?.coverage
   const lens = [a.industry, a.track, p?.seniority].filter(Boolean).join(' · ')
-  const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-muted'
-  const steps = [
-    { label: 'Brief', note: p?.requirements ? plural(p.requirements, 'requirement') : 'not analyzed', bar: p?.requirements ? 'bg-ok' : 'bg-rule', tone: p?.requirements ? 'text-muted' : 'text-faint' },
-    { label: 'Gaps', note: !p?.requirements ? '—' : p.gaps_open ? `${p.gaps_open} open` : 'answered',
-      bar: !p?.requirements ? 'bg-rule' : p.gaps_open && !p.drafted ? 'bg-warn' : 'bg-ok', tone: p?.gaps_open && !p.drafted ? 'text-warn' : 'text-muted' },
-    { label: 'Review', note: !p?.drafted ? '—' : p.verified === false ? 'fact-check failing' : p.critique ? p.critique.verdict : 'verified',
-      bar: !p?.drafted ? 'bg-rule' : p.verified === false ? 'bg-bad' : p.critique && p.critique.open && !p.critique.stale ? 'bg-rust' : 'bg-ok',
-      tone: !p?.drafted ? 'text-faint' : p.verified === false ? 'text-bad' : 'text-muted' },
-    { label: 'Export', note: built ? (a.outputs_stale ? 'outdated' : a.files.map((f) => f.split('.').pop()!.toUpperCase()).join(' · ')) : 'not built',
-      bar: built ? (a.outputs_stale ? 'bg-warn' : 'bg-ok') : 'bg-rule', tone: a.outputs_stale ? 'text-warn' : built ? 'text-muted' : 'text-faint' },
-  ]
+  const label = 'font-mono text-[11px] uppercase tracking-[0.08em] text-muted'
+  const sentPdf = a.sent?.files.find((f) => f.endsWith('.pdf'))
 
   return (
     <>
-      <div className="flex flex-col gap-3 border-b border-rule px-6 pb-[18px] pt-[22px]">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            {lens && <p className="eyebrow">{lens}</p>}
-            <h2 className="font-serif text-[30px] leading-[1.1] text-ink">{a.company}</h2>
-            <p className="text-body">{a.role}</p>
-          </div>
-          <label className="relative inline-flex flex-none cursor-pointer items-center gap-1" title="Change status">
-            <StatusPill status={a.status} /><span className="text-[9px] text-muted">▾</span>
+      <div className="flex flex-col gap-3.5 border-b border-line px-[26px] pb-5 pt-[22px]">
+        <div className="flex items-center justify-between gap-3">
+          <p className="eyebrow">{lens || 'not analyzed yet'}</p>
+          <button ref={closeRef} onClick={onClose} aria-label="Close"
+            className="size-8 cursor-pointer rounded-lg border border-rule bg-sheet text-base leading-none text-muted hover:border-ink hover:text-ink">×</button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display text-[40px] leading-[0.95] text-ink">{a.company}</h2>
+          <p className="text-[15px] text-body">{a.role}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <label className="relative inline-flex cursor-pointer items-center" title="Change status">
+            <StatusPill status={a.status} className="!py-[5px] !pl-[9px] !pr-6 !text-[11px]" />
+            <span className="pointer-events-none absolute right-2 text-[9px] opacity-70">▼</span>
             <select aria-label={`Status for ${a.company}`} className="absolute inset-0 cursor-pointer opacity-0" value={a.status}
               disabled={working} onChange={(e) => onStatus(e.target.value)}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
           </label>
+          <span className="font-mono text-[11px] text-faint">
+            Created {short(a.created)} · updated {short(a.updated)}{a.pages ? ` · ${plural(a.pages, 'page')}` : ''}
+          </span>
         </div>
-        <p className="font-mono text-[11px] text-faint">
-          created {short(a.created)} · updated {short(a.updated)}{a.pages ? ` · ${plural(a.pages, 'page')}` : ''}
-        </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 border-b border-rule px-6 py-[18px]">
-        {steps.map((s) => (
-          <div key={s.label} className="flex min-w-0 flex-col gap-1.5">
-            <span className={cx('h-[3px] rounded-full', s.bar)} />
-            <p className="text-xs font-semibold text-ink">{s.label}</p>
-            <p className={cx('truncate text-xs', s.tone)} title={s.note}>{s.note}</p>
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        <div className="grid grid-cols-4 gap-2.5 border-b border-line px-[26px] py-5">
+          {steps(a).map((s) => (
+            <div key={s.label} className="flex min-w-0 flex-col gap-1.5">
+              <span className={cx('h-1 rounded-sm', s.bar)} />
+              <p className="text-[13px] font-semibold text-ink">{s.label}</p>
+              <p className={cx('truncate text-xs', s.tone)} title={s.note}>{s.note}</p>
+            </div>
+          ))}
+        </div>
+
+        {n.cta && (
+          <div className={cx('mx-[26px] mt-5 flex items-center gap-3.5 rounded-[10px] px-4 py-3.5', TONE[n.tone][2])}>
+            <p className={cx('flex-1 text-sm text-pretty', TONE[n.tone][0])}>{working && BUSY_TEXT[busy!.kind] ? BUSY_TEXT[busy!.kind] : n.text}</p>
+            <button className="btn btn-primary h-9 flex-none px-3.5" disabled={!!busy} onClick={() => onAct(n)}>
+              {working && <Spinner />}{working ? 'Working' : n.cta}
+            </button>
           </div>
-        ))}
-      </div>
+        )}
 
-      {n.cta && (
-        <div className={cx('mx-6 mt-[18px] flex items-center gap-3.5 rounded px-4 py-3.5', TONE[n.tone][2])}>
-          <p className={cx('flex-1 text-[13px] text-pretty', TONE[n.tone][0])}>{working && BUSY_TEXT[busy!.kind] ? BUSY_TEXT[busy!.kind] : n.text}</p>
-          <button className="btn btn-primary flex-none px-3 py-1.5 text-[13px]" disabled={!!busy} onClick={() => onAct(n)}>
-            {working && <Spinner />}{working ? 'Working' : n.cta}
-          </button>
-        </div>
-      )}
-
-      {hm && (
-        <div className="flex flex-col gap-3 px-6 pb-1 pt-[18px]">
-          <div className="flex items-baseline justify-between gap-3">
+        {hm && (
+          <div className="flex flex-col gap-3.5 px-[26px] pb-1 pt-[22px]">
             <p className={label}>Hiring manager read</p>
-            <span className={cx('rounded-sm border-[1.5px] px-2 py-px font-mono text-[11px] font-medium uppercase tracking-[0.16em]', VERDICT[hm.latest.verdict.decision])}>
-              {hm.latest.verdict.decision}
-            </span>
-          </div>
-          <p className="font-serif text-[17px] italic leading-[1.35] text-body text-pretty">“{hm.latest.verdict.reason}”</p>
-          {hm.stale && <p className="text-xs text-warn">The resume changed since this read. Re-run it in Review for fresh scores.</p>}
-          <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
-            {SCORES.map((k) => {
-              const v = hm.latest.scores[k].score, prev = hm.previous_scores?.[k]?.score
-              const d = prev === undefined ? 0 : v - prev
-              return (
-                <div key={k} className="flex flex-col gap-1" title={hm.latest.scores[k].why}>
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="capitalize text-muted">{k}</span>
-                    <span className="font-mono text-ink">{v}/10 {d !== 0 && <span className={d > 0 ? 'text-ok' : 'text-bad'}>{d > 0 ? `+${d}` : d}</span>}</span>
+            <span className={cx('font-display text-[32px] capitalize leading-none', VERDICT[hm.latest.verdict.decision])}>{hm.latest.verdict.decision}</span>
+            <p className="text-[15px] leading-[1.45] text-body text-pretty">“{hm.latest.verdict.reason}”</p>
+            {hm.stale && <p className="text-[13px] text-[#7a4700]">The resume changed since this read. Re-run it in Review for fresh scores.</p>}
+            <div className="grid grid-cols-4 rounded-[10px] border border-line">
+              {SCORES.map((k, i) => {
+                const v = hm.latest.scores[k].score, prev = hm.previous_scores?.[k]?.score
+                const d = prev === undefined ? 0 : v - prev
+                return (
+                  <div key={k} title={hm.latest.scores[k].why} className={cx('flex flex-col gap-1 p-3', i > 0 && 'shadow-[inset_1px_0_0_var(--color-line)]')}>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-faint">{k}</span>
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="font-display text-[28px] leading-none text-ink">{v}</span>
+                      {d !== 0 && <span className={cx('font-mono text-[11px]', d > 0 ? 'text-ok' : 'text-bad')}>{d > 0 ? `+${d}` : d}</span>}
+                    </span>
                   </div>
-                  <div className="h-1 rounded-full bg-wash"><div className="h-full rounded-full bg-rust" style={{ width: `${v * 10}%` }} /></div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {cov && (
+          <div className="flex flex-col gap-3 px-[26px] pb-1 pt-[22px]">
+            <p className={label}>Keyword coverage</p>
+            {(['must', 'nice'] as const).map((k) => {
+              const { hit, total } = cov[k]
+              const pct = total ? Math.round((hit / total) * 100) : 0
+              return (
+                <div key={k} className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-3 text-[13px]">
+                  <span className="capitalize text-muted">{k}</span>
+                  <div className="h-1.5 rounded-[3px] bg-paper">
+                    <div className={cx('h-full rounded-[3px]', k === 'nice' ? 'bg-faint' : hit === total ? 'bg-ok' : 'bg-[#c47a00]')} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="justify-self-end font-mono text-xs text-ink">{hit}/{total}</span>
                 </div>
               )
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      {cov && (
-        <div className="flex flex-col gap-2.5 px-6 pb-1 pt-[18px]">
-          <p className={label}>Keyword coverage</p>
-          {(['must', 'nice'] as const).map((k) => {
-            const { hit, total } = cov[k]
-            const pct = total ? Math.round((hit / total) * 100) : 0
-            return (
-              <div key={k} className="grid grid-cols-[44px_minmax(0,1fr)_48px] items-center gap-2.5 text-xs">
-                <span className="capitalize text-muted">{k}</span>
-                <div className="h-1 rounded-full bg-wash">
-                  <div className={cx('h-full rounded-full', k === 'nice' ? 'bg-faint' : hit === total ? 'bg-ok' : 'bg-warn')} style={{ width: `${pct}%` }} />
-                </div>
-                <span className="justify-self-end font-mono text-ink">{hit}/{total}</span>
-              </div>
-            )
-          })}
+        <div className="flex flex-col gap-2 px-[26px] py-[22px]">
+          <label className={label} htmlFor={`notes-${a.id}`}>Notes</label>
+          <textarea id={`notes-${a.id}`} rows={3} className="field resize-y bg-wash px-3 py-2.5 text-sm focus:bg-sheet"
+            placeholder="Recruiter, interview dates, anything to remember" value={notes}
+            onChange={(e) => onNotes(e.target.value)} onBlur={onNotesBlur} />
         </div>
-      )}
-
-      <div className="flex flex-col gap-2 px-6 py-[18px]">
-        <label className={label} htmlFor={`notes-${a.id}`}>Notes</label>
-        <textarea id={`notes-${a.id}`} rows={3} className="field resize-y text-[13px]" placeholder="Recruiter, interview dates, anything to remember"
-          value={notes} onChange={(e) => onNotes(e.target.value)} onBlur={onNotesBlur} />
       </div>
 
-      <div className="mt-auto flex flex-wrap items-center gap-2 rounded-b border-t border-rule bg-paper px-6 py-3.5">
+      <div className="flex flex-wrap items-center gap-2 border-t border-line bg-wash px-[26px] py-3.5">
         {a.files.map((f) => (
-          <a key={f} href={api.fileUrl(a.id, f, true)}
-            title={a.outputs_stale ? 'Outdated: the resume changed after this was built' : f}
-            className={cx('chip hover:bg-rust-soft hover:text-rust', a.outputs_stale && 'line-through opacity-60')}>↓ {f.split('.').pop()}</a>
+          <a key={f} href={api.fileUrl(a.id, f, true)} title={a.outputs_stale ? 'Outdated: the resume changed after this was built' : f}
+            className={cx('inline-flex h-[30px] items-center rounded-md border border-rule bg-sheet px-2.5 font-mono text-[11px] uppercase text-body hover:border-accent hover:text-accent',
+              a.outputs_stale && 'line-through opacity-55')}>
+            ↓ {f.split('.').pop()}
+          </a>
         ))}
-        {a.sent && a.sent.files.some((f) => f.endsWith('.pdf')) && (
-          <a href={api.sentFileUrl(a.id, a.sent.id, a.sent.files.find((f) => f.endsWith('.pdf'))!, true)}
-            title={`Exact copy sent on ${short(a.sent.created)}`} className="chip bg-ok-soft text-ok hover:bg-ok hover:text-sheet">✓ sent</a>
+        {a.sent && sentPdf && (
+          <a href={api.sentFileUrl(a.id, a.sent.id, sentPdf, true)} title={`Exact copy sent on ${short(a.sent.created)}`}
+            className="inline-flex h-[30px] items-center rounded-md bg-[#dcefe5] px-2.5 font-mono text-[11px] uppercase text-ok hover:bg-ok hover:text-white">✓ sent</a>
         )}
-        {!built && !a.sent && <span className="text-xs text-faint">No files built yet</span>}
-        <Link to={`/a/${a.id}`} className="btn ml-auto px-3 py-1.5 text-[13px]">Open workspace →</Link>
+        {!a.files.length && !a.sent && <span className="text-[13px] text-faint">No files built yet</span>}
+        <Link to={`/a/${a.id}`} className="btn btn-dark ml-auto h-9 px-3.5 hover:text-white">Open workspace →</Link>
       </div>
     </>
   )

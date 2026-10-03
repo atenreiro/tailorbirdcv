@@ -3,9 +3,9 @@ import { cx, fmtDate, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-rust'
-const card = 'rounded border border-rule bg-sheet'
-const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
+const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
+const card = 'rounded-lg border border-rule bg-sheet'
+const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
 
 export default function Export({ app, profile, setApp, go, run, memo }: StepProps) {
   const pdf = app.files.find((f) => f.endsWith('.pdf'))
@@ -48,16 +48,16 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         <section className="animate-rise flex flex-col gap-3.5">
           <div className="border-b border-rule pb-2">
             <p className={label}>Export</p>
-            <h2 className="font-serif text-2xl text-ink">{docx && !stale ? 'Ready to send' : 'Build the files'}</h2>
+            <h2 className="font-display text-[26px] text-ink">{docx && !stale ? 'Ready to send' : 'Build the files'}</h2>
           </div>
-          {unsaved && <p className="rounded bg-warn-soft px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
+          {unsaved && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
           {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
           {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF with Microsoft Word. The first run may ask macOS for permission to control Word.</p>}
           {ok && !docx && overBudget && (
             <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
           {docx && stale && (
-            <p className="rounded bg-warn-soft px-3 py-2 text-[13px] text-warn">
+            <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
               These files are out of date: the resume changed after they were built. Rebuild before sending.
             </p>
           )}
@@ -97,7 +97,7 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         <section className={cx(card, 'animate-rise flex flex-col gap-2.5 px-[18px] py-4 text-[13px]')} style={{ animationDelay: '60ms' }}>
           <div className="flex items-center justify-between gap-3">
             <p className={label}>Sent copies</p>
-            <button className="cursor-pointer text-xs text-rust hover:text-[#63230d] disabled:cursor-not-allowed disabled:opacity-45" disabled={!ok || unsaved} onClick={freezeCopy}
+            <button className="cursor-pointer text-xs text-accent hover:text-accent-strong disabled:cursor-not-allowed disabled:opacity-45" disabled={!ok || unsaved} onClick={freezeCopy}
               title="Save a read-only copy of exactly these files, e.g. when you send an updated version">
               + Freeze a copy
             </button>
@@ -106,13 +106,13 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
             <p className="text-muted">When you mark this application <strong>applied</strong>, AutoCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
           ) : (
             app.sent.map((c) => (
-              <div key={c.id} className="flex flex-col gap-1.5 rounded border border-rule px-2.5 py-2">
+              <div key={c.id} className="flex flex-col gap-1.5 rounded-lg border border-rule px-2.5 py-2">
                 <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} page${c.pages > 1 ? 's' : ''}` : ''}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
-                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-rust-soft hover:text-rust">↓ {f.split('.').pop()}</a>
+                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-accent-soft hover:text-accent">↓ {f.split('.').pop()}</a>
                   ))}
-                  <button className="chip cursor-pointer hover:bg-rust-soft hover:text-rust" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
+                  <button className="chip cursor-pointer hover:bg-accent-soft hover:text-accent" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
                 </div>
               </div>
             ))
@@ -122,7 +122,7 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         {docx && <StyleCoach app={app} />}
 
         {docx && (
-          <div className="animate-rise flex flex-col gap-1 rounded border border-rule bg-wash/60 px-4 py-3.5 text-[13px] text-muted">
+          <div className="animate-rise flex flex-col gap-1 rounded-lg border border-rule bg-wash/60 px-4 py-3.5 text-[13px] text-muted">
             <p className="font-medium text-ink">Before you send it</p>
             <p>Read it once, end to end. The fact-check guarantees numbers and names, but only you can confirm the emphasis sounds like you.</p>
           </div>
@@ -131,11 +131,11 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
 
       <div className="animate-rise flex min-w-0 flex-col gap-2" style={{ animationDelay: '80ms' }}>
         {pdf ? (
-          <a href={api.fileUrl(app.id, pdf)} target="_blank" rel="noreferrer" className="self-start text-[13px] text-muted hover:text-rust">Open the PDF in a new tab ↗</a>
+          <a href={api.fileUrl(app.id, pdf)} target="_blank" rel="noreferrer" className="self-start text-[13px] text-muted hover:text-accent">Open the PDF in a new tab ↗</a>
         ) : (
           <p className="text-[13px] text-muted">{app.tailored ? 'An approximate preview. Build to see the exact PDF.' : ''}</p>
         )}
-        <div className="flex justify-center rounded border border-rule bg-wash p-3 sm:p-7">
+        <div className="flex justify-center rounded-lg border border-rule bg-wash p-3 sm:p-7">
           {pdf ? (
             <iframe
               key={app.meta.updated}
@@ -146,7 +146,7 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
           ) : app.tailored ? (
             <PagePreview t={app.tailored} p={profile.profile} />
           ) : (
-            <p className="py-24 font-serif text-xl italic text-faint">The PDF preview appears here.</p>
+            <p className="py-24 text-base text-faint">The PDF preview appears here.</p>
           )}
         </div>
       </div>
@@ -174,7 +174,7 @@ function PagePreview({ t, p }: { t: Tailored; p: Profile }) {
       <div className="flex flex-col gap-0.5 text-center">
         <p className="text-lg font-semibold uppercase tracking-[0.04em] text-ink">{p.contact.name}</p>
         <p className="text-[10px] text-muted">{[p.contact.location, p.contact.phone, p.contact.email, ...p.contact.links.map((l) => l.text)].filter(Boolean).join(' · ')}</p>
-        {headline && <p className="mt-1 text-[11px] font-semibold text-rust">{headline}</p>}
+        {headline && <p className="mt-1 text-[11px] font-semibold text-accent">{headline}</p>}
       </div>
       {t.summary && <div className="flex flex-col gap-[3px]">{h('Summary')}{li('s', t.summary.text, false, false)}</div>}
       {t.highlights.length > 0 && <div className="flex flex-col gap-[3px]">{h('Career highlights')}{t.highlights.map((c, i) => li(i, c.text))}</div>}
@@ -192,7 +192,7 @@ function PagePreview({ t, p }: { t: Tailored; p: Profile }) {
           return (
             <div key={tr.role} className="flex flex-col gap-px">
               <div className="mt-[3px] flex justify-between gap-2 text-[11px] text-ink"><span><span className="font-semibold">{role.employer}</span> · {role.location}</span><span className="shrink-0 text-muted">{role.dates}</span></div>
-              <p className="text-[11px] font-semibold text-rust">{role.title}</p>
+              <p className="text-[11px] font-semibold text-accent">{role.title}</p>
               {tr.scope && li('scope', tr.scope.text, role.scope?.italic !== false, false)}
               {tr.bullets.map((b, j) => li(j, b.text))}
               {tr.sub_roles.map((sr) => {
