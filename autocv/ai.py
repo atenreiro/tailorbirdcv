@@ -12,6 +12,8 @@ import copy
 import json
 import re
 import tempfile
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -22,15 +24,54 @@ from .engine import Engine
 from .render import docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
-INDUSTRIES = ["banking", "tech", "quant", "fintech", "telco", "consulting"]
 TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
 MAX_TRIM_ROUNDS = 2
-LINE_CHARS = 100          # rough characters per rendered line (calibrated on the base resume)
-DEFAULT_BUDGET = 110      # estimated lines for 2 pages when there's no base resume to measure
+LINE_CHARS = 100          # rough characters per rendered line (calibrated on the Classic design)
+LINES_PER_PAGE = 55       # estimated lines per page when there's no base resume to measure
+WORDS_PER_PAGE = 500
+BASE_PAGES = 2            # a base resume (`autocv ingest`) is assumed to fill 2 pages
+PACKS = ["general", "cybersecurity"]  # domain packs: emphasis heuristics in data/config/packs/<pack>/
 
-SYSTEM = """You are AutoCV, a meticulous resume strategist for a senior cybersecurity professional \
-(targets: senior IC and manager roles in banking, tech, quant/trading, fintech; Singapore/APAC).
+
+@dataclass(frozen=True)
+class Context:
+    """Who the resume is for (Settings → Your targets). Steers the prompts; never a source of facts."""
+    field: str = ""          # e.g. "cybersecurity"
+    seniority: str = ""      # e.g. "senior"
+    roles: str = ""          # e.g. "senior IC and manager roles in banking, tech, quant/trading, fintech"
+    region: str = ""         # e.g. "Singapore/APAC"
+    spelling: str = "US"     # US | UK
+    pages: int = 2
+    pack: str = "general"
+    private: Path | None = None  # the data folder: private/config/*.yaml overrides the bundled config
+
+    @classmethod
+    def from_settings(cls, targets: dict, private: Path | None) -> Context:
+        known = {k: v for k, v in targets.items() if k in cls.__dataclass_fields__ and k != "private"}
+        return cls(**known, private=private)
+
+
+CONTEXT: ContextVar[Context] = ContextVar("autocv_ai_context", default=Context())
+
+
+def use_context(context: Context):
+    """Set the targets for the AI calls made in this request/task (returns a token for reset)."""
+    return CONTEXT.set(context)
+
+
+def pages_text(pages: int | None = None) -> str:
+    n = pages or CONTEXT.get().pages
+    return f"{n} page" + ("s" if n != 1 else "")
+
+
+def system_prompt() -> str:
+    c = CONTEXT.get()
+    who = " ".join(x for x in (c.seniority, c.field) if x)
+    who = f"a {who} professional" if who else "a job seeker"
+    aims = "; ".join(x for x in (c.roles, c.region) if x)
+    spelling = "UK English spelling" if c.spelling.upper() == "UK" else "US English spelling"
+    return f"""You are AutoCV, a meticulous resume strategist for {who}{f" (targets: {aims})" if aims else ""}.
 
 Absolute rules:
 - Never invent. Only use facts present in the candidate's PROFILE. No new numbers, tools, employers, \
@@ -40,7 +81,7 @@ scope, outcomes, certifications, or implied experience ("familiar with", "exposu
 - Rephrasing, reordering, merging, trimming and mirroring the job description's vocabulary are allowed \
 when the meaning is unchanged.
 - Every claim cites the profile evidence ids it relies on (all numbers, tools and names in it).
-- US English spelling. Concise, achievement-first bullets. Answer only with JSON matching the schema."""
+- {spelling}. Concise, achievement-first bullets. Answer only with JSON matching the schema."""
 
 
 def _yaml(data) -> str:
@@ -48,7 +89,19 @@ def _yaml(data) -> str:
 
 
 def _config(name: str) -> dict:
-    return yaml.safe_load((paths.DATA / "config" / name).read_text(encoding="utf-8"))
+    """Emphasis heuristics: the user's own override (<data folder>/config/<name>), else the domain
+    pack's, else the general default shipped with AutoCV."""
+    c = CONTEXT.get()
+    candidates = [c.private / "config" / name] if c.private else []
+    if c.pack in PACKS and c.pack != "general":
+        candidates.append(paths.DATA / "config" / "packs" / c.pack / name)
+    candidates.append(paths.DATA / "config" / name)
+    path = next(p for p in candidates if p.is_file())
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def industries() -> list[str]:
+    return list(_config("industries.yaml")) or ["general"]
 
 
 def _profile_text(profile: MasterProfile) -> str:
@@ -69,7 +122,7 @@ def analysis_schema(evidence_ids: list[str], knowledge_ids: list[str] | None = N
         "properties": {
             "company": {"type": "string"},
             "role": {"type": "string"},
-            "industry": {"type": "string", "enum": INDUSTRIES},
+            "industry": {"type": "string", "enum": industries()},
             "track": {"type": "string", "enum": TRACKS},
             "seniority": {"type": "string"},
             "location": {"type": "string"},
@@ -122,7 +175,7 @@ async def analyze(engine: Engine, profile: MasterProfile, jd: str, knowledge: Kn
     prompt = f"""TASK: analyze
 Analyze this job description against the candidate's profile.
 
-- industry: pick the closest lens from {INDUSTRIES} (lenses below).
+- industry: pick the closest lens from {industries()} (lenses below).
 - track: manager (people leadership is the core), ic (hands-on depth is the core), or hybrid (player-coach).
 - requirements: every distinct requirement in JD order. status: strong = clear profile evidence; \
 partial = adjacent evidence; gap = none. Cite the evidence ids.
@@ -145,7 +198,7 @@ PROFILE:
 JOB DESCRIPTION:
 {jd}
 """
-    result = await engine.complete(SYSTEM, prompt, analysis_schema(ids, kids))
+    result = await engine.complete(system_prompt(), prompt, analysis_schema(ids, kids))
     known, known_k = set(ids), set(kids)
     for req in result.get("requirements", []):
         req["evidence"] = [e for e in req.get("evidence", []) if e in known]
@@ -218,7 +271,7 @@ ANSWERS:
 {_yaml(answers)}
 """
     schema = proposals_schema([r.id for r in profile.roles], [g.category for g in profile.skills] or ["Other"])
-    result = await engine.complete(SYSTEM, prompt, schema)
+    result = await engine.complete(system_prompt(), prompt, schema)
     return result.get("proposals", [])
 
 
@@ -291,6 +344,25 @@ def tailored_schema(profile: MasterProfile, track: str | None) -> dict:
     return schema
 
 
+def default_layout(profile: MasterProfile) -> TailoredResume:
+    """The whole profile laid out as a resume, verbatim and fully cited (no AI)."""
+    from .schema import Competency, TailoredProject, TailoredRole, TailoredSubRole
+    summary = None
+    if profile.summary_facts:
+        summary = Claim(text=" ".join(f.text for f in profile.summary_facts), sources=[f.id for f in profile.summary_facts])
+    return TailoredResume(
+        headline=profile.headlines[0].id if profile.headlines else "",
+        summary=summary,
+        highlights=[Claim(text=h.text, sources=[h.id]) for h in profile.highlights],
+        competencies=[Competency(label=g.category, items=list(g.items)) for g in profile.skills],
+        experience=[TailoredRole(role=r.id, scope=Claim(text=r.scope.text, sources=[r.scope.id]) if r.scope else None,
+                                 bullets=[Claim(text=a.text, sources=[a.id]) for a in r.achievements if a.in_base_resume],
+                                 sub_roles=[TailoredSubRole(id=s.id) for s in r.sub_roles if s.in_base_resume])
+                    for r in profile.roles],
+        projects=[TailoredProject(id=p.id) for p in profile.projects if p.in_base_resume],
+        education=[e.id for e in profile.education], extras=[x.id for x in profile.extras])
+
+
 def estimate_lines(profile: MasterProfile, tailored: TailoredResume) -> int:
     """Approximate rendered line count — a fast proxy for page count (Word is the truth)."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -298,24 +370,33 @@ def estimate_lines(profile: MasterProfile, tailored: TailoredResume) -> int:
     return sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
 
 
+def default_budget(pages: int | None = None) -> dict:
+    n = pages or CONTEXT.get().pages
+    return {"lines": LINES_PER_PAGE * n, "words": WORDS_PER_PAGE * n, "measured": False}
+
+
 def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
-    """The candidate's own 2-page resume sets the budget."""
+    """The page limit sets the budget. A base resume from `autocv ingest` (assumed to fill BASE_PAGES)
+    calibrates it to the candidate's own design, scaled to the page limit."""
     if base is None:
-        return {"lines": DEFAULT_BUDGET, "words": 1000}
+        return default_budget()
     with tempfile.TemporaryDirectory() as tmp:
         lines = docx_text(render(profile, base, Path(tmp) / "r.docx"))
     est = sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
-    return {"lines": est, "words": len(" ".join(lines).split())}
+    scale = CONTEXT.get().pages / BASE_PAGES
+    return {"lines": round(est * scale), "words": round(len(" ".join(lines).split()) * scale), "measured": True}
 
 
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,
                     guidance: str, preferences: list[Preference] | None = None,
                     budget: dict | None = None) -> str:
-    budget = budget or {"lines": DEFAULT_BUDGET, "words": 1000}
+    budget = budget or default_budget()
     industry, track = analysis.get("industry"), analysis.get("track")
     lens = _config("industries.yaml").get(industry, {})
     track_rules = _config("tracks.yaml").get(track, {})
     base_text = _yaml(base.model_dump(exclude_none=True)) if base else "(none)"
+    fills = (f"the base resume is {budget['words']} words and already fills {pages_text()}"
+             if budget.get("measured", base is not None) else f"about {budget['words']} words fill {pages_text()}")
     brief = {k: analysis.get(k) for k in ("company", "role", "industry", "track", "seniority", "summary",
                                           "requirements", "keywords")}
     return f"""TASK: compose
@@ -331,9 +412,8 @@ skills (exact text, an approved synonym, or a sub-phrase of one skill). Group la
 job's vocabulary where meaning is identical, merge or drop weak ones; you may surface evidence with \
 in_base_resume: false. Older roles get fewer bullets. Keep the scope line for each role (cite it).
 - projects, education, extras: choose and order ids (education/extras are rendered verbatim).
-- Length: HARD LIMIT of 2 pages — at most {budget["words"] - 60} words in total (the base resume is \
-{budget["words"]} words and already fills 2 pages). Prefer fewer, stronger bullets: 3-4 highlights, \
-4-5 bullets for the current role, fewer for older roles.
+- Length: HARD LIMIT of {pages_text()} — at most {budget["words"] - 60} words in total ({fills}). \
+Prefer fewer, stronger bullets: 3-4 highlights, 4-5 bullets for the current role, fewer for older roles.
 - Every claim's sources must cover every number, tool, framework and proper noun in it.
 
 INDUSTRY LENS ({industry}) — emphasis only, never facts:
@@ -372,7 +452,7 @@ TAILORED RESUME:
 def _trim_prompt(profile: MasterProfile, tailored: dict, lines: int, budget: int, analysis: dict) -> str:
     over = lines - budget
     return f"""TASK: trim
-This tailored resume is too long for 2 pages: about {lines} lines against a budget of {budget}. Cut at \
+This tailored resume is too long for {pages_text()}: about {lines} lines against a budget of {budget}. Cut at \
 least {over + 4} lines. In order of preference: drop the least relevant bullets of the OLDEST roles, merge \
 overlapping bullets, shorten long bullets, cut highlights to 3, shorten the summary to 2 sentences. Keep \
 every role (a scope line is enough for old roles) and the facts that match the job's must-haves. Only \
@@ -394,7 +474,7 @@ async def _validated(engine: Engine, profile: MasterProfile, schema: dict, raw) 
         if report.ok or rounds >= MAX_REPAIR_ROUNDS:
             return tailored, report, rounds
         rounds += 1
-        raw = await engine.complete(SYSTEM, _repair_prompt(profile, raw, report), schema)
+        raw = await engine.complete(system_prompt(), _repair_prompt(profile, raw, report), schema)
 
 
 async def fit_to_length(engine: Engine, profile: MasterProfile, tailored: TailoredResume, analysis: dict,
@@ -404,7 +484,7 @@ async def fit_to_length(engine: Engine, profile: MasterProfile, tailored: Tailor
     lines, trims, rounds = estimate_lines(profile, tailored), 0, 0
     while lines > budget and trims < max_rounds:
         trims += 1
-        raw = await engine.complete(SYSTEM, _trim_prompt(profile, tailored.model_dump(exclude_none=True), lines,
+        raw = await engine.complete(system_prompt(), _trim_prompt(profile, tailored.model_dump(exclude_none=True), lines,
                                                          budget, analysis), schema)
         try:
             candidate, report, r = await _validated(engine, profile, schema, raw)
@@ -423,7 +503,7 @@ async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
                   preferences: list[Preference] | None = None) -> dict:
     schema = tailored_schema(profile, analysis.get("track"))
     budget = length_budget(profile, base)
-    raw = await engine.complete(SYSTEM, _compose_prompt(profile, analysis, base, guidance, preferences, budget),
+    raw = await engine.complete(system_prompt(), _compose_prompt(profile, analysis, base, guidance, preferences, budget),
                                 schema)
     tailored, report, rounds = await _validated(engine, profile, schema, raw)
     result = {"tailored": tailored, "report": report, "repair_rounds": rounds, "trim_rounds": 0,
@@ -508,5 +588,5 @@ EDITS (accepted review fixes show up here too):
 REVIEW SUGGESTIONS THE CANDIDATE REJECTED (learn what they DON'T want):
 {_yaml(rejected) if rejected else "(none)"}
 """
-    result = await engine.complete(SYSTEM, prompt, preferences_schema())
+    result = await engine.complete(system_prompt(), prompt, preferences_schema())
     return [p for p in result.get("preferences", []) if p.get("text", "").strip()][:5]

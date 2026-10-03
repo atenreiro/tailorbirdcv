@@ -37,6 +37,11 @@ autocv install-browser         # optional: headless browser for job pages that n
 ```
 Update with `uv tool upgrade autocv-app` (or `pipx upgrade autocv-app`).
 
+## First run
+1. **Import your resume** on the Welcome page: a Word file, a PDF or pasted text, in any layout. The AI copies it into your master profile word-for-word (it doesn't rewrite anything), and anything that doesn't match your file exactly is highlighted for you to check. Nothing is saved until you click *Save as my profile*. Or start with a blank profile.
+2. **Settings → Your targets**: your field, seniority, the roles you're aiming for, region, US or UK spelling, and the page limit (1–3). These steer what the AI emphasises; they never add facts. A *domain pack* adds field-specific emphasis (currently: General, Cybersecurity).
+3. **New tailoring**: paste a job description (or its URL) and follow the steps.
+
 ## Your data stays on your computer
 AutoCV runs only on `127.0.0.1`; there's no account, server or telemetry. Your profile, applications and settings live in:
 - macOS: `~/Library/Application Support/AutoCV`
@@ -55,11 +60,12 @@ uv run pytest
 ```
 Releases: bump `version` in `pyproject.toml`, add a CHANGELOG entry, then push a tag `vX.Y.Z`; `.github/workflows/release.yml` builds the UI and publishes `autocv-app` to PyPI.
 
-### Importing an existing resume from the command line
+### Command-line import (AutoCV's own resume layout)
 ```bash
 cp "<your resume>.docx" "<data folder>/source/base_resume.docx"
 uv run autocv ingest && uv run autocv baseline
 ```
+To customise the emphasis heuristics for yourself, copy `autocv/data/config/industries.yaml` or `tracks.yaml` to `<data folder>/config/` and edit it.
 
 ## Options
 - Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).

@@ -16,7 +16,7 @@ import json
 import re
 
 from . import factcheck
-from .ai import SYSTEM, _profile_text, _yaml
+from .ai import _profile_text, _yaml, system_prompt
 from .engine import Engine
 from .schema import Claim, Knowledge, MasterProfile, TailoredResume
 
@@ -251,5 +251,5 @@ async def critique(engine: Engine, profile: MasterProfile, tailored: TailoredRes
                    knowledge: Knowledge | None = None, run_no: int = 1) -> dict:
     paths = list(claim_paths(tailored))
     schema = critique_schema(paths, list(factcheck.evidence_index(profile)))
-    raw = await engine.complete(SYSTEM, _prompt(profile, tailored, analysis, knowledge), schema)
+    raw = await engine.complete(system_prompt(), _prompt(profile, tailored, analysis, knowledge), schema)
     return _sanitize(profile, tailored, copy.deepcopy(raw), run_no)

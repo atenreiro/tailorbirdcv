@@ -102,7 +102,7 @@ export default function NewApplication() {
               <label htmlFor="jd-url" className={cx(label, 'text-muted')}>Job posting URL</label>
               <input id="jd-url" className="field h-12 bg-wash px-3.5 font-mono text-sm focus:bg-sheet" placeholder="https://careers.example.com/jobs/12345"
                 value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={onKey} autoFocus />
-              <p className="max-w-[640px] text-sm leading-[1.5] text-muted text-pretty">Reads Lever, Greenhouse and Ashby postings (Binance careers included) directly. Other career sites are rendered in a headless browser if needed (can take ~15 s). Pages behind a login, like LinkedIn, can’t be fetched, so paste the text for those.</p>
+              <p className="max-w-[640px] text-sm leading-[1.5] text-muted text-pretty">Reads Lever, Greenhouse and Ashby postings directly. Other career sites are rendered in a headless browser if needed (can take ~15 s). Pages behind a login, like LinkedIn, can’t be fetched, so paste the text for those.</p>
             </div>
           )}
 

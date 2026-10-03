@@ -404,13 +404,13 @@ export default function Profile() {
             <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr))]">
               <section className={cx(card, 'flex flex-col gap-2 px-[22px] py-[18px]')}>
                 <p className={cardTitle}>Synonym groups</p>
-                <p className="text-[13px] text-muted">Interchangeable terms, one group per line, comma-separated. Example: <span className="font-mono text-xs">WAF, Web Application Firewall</span></p>
+                <p className="text-[13px] text-muted">Interchangeable terms, one group per line, comma-separated. Example: <span className="font-mono text-xs">CRM, Customer Relationship Management</span></p>
                 <RawListField label="Synonym groups" format={() => p.synonyms.map((g) => g.join(', ')).join('\n')}
                   parse={(t) => edit((d) => { d.synonyms = t.split('\n').map((l) => l.split(',').map((x) => x.trim()).filter(Boolean)).filter((g) => g.length) })} />
               </section>
               <section className={cx(card, 'flex flex-col gap-2 px-[22px] py-[18px]')}>
                 <p className={cardTitle}>Approved vocabulary</p>
-                <p className="text-[13px] text-muted">Proper nouns allowed in any claim (e.g. Singapore, APAC), one per line. Keep this short.</p>
+                <p className="text-[13px] text-muted">Proper nouns allowed in any claim (e.g. a city or region you work in), one per line. Keep this short.</p>
                 <RawListField label="Vocabulary" format={() => p.vocabulary.join('\n')}
                   parse={(t) => edit((d) => { d.vocabulary = t.split('\n').map((x) => x.trim()).filter(Boolean) })} />
               </section>

@@ -19,19 +19,18 @@ from fastapi import APIRouter, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
-from .schema import AppAnswer, Knowledge, Preference, TailoredResume
+from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
                     next_id)
 
 log = logging.getLogger("autocv")
 
-MAX_PAGES = 2
 
 
 # --------------------------------------------------------------------------- request models
@@ -44,8 +43,31 @@ class NewApplication(BaseModel):
     role: str = ""
 
 
+class ProfileImport(BaseModel):
+    filename: str = Field("", max_length=255)
+    data: str = Field("", max_length=15_000_000)   # base64 file contents
+    text: str = Field("", max_length=200_000)      # or pasted text
+
+
+class BlankProfile(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    location: str = Field("", max_length=120)
+    headline: str = Field(min_length=1, max_length=240)
+
+
+class TargetsPatch(BaseModel):
+    field: str | None = Field(None, max_length=80)
+    seniority: str | None = Field(None, max_length=80)
+    roles: str | None = Field(None, max_length=240)
+    region: str | None = Field(None, max_length=80)
+    spelling: Literal["US", "UK"] | None = None
+    pages: Literal[1, 2, 3] | None = None
+    pack: Literal[tuple(ai.PACKS)] | None = None  # type: ignore[valid-type]
+
+
 class SettingsPatch(BaseModel):
     pdf_engine: Literal[tuple(pdfmod.ENGINES)] | None = None  # type: ignore[valid-type]  # None = automatic
+    targets: TargetsPatch | None = None
 
 
 class MetaPatch(BaseModel):
@@ -201,6 +223,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-autocv") != "1":
                 return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
                                     status_code=403)
+            # The candidate's targets (Settings) steer every AI prompt made while handling this request.
+            ai.use_context(ai.Context.from_settings(store.settings()["targets"], store.private))
         response = await call_next(request)
         # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
         # (the Export step previews the PDF in an iframe).
@@ -209,6 +233,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return response
 
     api = APIRouter(prefix="/api")
+
+    def page_limit() -> int:
+        return int(store.settings()["targets"]["pages"])
 
     def need_app(app_id: str) -> str:
         """The application's current id (an old id from before a move/rename maps to it, so
@@ -220,7 +247,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     def need_profile():
         if not store.profile_path.exists():
-            raise HTTPException(409, "No master profile yet — run `uv run autocv ingest` first.")
+            raise HTTPException(409, "No master profile yet — open AutoCV's Welcome page to import your resume.")
         return store.profile()
 
     def profile_payload(profile=None):
@@ -242,7 +269,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             effective = pdfmod.resolve(settings["pdf_engine"], engines)
         except RuntimeError:
             effective = None
-        return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM}
+        return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM,
+                "packs": ai.PACKS}
 
     @api.get("/doctor")
     async def get_doctor():
@@ -258,12 +286,77 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         if patch.pdf_engine and not any(e["id"] == patch.pdf_engine and e["available"]
                                         for e in await asyncio.to_thread(pdfmod.detect)):
             raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this computer.")
-        store.save_settings(patch.model_dump(include=patch.model_fields_set))
+        data = patch.model_dump(include=patch.model_fields_set - {"targets"})
+        if patch.targets is not None:
+            data["targets"] = {k: v.strip() if isinstance(v, str) else v
+                               for k, v in patch.targets.model_dump(exclude_unset=True).items() if v is not None}
+        store.save_settings(data)
         return await asyncio.to_thread(settings_payload)
 
     @api.get("/profile")
     def get_profile():
         return profile_payload(need_profile())
+
+    # -- first run: import a resume or start blank --------------------------------------
+    @api.get("/setup")
+    def get_setup():
+        return {"has_profile": store.profile_path.exists()}
+
+    def no_profile_yet():
+        if store.profile_path.exists():
+            raise HTTPException(409, "You already have a master profile. Edit it under Master profile.")
+
+    @api.post("/profile/import")
+    async def import_resume(body: ProfileImport):
+        """Read a resume with the AI into a DRAFT profile. Nothing is saved: the user reviews it first."""
+        import base64
+        import binascii
+
+        from . import importer
+        no_profile_yet()
+        try:
+            if body.text.strip():
+                text = importer.extract_text("pasted.txt", body.text.encode("utf-8"))
+            else:
+                try:
+                    raw = base64.b64decode(body.data, validate=True)
+                except (binascii.Error, ValueError):
+                    raise HTTPException(422, "The file couldn't be read.")
+                text = importer.extract_text(body.filename, raw)
+        except importer.ImportError_ as e:
+            raise HTTPException(422, str(e))
+        try:
+            result = await importer.import_profile(engine, text)
+        except EngineError as e:
+            raise HTTPException(503, f"AI engine unavailable: {e}")
+        try:
+            MasterProfile.model_validate(result["profile"])
+        except ValidationError as e:
+            raise HTTPException(502, f"The AI's reading of the resume wasn't usable ({e.error_count()} problems). Try again.")
+        return result
+
+    @api.post("/profile/create")
+    def create_profile(body: dict):
+        """Save the first profile (a reviewed import, or a blank one: {"blank": {...}})."""
+        from . import importer
+        with store.lock:  # check-then-create as one step
+            return _create_profile(body, importer)
+
+    def _create_profile(body: dict, importer):
+        no_profile_yet()
+        if "blank" in body:
+            try:
+                blank = BlankProfile.model_validate(body["blank"])
+            except ValidationError as e:
+                raise HTTPException(422, str(e))
+            data, cause = importer.blank_profile(blank.name, blank.location, blank.headline), "blank profile"
+        else:
+            data, cause = body.get("profile") or {}, "resume import"
+        try:
+            profile = store.save_profile(data, cause=cause)
+        except (ValidationError, RetiredIdReused) as e:
+            raise HTTPException(422, str(e))
+        return profile_payload(profile)
 
     @api.put("/profile")
     def put_profile(data: dict, if_match: str | None = Header(default=None)):
@@ -521,7 +614,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/applications/{app_id}/trim")
     async def trim(app_id: str):
-        """Shorten the current resume with the AI (after a build came out over 2 pages)."""
+        """Shorten the current resume with the AI (after a build came out over the page limit)."""
         app_id = need_app(app_id)
         tailored, analysis = store.tailored(app_id), store.analysis(app_id) or {}
         if not tailored:
@@ -600,7 +693,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         app_id = need_app(app_id)
         pages = await do_build(app_id, pdf)
         out = get_application(app_id)
-        out["build"] = {"pages": pages, "too_long": bool(pages and pages > MAX_PAGES)}
+        out["build"] = {"pages": pages, "too_long": bool(pages and pages > page_limit())}
         return out
 
     @api.post("/applications/{app_id}/freeze")
@@ -610,7 +703,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         app_id = need_app(app_id)
         if build:
             pages = await do_build(app_id, pdf=True)
-            if pages and pages > MAX_PAGES:
+            if pages and pages > page_limit():
                 raise HTTPException(409, {"code": "too_long", "message":
                                           f"The PDF is {pages} pages — trim it before sending. Nothing was frozen."})
         try:

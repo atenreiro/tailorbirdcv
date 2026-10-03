@@ -34,7 +34,6 @@ SOURCE_DOCX = STORE.source_docx
 PROFILE = STORE.profile_path
 BASE_TAILORED = STORE.base_tailored_path
 APPS = STORE.apps_dir
-MAX_PAGES = 2
 
 
 def _app(arg: str) -> tuple[str, Path]:
@@ -169,8 +168,9 @@ def cmd_build(args) -> int:
         pdf = to_pdf(docx, engine=STORE.settings()["pdf_engine"])
         pages = page_count(pdf)
         print(f"pdf:  {pdf} ({pages} pages)")
-        if pages > args.max_pages:
-            print(f"TOO LONG: {pages} pages > {args.max_pages} — trim lowest-relevance content and rebuild")
+        limit = args.max_pages or int(STORE.settings()["targets"]["pages"])
+        if pages > limit:
+            print(f"TOO LONG: {pages} pages > {limit} — trim lowest-relevance content and rebuild")
             return 2
     STORE.record_build(app_id, built_hash, profile_version, pages)
     STORE.advance_status(app_id, "built")
@@ -244,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence"); p.add_argument("term", nargs="?"); p.set_defaults(fn=cmd_evidence)
     p = sub.add_parser("check"); p.add_argument("app"); p.set_defaults(fn=cmd_check)
     p = sub.add_parser("build"); p.add_argument("app"); p.add_argument("--no-pdf", action="store_true")
-    p.add_argument("--max-pages", type=int, default=MAX_PAGES); p.set_defaults(fn=cmd_build)
+    p.add_argument("--max-pages", type=int, default=None, help="default: the page limit in Settings"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=8000)
     p.add_argument("--no-browser", action="store_true", help="don't open the web UI in the default browser")
     p.set_defaults(fn=cmd_serve)

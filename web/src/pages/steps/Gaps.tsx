@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AppAnswer, type Knowledge } from '../../api'
 import { cx } from '../../lib'
+import { pageLimit, pagesText, useSettings } from '../../settings'
 import { ErrorNote, Spinner } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
@@ -20,6 +21,7 @@ function fmt(date?: string) {
 }
 
 export default function Gaps({ app, profile, setApp, reloadProfile, go, run, memo, setMemo }: StepProps) {
+  const limit = pageLimit(useSettings())
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -195,7 +197,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
       'Rephrasing in the job’s vocabulary — facts locked…',
       'Applying your approved style preferences…',
       'Running the fact-check and repairing any issues…',
-      'Checking it fits on 2 pages, trimming if needed…',
+      `Checking it fits on ${pagesText(limit)}, trimming if needed…`,
     ], async () => {
       setApp(await api.compose(app.id, guidance))
       setMemo((m) => ({ ...m, review: null }))
@@ -345,7 +347,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
         <section className="flex flex-col gap-2.5 border-t border-rule pt-5">
           <label className={label} htmlFor="guidance">Guidance for the draft</label>
           <textarea id="guidance" className="field resize-y" rows={2}
-            placeholder="Optional. e.g. Lead with the detection work; keep the earliest role short."
+            placeholder="Optional. e.g. Lead with the product launches; keep the earliest role short."
             value={guidance} onChange={(e) => setGuidance(e.target.value)}
             onBlur={() => { if (guidance !== (app.meta.guidance ?? '')) api.patch(app.id, { guidance }).then((meta) => setApp((prev) => ({ ...prev, meta }))).catch(() => {}) }} />
           <p className="text-xs text-faint">Your approved style preferences are applied automatically.</p>
@@ -370,7 +372,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   )
 }
 
-/** A drafted profile entry. the user edits it until it's exactly true; only approval writes it to the profile. */
+/** A drafted profile entry. The candidate edits it until it's exactly true; only approval writes it to the profile. */
 function ProposalBox({ d, roles, categories, question, saving, onPatch, onApprove, onReject }: {
   d: Draft; roles: { id: string; employer: string }[]; categories: string[]; question?: Question; saving: boolean
   onPatch: (p: Partial<Draft>) => void; onApprove: () => void; onReject: () => void

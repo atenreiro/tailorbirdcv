@@ -30,3 +30,7 @@ export const showInFolder = (p?: Platform) =>
   p === 'macos' ? 'Show in Finder' : p === 'windows' ? 'Show in File Explorer' : 'Show in folder'
 export const fileManager = (p?: Platform) =>
   p === 'macos' ? 'Finder' : p === 'windows' ? 'File Explorer' : 'your file manager'
+
+/** The page limit from Settings → Your targets (2 until settings load). */
+export const pageLimit = (s: Settings | null) => s?.targets?.pages ?? 2
+export const pagesText = (n: number) => `${n} page${n === 1 ? '' : 's'}`

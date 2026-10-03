@@ -1,14 +1,14 @@
 # AutoCV
 
-Tailors the user's resume to a job description without inventing anything. Senior cybersecurity roles (IC or manager) across banking, tech, quant, fintech, telco; Singapore/APAC; max 2 pages; US spelling.
+Tailors the user's resume to a job description without inventing anything. A local web app (macOS, Windows, Linux) for anyone: who the resume is for (field, seniority, target roles, region, spelling, page limit, domain pack) is a setting (Settings → Your targets), never hard-coded. A gitignored `CLAUDE.local.md` may hold the owner's personal context.
 
 ## Non-negotiable rules
-1. **Never invent.** Every claim in a tailored resume must trace to `private/profile.yaml`. No new numbers, tools, employers, scope, outcomes, or implied experience — not even "familiar with". If the JD wants something the profile lacks, **ask the user**; if he has no real experience, it stays a gap.
+1. **Never invent.** Every claim in a tailored resume must trace to the master profile (`profile.yaml` in the data folder). No new numbers, tools, employers, scope, outcomes, or implied experience — not even "familiar with". If the JD wants something the profile lacks, **ask the user**; if they have no real experience, it stays a gap.
 2. **Locked fields never change**: contact, employer, location, job title, dates, education, certifications, awards, languages. The renderer pulls them from the profile by id — never retype them.
-3. **The profile changes only with the user's explicit confirmation of the exact wording.** New evidence gets `source: interview` or `source: prep_guide` and `in_base_resume: false`.
+3. **The profile changes only with the user's explicit confirmation of the exact wording.** (The first-run import shows the transcribed profile, flags anything not found word-for-word in the source file, and saves only when the user clicks Save.) New evidence gets `source: interview` or `source: prep_guide` and `in_base_resume: false`.
 4. **Rephrasing is allowed** (reorder, merge, trim, mirror JD vocabulary) as long as the meaning, numbers and entities are unchanged and each claim cites its `sources`. Don't upgrade verbs ("contributed to" → "led") or scope ("team" → "organization").
 5. `uv run autocv check` must PASS before `build`. Bullets may only cite their own role's evidence; role header ids aren't citable. Fix violations by citing the right evidence or rewording; never by adding vocabulary or synonyms without the user's approval.
-6. Personal data lives only in `private/` (gitignored). Never commit it, never paste it into tests — tests use `tests/fixtures/` (fictional).
+6. Personal data lives only in the data folder (`private/` in a checkout, gitignored; the OS per-user folder when installed). Never commit it, never paste it into tests or shipped files (`autocv/data/`, demo, examples) — tests use `tests/fixtures/` (fictional).
 
 ## Layout
 - `autocv/` — `schema.py` (models), `ingest.py` (docx → profile), `render.py` (pixel-faithful docx), `factcheck.py` (blocking gate), `ats.py` (keyword coverage), `pdf.py` (Word/LibreOffice → PDF), `cli.py`.
@@ -37,7 +37,10 @@ Tailors the user's resume to a job description without inventing anything. Senio
   - LibreOffice runs headless with its own profile (`private/libreoffice/`); fonts the docx names are symlinked (copied on Windows) into the profile, and a font this machine lacks gets a metric-compatible stand-in through a replacement rule in the profile (Georgia → Gelasio, bundled in `autocv/data/fonts`; Calibri → Carlito). Digit ranges ("2–4") inside `<w:t>` text runs are glued with U+2060 in LibreOffice's copy only — never in the user's .docx.
 - OS differences live in `autocv/oscompat.py` (file lock, process-tree kill, read-only-safe `rmtree`, retrying `replace`, reveal in Finder/Explorer/file manager). Files are written with `\n` line endings so hashes match across OSes; folder slugs never use Windows-reserved names (`con`, `nul`, `com1`…).
 - The fact-check's word list is bundled (`autocv/data/words.txt.gz`, public-domain web2 — the same list macOS ships), so the gate behaves identically on every OS. CI (`.github/workflows/ci.yml`) runs the tests on macOS, Windows and Linux, plus real LibreOffice conversions on Linux and Windows.
-- Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
+- **Targets** (`settings.json` → `targets`: field, seniority, roles, region, spelling, pages, pack) become an `ai.Context`, set per API request by the middleware; prompts use `ai.system_prompt()` and `ai.pages_text()`, never hard-coded domain, region, spelling or page counts. Emphasis config resolves `<data folder>/config/<name>` (personal override) → `autocv/data/config/packs/<pack>/<name>` → `autocv/data/config/<name>` (general). The analysis' industry enum is the active config's keys.
+- **First run**: `GET /api/setup` → `{has_profile}`; the UI sends a new user to `/welcome`. `POST /api/profile/import` (file as base64, or pasted text) has the AI *transcribe* the resume (`importer.py`: verbatim, no ids), AutoCV assigns ids like `ingest` and returns `{profile, unverified}` (paths not found word-for-word in the source) — nothing is saved. `POST /api/profile/create` saves only when no profile exists: the reviewed draft, or `{"blank": {name, location, headline}}`. Every profile needs at least one headline (an import without one uses the latest job title).
+- Output files are named from the profile name (`store.file_safe_name`: accents dropped, any script kept).
+- Compose fits the draft to the length budget (`ai.length_budget`: the page limit × ~55 lines/page, or the base resume's measured length scaled to the page limit) with automatic trim rounds; the PDF engine's page count is the final check.
 
 ## Commands
 ```

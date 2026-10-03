@@ -1,0 +1,23 @@
+# Cybersecurity pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [head of, director, manager, lead a team, people leadership, budget, build the team, direct reports]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [function/team building, operating model & governance, budget & vendor ownership, outcomes at scale, talent development]
+  bullet_style: lead with scope (team size, budget, remit) then outcome; keep 1–2 hands-on bullets for credibility
+  keep: [team sizes, budget, regulator/board engagement, people developed]
+
+ic:
+  detect: [principal, staff, senior engineer, architect, specialist, hands-on, individual contributor]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [technical outcomes (fidelity, automation), systems built, incident leadership, open source, scale protected]
+  bullet_style: lead with what was built/engineered and its measurable effect; compress pure people-management bullets
+  keep: [tools & platforms actually used, automation, detection logic, threat modeling depth]
+  note: still keep evidence of leadership and influence — senior IC roles value it
+
+hybrid:
+  detect: [team lead, player-coach, hands-on leader, lead engineer, technical manager]
+  headline_tracks: [hybrid, manager, ic]
+  highlights_order: [systems built with measurable impact, small-team leadership, governance artefacts, scale protected]
+  bullet_style: alternate built-it and led-it evidence; make the player-coach balance explicit
+  keep: [team sizes, hands-on tooling, promotions/coaching]

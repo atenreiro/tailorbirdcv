@@ -1,6 +1,6 @@
 """Canned engine responses so the UI can be exercised without the Claude CLI
-(AUTOCV_ENGINE=fake). Responses are derived from the real profile and contain no
-new facts: compose returns the base resume layout unchanged."""
+(AUTOCV_ENGINE=fake). Responses are derived from the user's profile and contain no
+new facts: compose returns the base resume layout (or the whole profile) unchanged."""
 
 from __future__ import annotations
 
@@ -14,37 +14,39 @@ from .store import Store
 
 def _analyze(prompt: str) -> dict:
     profile = Store.default().profile()
-    first_role = profile.roles[0]
+    evidence = [a.id for r in profile.roles for a in r.achievements][:2]
     title = re.search(r"JOB DESCRIPTION:\n(.+)", prompt)
     return {
         "company": "Demo Company",
         "role": (title.group(1).strip("# ").strip() if title else "Demo Role")[:80],
-        "industry": "banking", "track": "hybrid", "seniority": "VP / Senior", "location": "Singapore",
-        "summary": "Demo analysis (fake engine) — connect the Claude CLI for a real one.",
+        "industry": "tech", "track": "hybrid", "seniority": "Senior", "location": "",
+        "summary": "Demo analysis (fake engine) — connect the Claude CLI or an API key for a real one.",
         "requirements": [
-            {"text": "Lead detection & response for internet-facing services", "priority": "must",
-             "status": "strong", "evidence": [a.id for a in first_role.achievements[:2]], "note": "demo"},
-            {"text": "Kubernetes / container security", "priority": "nice", "status": "gap",
-             "evidence": [], "note": "demo"},
+            {"text": "Proven results in the core area of the role", "priority": "must",
+             "status": "strong" if evidence else "gap", "evidence": evidence, "note": "demo"},
+            {"text": DEMO_GAP, "priority": "nice", "status": "gap", "evidence": [], "note": "demo"},
         ],
         "keywords": [
-            {"term": "detection engineering", "priority": "must", "aliases": ["detection logic"]},
-            {"term": "incident response", "priority": "must", "aliases": []},
-            {"term": "Kubernetes", "priority": "nice", "aliases": []},
+            {"term": "stakeholder management", "priority": "must", "aliases": ["stakeholders"]},
+            {"term": "delivery", "priority": "must", "aliases": []},
+            {"term": "public speaking", "priority": "nice", "aliases": []},
         ],
         **_gap_questions(),
     }
 
 
+DEMO_GAP = "Public speaking at industry events"
+
+
 def _gap_questions() -> dict:
     """Mimic the real analysis' use of past answers: known gap → not asked; related answer → pre-fill."""
-    topic = "Kubernetes / container security"
-    past = [k for k in Store.default().knowledge().answers if "kubernetes" in k.topic.lower()]
+    topic = DEMO_GAP
+    past = [k for k in Store.default().knowledge().answers if "speaking" in k.topic.lower()]
     gap = next((k for k in past if k.kind == "no_experience"), None)
     if gap:
         return {"questions": [], "known_gaps": [{"requirement": topic, "knowledge_id": gap.id}]}
     return {"questions": [{"id": "q1", "requirement": topic,
-                           "question": "Have you done hands-on Kubernetes or container security work? Where, and what?",
+                           "question": "Have you spoken at industry events or conferences? Which ones, and on what?",
                            "prefill_from": past[0].id if past else ""}],
             "known_gaps": []}
 
@@ -57,8 +59,10 @@ def _propose(prompt: str) -> dict:
 
 
 def _compose(prompt: str) -> dict:
-    base = Store.default().base_tailored()
-    return base.model_dump(exclude_none=True) if base else {}
+    from .ai import default_layout
+    store = Store.default()
+    base = store.base_tailored() or default_layout(store.profile())
+    return base.model_dump(exclude_none=True)
 
 
 def _trim(prompt: str) -> dict:
@@ -105,19 +109,33 @@ def _critique(prompt: str) -> dict:
     if second:
         issues.append({"where": second, "kind": "duty_not_outcome", "severity": "low",
                        "problem": "Demo: no measurable result.", "action": "advice", "rewrite": None,
-                       "question": "Did this work have a measurable result (time saved, incidents avoided, coverage)?",
+                       "question": "Did this work have a measurable result (time saved, revenue, quality, coverage)?",
                        "note_for": None})
-    issues.append({"where": "length", "kind": "too_long", "severity": "low", "problem": "Demo: the Telco Co section is long.",
+    issues.append({"where": "length", "kind": "too_long", "severity": "low", "problem": "Demo: the oldest role is long.",
                    "action": "advice", "rewrite": None, "question": None, "note_for": "interview"})
     return {"verdict": {"decision": "borderline", "reason": "Demo verdict (fake engine)."},
             "scores": {k: {"score": v, "why": "demo"} for k, v in
                        {"fit": 7, "impact": 6, "clarity": 8, "seniority": 7}.items()},
-            "skim": {"takeaway": "Demo: senior cyber leader with banking depth.", "lands": ["Globex perimeter scale"],
-                     "misses": ["The AI/GenAI angle isn't visible in the top third"]},
+            "skim": {"takeaway": "Demo: experienced candidate with relevant depth.", "lands": ["Demo: scale of the current role"],
+                     "misses": ["Demo: the role's must-have isn't visible in the top third"]},
             "strengths": [{"where": "summary", "why": "Demo: clear seniority and scope."}],
             "issues": issues}
 
 
+def _import(prompt: str) -> dict:
+    """Demo import: the first lines become name and headline, bullets become one role's achievements.
+    Placeholders are marked "(demo)" so they show up as unverified in the review."""
+    lines = [ln.strip() for ln in prompt.split("RESUME:\n", 1)[1].splitlines() if ln.strip()]
+    bullets = [ln.lstrip("•·-* ").strip() for ln in lines if ln[:1] in "•·-*"]
+    return {"contact": {"name": lines[0] if lines else "(demo) Your name", "location": "", "phone": "", "email": "",
+                        "links": []},
+            "headline": lines[1] if len(lines) > 1 else "", "summary": "", "highlights": [], "skills": [],
+            "roles": [{"employer": "(demo) Employer", "location": "", "title": lines[1] if len(lines) > 1 else "(demo) Title",
+                       "dates": "", "scope": "", "achievements": bullets[:6], "sub_roles": []}],
+            "projects": [], "education": [], "extras": []}
+
+
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose, "trim": _trim, "learn_preferences": _learn, "critique": _critique})
+                       "repair": _compose, "trim": _trim, "learn_preferences": _learn, "critique": _critique,
+                       "import": _import})

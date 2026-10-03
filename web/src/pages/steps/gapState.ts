@@ -25,7 +25,7 @@ export function gapState(answer: AppAnswer | undefined, drafts: Draft[], qid: st
   return 'open' // unanswered, or its proposal was rejected: still a gap
 }
 
-/** Questions still waiting on the user: unanswered, answered but not turned into evidence, or awaiting approval. */
+/** Questions still waiting on the candidate: unanswered, answered but not turned into evidence, or awaiting approval. */
 export function openGaps(questions: Question[], answers: Record<string, AppAnswer>, drafts: Draft[]) {
   return questions.filter((q) => ['open', 'draft', 'pending'].includes(gapState(answers[q.id], drafts, q.id)))
 }

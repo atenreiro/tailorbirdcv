@@ -222,3 +222,4 @@ private/
 ~$*.docx
 /*.docx
 /*.pdf
+CLAUDE.local.md

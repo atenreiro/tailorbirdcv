@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData } from '../api'
+import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { ErrorNote, Spinner } from '../ui'
@@ -74,6 +74,97 @@ function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
         <span className="pl-[30px] text-[13px] text-muted text-pretty">{info.missing}</span>
       )}
     </label>
+  )
+}
+
+const PACK_NAMES: Record<string, string> = { general: 'General', cybersecurity: 'Cybersecurity' }
+
+function Segmented<T extends string | number>({ label: name, options, value, onChange }: {
+  label: string; options: [T, string][]; value: T; onChange: (v: T) => void
+}) {
+  return (
+    <div role="group" aria-label={name} className="inline-flex h-9 gap-0.5 rounded-lg bg-lane p-[3px]">
+      {options.map(([k, text]) => (
+        <button key={String(k)} type="button" aria-pressed={value === k} onClick={() => onChange(k)}
+          className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors',
+            value === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Who the resume is for. Steers the AI (what to emphasise, which vocabulary, spelling, length);
+ *  it's never a source of facts. */
+function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+  const [t, setT] = useState<Targets>(settings.targets)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [flash, setFlash] = useState(false)
+  const dirty = JSON.stringify(t) !== JSON.stringify(settings.targets)
+  const set = <K extends keyof Targets>(k: K, v: Targets[K]) => { setT((x) => ({ ...x, [k]: v })); setFlash(false) }
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const next = await api.saveSettings({ targets: t })
+      cacheSettings(next)
+      onSaved(next)
+      setT(next.targets)
+      setFlash(true)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const field = (k: 'field' | 'seniority' | 'roles' | 'region', name: string, placeholder: string, wide = false) => (
+    <label className={cx('flex flex-col gap-1.5', wide && 'sm:col-span-2')}>
+      <span className="text-[13px] font-semibold text-ink">{name}</span>
+      <input className="field" value={t[k]} placeholder={placeholder} maxLength={k === 'roles' ? 240 : 80}
+        onChange={(e) => set(k, e.target.value)} />
+    </label>
+  )
+  return (
+    <section aria-labelledby="targets-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex max-w-[640px] flex-col gap-1.5">
+        <p className={cx(label, 'text-accent')}>Your targets</p>
+        <h2 id="targets-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Who the resume is for</h2>
+        <p className="text-sm leading-[1.5] text-muted text-pretty">
+          Tells the AI what to emphasise and which vocabulary to use. It never adds facts: everything on your resume
+          still comes from your profile.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {field('field', 'Your field', 'e.g. Software engineering, Nursing, Marketing')}
+        {field('seniority', 'Seniority', 'e.g. Senior, Mid-level, Executive')}
+        {field('roles', 'Roles you’re aiming for', 'e.g. Engineering manager roles in fintech and SaaS', true)}
+        {field('region', 'Region', 'e.g. London, Remote (EU), Singapore/APAC')}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Domain pack</span>
+          <select className="field" value={t.pack} onChange={(e) => set('pack', e.target.value)}>
+            {settings.packs.map((p) => <option key={p} value={p}>{PACK_NAMES[p] ?? p}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Spelling</span>
+          <Segmented label="Spelling" options={[['US', 'US English'], ['UK', 'UK English']]} value={t.spelling} onChange={(v) => set('spelling', v)} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Page limit</span>
+          <Segmented label="Page limit" options={[[1, '1 page'], [2, '2 pages'], [3, '3 pages']]} value={t.pages} onChange={(v) => set('pages', v)} />
+        </div>
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <div className="flex items-center gap-3">
+        <button className="btn btn-primary" onClick={save} disabled={!dirty || busy}>{busy && <Spinner />}Save targets</button>
+        {dirty && <button className="btn btn-ghost" onClick={() => setT(settings.targets)} disabled={busy}>Discard</button>}
+        {flash && !dirty && <span role="status" className="font-mono text-xs text-ok">✓ Saved</span>}
+      </div>
+    </section>
   )
 }
 
@@ -170,6 +261,8 @@ export default function Settings() {
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {!s && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Looking for Word and LibreOffice…</p>}
+
+      {s && <YourTargets settings={s} onSaved={setS} />}
 
       {s && (
         <section aria-labelledby="pdf-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">

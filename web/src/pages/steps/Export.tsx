@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { api, ApiError, type Profile, type Tailored } from '../../api'
 import { cx, fmtDate } from '../../lib'
-import { fileManager, pdfEngineName, showInFolder, useSettings } from '../../settings'
+import { fileManager, pageLimit, pagesText, pdfEngineName, showInFolder, useSettings } from '../../settings'
 import { Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
@@ -15,11 +15,12 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
   const docx = app.files.find((f) => f.endsWith('.docx'))
   const pages = app.build?.pages ?? app.meta.pages
   const stale = app.outputs_stale
-  const tooLong = !stale && !!pages && pages > 2
   const ok = !!app.report?.ok
   const unsaved = !!memo.review
   const overBudget = !!app.length && app.length.lines > app.length.budget
   const settings = useSettings()
+  const limit = pageLimit(settings)
+  const tooLong = !stale && !!pages && pages > limit
   const engine = pdfEngineName(settings)
   const via = engine ? ` with ${engine}` : ''
 
@@ -45,7 +46,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
   // The AI proposes a shorter version; it opens in Review as unsaved edits, and nothing is saved
   // until you Save & check there.
   const trim = () =>
-    run('Trimming to 2 pages', [
+    run(`Trimming to ${pagesText(limit)}`, [
       'Dropping the least relevant bullets, oldest roles first…',
       'Re-running the fact-check…',
     ], async () => {
@@ -78,7 +79,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
           {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
           {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF{via}.{settings?.pdf_effective === 'word' && settings.platform === 'macos' ? ' The first run may ask macOS for permission to control Word.' : ''}</p>}
           {ok && !docx && overBudget && (
-            <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
+            <p className="text-[13px] text-warn">Heads-up: this draft looks longer than {pagesText(limit)} (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
           {docx && stale && (
             <p className="rounded-lg bg-[#f6ead2] px-3 py-2 text-[13px] text-warn">
@@ -88,7 +89,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
           {docx && !stale && (
             <div className="flex flex-wrap items-center gap-3">
               <Stamp ok={!tooLong}>{pages ? `${pages} page${pages > 1 ? 's' : ''}` : 'docx only'}</Stamp>
-              {tooLong && <span className="text-[13px] text-bad">Over the 2-page limit</span>}
+              {tooLong && <span className="text-[13px] text-bad">Over the {limit}-page limit</span>}
             </div>
           )}
           {tooLong && (

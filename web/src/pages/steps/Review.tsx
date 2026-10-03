@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type Profile, type Tailored } from '../../api'
 import { cx } from '../../lib'
+import { pageLimit, pagesText, useSettings } from '../../settings'
 import { ErrorNote, SaveDock, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { applyIssue, findsTarget, issueTargets, openIssues } from './critique'
@@ -193,6 +194,7 @@ function H({ children }: { children: string }) {
 }
 
 export default function Review({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
+  const settings = useSettings()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocusState] = useState<string | null>(null)
@@ -505,7 +507,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
           {stamp}
           {length && (
             <span className={cx('font-mono text-[11px]', length.lines > length.budget ? 'text-warn' : 'text-faint')}
-              title="Estimated lines, against your base resume's length (2 pages)">
+              title={`Estimated lines, against the budget for ${pagesText(pageLimit(settings))}`}>
               ~{length.lines} of {length.budget} lines
             </span>
           )}

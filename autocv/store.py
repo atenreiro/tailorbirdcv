@@ -22,6 +22,7 @@ import re
 import shutil
 import tempfile
 import threading
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,6 +150,13 @@ def next_id(prefix: str, taken: set[str]) -> str:
 _WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
 
 
+def file_safe_name(name: str) -> str:
+    """A person's name as a file name: accents dropped (José → Jose), letters of any script kept,
+    everything else → "_"."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
+    return re.sub(r"\W+", "_", plain).strip("_") or "Resume"
+
+
 def slug(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return f"{s}-co" if s in _WINDOWS_RESERVED else s
@@ -202,7 +210,15 @@ class Store:
         return self.private / "applications"
 
     # -- settings ------------------------------------------------------------------
-    SETTINGS = {"pdf_engine": None}  # None = automatic (Word when installed, else LibreOffice)
+    TARGETS = {"field": "", "seniority": "", "roles": "", "region": "", "spelling": "US", "pages": 2, "pack": "general"}
+    SETTINGS = {
+        "pdf_engine": None,          # None = automatic (Word when installed, else LibreOffice)
+        "targets": TARGETS,          # who the resume is for: steers the AI prompts and the page limit
+        "theme": "classic",          # resume design (themes.py)
+        "paper": None,               # "letter" | "a4"; None = the theme's default
+        "ai_engine": "claude-cli",   # "claude-cli" (subscription) | "anthropic-api" (API key in the OS keychain)
+        "api_model": None,           # model for the API engine; None = its default
+    }
 
     @property
     def settings_path(self) -> Path:
@@ -213,11 +229,26 @@ class Store:
             saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             saved = {}
-        return {k: saved.get(k, v) for k, v in self.SETTINGS.items()} if isinstance(saved, dict) else dict(self.SETTINGS)
+        saved = saved if isinstance(saved, dict) else {}
+        out = {}
+        for key, default in self.SETTINGS.items():
+            value = saved.get(key, default)
+            if isinstance(default, dict):
+                value = {**default, **{k: v for k, v in (value if isinstance(value, dict) else {}).items()
+                                       if k in default}}
+            out[key] = value
+        return out
 
     def save_settings(self, patch: dict) -> dict:
         with self.lock:
-            data = {**self.settings(), **{k: v for k, v in patch.items() if k in self.SETTINGS}}
+            data = self.settings()
+            for key, value in patch.items():
+                if key not in self.SETTINGS:
+                    continue
+                if isinstance(self.SETTINGS[key], dict) and isinstance(value, dict):
+                    data[key] = {**data[key], **{k: v for k, v in value.items() if k in self.SETTINGS[key]}}
+                else:
+                    data[key] = value
             self.private.mkdir(parents=True, exist_ok=True)
             _write_json_atomic(self.settings_path, data)
             return data
@@ -1034,5 +1065,4 @@ class Store:
         """The file name recruiters see: the candidate's name only. Never the company —
         CVs get forwarded and resubmitted, and a wrong-company filename is a visible
         mistake. The application folder already says which company it's for."""
-        name = re.sub(r"[^A-Za-z0-9]+", "_", self.profile().contact.name).strip("_") or "Resume"
-        return f"{name}_Resume"
+        return f"{file_safe_name(self.profile().contact.name)}_Resume"

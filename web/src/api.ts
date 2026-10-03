@@ -45,6 +45,8 @@ export interface Profile {
   retired_ids?: string[]
 }
 export interface ProfileResponse { profile: Profile; evidence: Record<string, string>; version: string }
+/** A draft profile read from a resume by the AI: nothing is saved until the user confirms it. */
+export interface ImportDraft { profile: Profile; unverified: string[] }
 
 export interface Requirement {
   text: string; priority: 'must' | 'nice'; status: 'strong' | 'partial' | 'gap'; evidence: string[]; note: string
@@ -135,7 +137,14 @@ export interface PdfEngineInfo { id: PdfEngine; name: string; available: boolean
 /** pdf_engine: the user's choice (null = automatic: Word when installed); pdf_effective: what builds use now. */
 export type Platform = 'macos' | 'windows' | 'linux'
 export interface DoctorCheck { id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string }
-export interface Settings { pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform }
+/** Who the resume is for: steers the AI's prompts and sets the page limit (never a source of facts). */
+export interface Targets { field: string; seniority: string; roles: string; region: string; spelling: 'US' | 'UK'; pages: 1 | 2 | 3; pack: string }
+export interface Settings {
+  pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform
+  targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null
+  ai_engine: string; api_model: string | null
+}
+export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: string; api_model?: string | null }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
@@ -182,8 +191,12 @@ export const api = {
   engine: () => req<EngineStatus>('GET', '/engine'),
   settings: () => req<Settings>('GET', '/settings'),
   doctor: () => req<DoctorCheck[]>('GET', '/doctor'),
-  saveSettings: (b: { pdf_engine: PdfEngine | null }) => req<Settings>('PUT', '/settings', b),
+  saveSettings: (b: SettingsPatch) => req<Settings>('PUT', '/settings', b),
   profile: () => req<ProfileResponse>('GET', '/profile'),
+  setup: () => req<{ has_profile: boolean }>('GET', '/setup'),
+  importProfile: (b: { filename?: string; data?: string; text?: string }) => req<ImportDraft>('POST', '/profile/import', b),
+  createProfile: (b: { profile: Profile } | { blank: { name: string; location: string; headline: string } }) =>
+    req<ProfileResponse>('POST', '/profile/create', b),
   saveProfile: (p: Profile, version: string) => req<ProfileResponse>('PUT', '/profile', p, { 'If-Match': version }),
   profileYaml: () => req<{ yaml: string; version: string }>('GET', '/profile/yaml'),
   saveProfileYaml: (yaml: string, version: string) =>

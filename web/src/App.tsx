@@ -4,9 +4,11 @@ import Funnel from './pages/Funnel'
 import NewApplication from './pages/NewApplication'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
+import Welcome from './pages/Welcome'
 import Workspace from './pages/Workspace'
 import { cx } from './lib'
 import { EngineBadge } from './ui'
+import { useFirstRun } from './setup'
 import { useUnsavedGuard } from './unsaved'
 
 // The v3 design uses a 1480px frame on every page.
@@ -52,6 +54,7 @@ function Masthead() {
 
 export default function App() {
   useUnsavedGuard()
+  useFirstRun()
   return (
     <>
       <Masthead />
@@ -63,6 +66,7 @@ export default function App() {
           <Route path="/a/:id" element={<Workspace />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/welcome" element={<Welcome />} />
         </Routes>
       </main>
     </>
