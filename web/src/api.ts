@@ -139,9 +139,10 @@ export type Platform = 'macos' | 'windows' | 'linux'
 export interface DoctorCheck { id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string }
 /** Who the resume is for: steers the AI's prompts and sets the page limit (never a source of facts). */
 export interface Targets { field: string; seniority: string; roles: string; region: string; spelling: 'US' | 'UK'; pages: 1 | 2 | 3; pack: string }
+export interface ThemeInfo { id: string; name: string; description: string; fonts: string[]; accent: string; ink: string; rule: string; name_font: string; paper: 'letter' | 'a4' }
 export interface Settings {
   pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform
-  targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null
+  targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
   ai_engine: string; api_model: string | null
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: string; api_model?: string | null }

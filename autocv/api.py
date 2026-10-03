@@ -21,10 +21,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod
+from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod, themes
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
-from .render import docx_text, render
+from .render import docx_text, render, use_design
 from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
                     next_id)
@@ -68,6 +68,8 @@ class TargetsPatch(BaseModel):
 class SettingsPatch(BaseModel):
     pdf_engine: Literal[tuple(pdfmod.ENGINES)] | None = None  # type: ignore[valid-type]  # None = automatic
     targets: TargetsPatch | None = None
+    theme: Literal[tuple(themes.THEMES)] | None = None  # type: ignore[valid-type]
+    paper: Literal["letter", "a4"] | None = None  # None = the theme's default
 
 
 class MetaPatch(BaseModel):
@@ -224,7 +226,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
                                     status_code=403)
             # The candidate's targets (Settings) steer every AI prompt made while handling this request.
-            ai.use_context(ai.Context.from_settings(store.settings()["targets"], store.private))
+            settings = store.settings()
+            ai.use_context(ai.Context.from_settings(settings["targets"], store.private))
+            use_design(settings["theme"], settings["paper"])  # every render in this request uses the chosen design
         response = await call_next(request)
         # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
         # (the Export step previews the PDF in an iframe).
@@ -270,7 +274,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except RuntimeError:
             effective = None
         return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM,
-                "packs": ai.PACKS}
+                "packs": ai.PACKS,
+                "themes": [{"id": t.id, "name": t.name, "description": t.description, "fonts": t.fonts(),
+                            "accent": t.accent, "ink": t.ink, "rule": t.rule, "name_font": t.name_font,
+                            "paper": t.paper} for t in themes.THEMES.values()]}
 
     @api.get("/doctor")
     async def get_doctor():

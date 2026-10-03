@@ -39,7 +39,7 @@ Update with `uv tool upgrade autocv-app` (or `pipx upgrade autocv-app`).
 
 ## First run
 1. **Import your resume** on the Welcome page: a Word file, a PDF or pasted text, in any layout. The AI copies it into your master profile word-for-word (it doesn't rewrite anything), and anything that doesn't match your file exactly is highlighted for you to check. Nothing is saved until you click *Save as my profile*. Or start with a blank profile.
-2. **Settings → Your targets**: your field, seniority, the roles you're aiming for, region, US or UK spelling, and the page limit (1–3). These steer what the AI emphasises; they never add facts. A *domain pack* adds field-specific emphasis (currently: General, Cybersecurity).
+2. **Settings → Your targets**: your field, seniority, the roles you're aiming for, region, US or UK spelling, and the page limit (1–3). These steer what the AI emphasises; they never add facts. A *domain pack* adds field-specific emphasis (currently: General, Cybersecurity). **Resume design**: Classic, Modern or Compact, on US Letter or A4.
 3. **New tailoring**: paste a job description (or its URL) and follow the steps.
 
 ## Your data stays on your computer

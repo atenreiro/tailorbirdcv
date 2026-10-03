@@ -21,15 +21,13 @@ from pydantic import ValidationError
 
 from . import factcheck, paths
 from .engine import Engine
-from .render import docx_text, render
+from .render import active_design, docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
 TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
 MAX_TRIM_ROUNDS = 2
-LINE_CHARS = 100          # rough characters per rendered line (calibrated on the Classic design)
-LINES_PER_PAGE = 55       # estimated lines per page when there's no base resume to measure
-WORDS_PER_PAGE = 500
+WORDS_PER_LINE = 500 / 55  # rough words per line (calibrated on the Classic design)
 BASE_PAGES = 2            # a base resume (`autocv ingest`) is assumed to fill 2 pages
 PACKS = ["general", "cybersecurity"]  # domain packs: emphasis heuristics in data/config/packs/<pack>/
 
@@ -367,12 +365,21 @@ def estimate_lines(profile: MasterProfile, tailored: TailoredResume) -> int:
     """Approximate rendered line count — a fast proxy for page count (Word is the truth)."""
     with tempfile.TemporaryDirectory() as tmp:
         lines = docx_text(render(profile, tailored, Path(tmp) / "r.docx"))
-    return sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
+    return _count_lines(lines)
+
+
+def _count_lines(lines: list[str]) -> int:
+    """Rendered lines, wrapping at the active theme's characters per line."""
+    theme, paper = active_design()
+    chars = theme.line_chars(paper)
+    return sum(max(1, -(-len(line) // chars)) for line in lines)
 
 
 def default_budget(pages: int | None = None) -> dict:
     n = pages or CONTEXT.get().pages
-    return {"lines": LINES_PER_PAGE * n, "words": WORDS_PER_PAGE * n, "measured": False}
+    theme, paper = active_design()
+    lines = theme.lines_per_page(paper) * n
+    return {"lines": lines, "words": round(lines * WORDS_PER_LINE), "measured": False}
 
 
 def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
@@ -382,7 +389,7 @@ def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
         return default_budget()
     with tempfile.TemporaryDirectory() as tmp:
         lines = docx_text(render(profile, base, Path(tmp) / "r.docx"))
-    est = sum(max(1, -(-len(line) // LINE_CHARS)) for line in lines)
+    est = _count_lines(lines)
     scale = CONTEXT.get().pages / BASE_PAGES
     return {"lines": round(est * scale), "words": round(len(" ".join(lines).split()) * scale), "measured": True}
 

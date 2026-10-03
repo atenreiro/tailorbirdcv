@@ -254,6 +254,11 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
             stream.reconfigure(encoding="utf-8", errors="replace")
+    settings = STORE.settings()
+    from . import ai
+    from .render import use_design
+    ai.use_context(ai.Context.from_settings(settings["targets"], PRIVATE))
+    use_design(settings["theme"], settings["paper"])
     if args.cmd not in ("serve", "doctor", "install-browser"):  # serve migrates when the API starts
         try:
             for old, new in STORE.migrate_layout().items():

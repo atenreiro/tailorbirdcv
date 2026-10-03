@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets } from '../api'
+import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { ErrorNote, Spinner } from '../ui'
@@ -168,6 +168,79 @@ function YourTargets({ settings, onSaved }: { settings: SettingsData; onSaved: (
   )
 }
 
+const FONT_STACK: Record<string, string> = { Georgia: 'Georgia, Gelasio, serif', Calibri: 'Calibri, Carlito, "Instrument Sans", sans-serif' }
+
+/** A miniature of the theme: name, headline, a heading with its rule and a few text lines. */
+function ThemeSample({ t }: { t: ThemeInfo }) {
+  const body = FONT_STACK.Calibri
+  return (
+    <span aria-hidden className="flex flex-col gap-[3px] rounded-md border border-line bg-white px-3 py-2.5">
+      <span style={{ fontFamily: FONT_STACK[t.name_font] ?? body, color: `#${t.ink}` }} className="text-[15px] font-bold leading-none">Alex Morgan</span>
+      <span style={{ fontFamily: body, color: `#${t.accent}` }} className="text-[8px] font-bold">Senior Product Manager</span>
+      <span style={{ fontFamily: body, color: `#${t.accent}`, borderColor: `#${t.rule}` }} className="mt-1 border-b pb-[2px] text-[7px] font-bold tracking-[0.04em]">PROFESSIONAL EXPERIENCE</span>
+      {[92, 80, 86].map((w) => <span key={w} className="h-[3px] rounded-full bg-[#d9dde3]" style={{ width: `${w}%` }} />)}
+    </span>
+  )
+}
+
+function ResumeDesign({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async (patch: Parameters<typeof api.saveSettings>[0]) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const next = await api.saveSettings(patch)
+      cacheSettings(next)
+      onSaved(next)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const current = settings.themes.find((t) => t.id === settings.theme) ?? settings.themes[0]
+  const paper = settings.paper ?? current?.paper ?? 'letter'
+  return (
+    <section aria-labelledby="design-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex max-w-[640px] flex-col gap-1.5">
+          <p className={cx(label, 'text-accent')}>Resume design</p>
+          <h2 id="design-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">How your resume looks</h2>
+          <p className="text-sm leading-[1.5] text-muted text-pretty">Applies to the next build. Already-built files and sent copies keep the design they were made with.</p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Paper</span>
+          <Segmented label="Paper size" options={[['letter', 'US Letter'], ['a4', 'A4']]} value={paper}
+            onChange={(v) => { if (!busy) void save({ paper: v as 'letter' | 'a4' }) }} />
+        </div>
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <div role="radiogroup" aria-labelledby="design-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
+        {settings.themes.map((t) => {
+          const chosen = t.id === settings.theme
+          return (
+            <label key={t.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-3 rounded-xl border px-4 py-4 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
+              chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
+              <input type="radio" name="theme" className="sr-only" checked={chosen} disabled={busy} aria-label={t.name}
+                onChange={() => save({ theme: t.id })} />
+              <ThemeSample t={t} />
+              <span className="flex items-center gap-2">
+                <span aria-hidden className={cx('grid size-4 flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+                  {chosen && <span className="size-1.5 rounded-full bg-accent" />}
+                </span>
+                <span className="font-display text-xl leading-none text-ink">{t.name}</span>
+              </span>
+              <span className="text-[13px] leading-[1.45] text-muted text-pretty">{t.description}</span>
+              <span className="font-mono text-[11px] text-faint">{t.fonts.join(' · ')}</span>
+            </label>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 const TONE: Record<DoctorCheck['status'], [string, string]> = {
   ok: ['bg-ok', 'text-ok'], warn: ['bg-[#d08a1c]', 'text-warn'], error: ['bg-bad', 'text-bad'],
 }
@@ -263,6 +336,8 @@ export default function Settings() {
       {!s && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Looking for Word and LibreOffice…</p>}
 
       {s && <YourTargets settings={s} onSaved={setS} />}
+
+      {s && <ResumeDesign settings={s} onSaved={setS} />}
 
       {s && (
         <section aria-labelledby="pdf-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
