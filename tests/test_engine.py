@@ -25,7 +25,7 @@ else:
 def fake_claude(tmp_path):
     log = tmp_path / "call.json"
     script = tmp_path / "fake_claude.py"
-    script.write_text(FAKE.format(log=str(log)))
+    script.write_text(FAKE.format(log=str(log)), encoding="utf-8")
     return [sys.executable, str(script)], log  # runs the same on every OS (no shebang/chmod)
 
 
@@ -33,7 +33,7 @@ def test_engine_runs_isolated_and_returns_structured_output(fake_claude):
     binary, log = fake_claude
     out = asyncio.run(ClaudeCLIEngine(command=binary).complete("SYS", "TASK: x\nsecret profile", {"type": "object"}))
     assert out == {"status": "OK"}
-    call = json.loads(log.read_text())
+    call = json.loads(log.read_text(encoding="utf-8"))
     args = call["args"]
     for flag in ("--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands"):
         assert flag in args

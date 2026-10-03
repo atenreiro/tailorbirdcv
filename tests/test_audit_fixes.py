@@ -2,6 +2,7 @@
 
 import copy
 import shutil
+import sys
 import threading
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10
-TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text())
+TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text(encoding="utf-8"))
 ANALYSIS = {"company": "Example Capital", "role": "Lead", "industry": "quant", "track": "ic", "seniority": "S",
             "location": "SG", "summary": "x", "requirements": [], "keywords": [], "known_gaps": [],
             "questions": [{"id": "q1", "requirement": "Kubernetes", "question": "Any Kubernetes?", "prefill_from": ""}]}
@@ -298,6 +299,7 @@ def test_reveal_opens_only_this_applications_folder(env, monkeypatch):
     assert calls[1:] == []
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="explorer.exe exits 1 even on success, so Windows can't tell")
 def test_reveal_failure_is_reported(env, monkeypatch):
     import subprocess
     client, store, _ = env

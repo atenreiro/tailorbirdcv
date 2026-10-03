@@ -25,7 +25,7 @@ from conftest import client_for
 FIX = Path(__file__).parent / "fixtures"
 TODAY = f"{dt.date.today():%Y-%m-%d}"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10
-TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text())
+TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text(encoding="utf-8"))
 ANALYSIS = {"company": "Example Capital", "role": "Lead", "industry": "quant", "track": "ic", "seniority": "S",
             "location": "SG", "summary": "x", "requirements": [], "keywords": [], "known_gaps": [],
             "questions": [{"id": "q1", "requirement": "Kubernetes", "question": "Any Kubernetes?", "prefill_from": ""}]}
@@ -228,7 +228,7 @@ def test_save_knowledge_cannot_unretire_an_id(env):
 def _ingested():
     """What `ingest` would produce for a resume where a1 is unchanged, a2 was reworded, a new
     bullet was added, and the telco role is unchanged."""
-    p = yaml.safe_load((FIX / "profile.yaml").read_text())
+    p = yaml.safe_load((FIX / "profile.yaml").read_text(encoding="utf-8"))
     acme = p["roles"][0]
     acme["achievements"] = [
         {"id": "acme-bank.a1", "text": "Shipped a new detection pipeline."},                 # new bullet first
@@ -242,7 +242,7 @@ def _ingested():
 
 
 def test_reingest_keeps_meaning_of_every_id():
-    old = yaml.safe_load((FIX / "profile.yaml").read_text())
+    old = yaml.safe_load((FIX / "profile.yaml").read_text(encoding="utf-8"))
     old["roles"][0]["achievements"].append({"id": "acme-bank.a4", "text": "Hardened Kubernetes clusters.",
                                              "source": "interview", "in_base_resume": False})
     old["retired_ids"] = ["acme-bank.a3"]
@@ -280,10 +280,10 @@ def test_ingest_force_goes_through_save_profile(env, monkeypatch):
 def _flat(store, name, company="Northwind", role="Engineer", meta=True):
     folder = store.apps_dir / name
     folder.mkdir(parents=True)
-    (folder / "jd.md").write_text(JD)
+    (folder / "jd.md").write_text(JD, encoding="utf-8")
     if meta:
         (folder / "meta.json").write_text(json.dumps({"company": company, "role": role, "status": "draft",
-                                                      "created": "2026-10-01T10:00:00"}))
+                                                      "created": "2026-10-01T10:00:00"}), encoding="utf-8")
     return name
 
 
@@ -292,7 +292,7 @@ def test_migration_records_each_move_as_it_happens(env, monkeypatch):
     a = _flat(store, "2026-10-01_northwind_engineer")
     b = _flat(store, "2026-10-02_contoso_analyst", "Contoso", "Analyst")
     (store.private / "knowledge.yaml").write_text(yaml.safe_dump({"answers": [
-        {"id": "k1", "topic": "t", "question": "q", "kind": "no_experience", "app_id": a, "date": "2026-10-01"}]}))
+        {"id": "k1", "topic": "t", "question": "q", "kind": "no_experience", "app_id": a, "date": "2026-10-01"}]}), encoding="utf-8")
     real_rename = Path.rename
 
     def crash_on_second(self, target):
@@ -302,7 +302,7 @@ def test_migration_records_each_move_as_it_happens(env, monkeypatch):
     monkeypatch.setattr(Path, "rename", crash_on_second)
     moved = store.migrate_layout()                           # no exception
     assert moved == {a: "northwind~2026-10-01_engineer"}
-    assert json.loads((store.apps_dir / LEGACY_IDS).read_text())[a] == "northwind~2026-10-01_engineer"
+    assert json.loads((store.apps_dir / LEGACY_IDS).read_text(encoding="utf-8"))[a] == "northwind~2026-10-01_engineer"
     assert store.knowledge().answers[0].app_id == "northwind~2026-10-01_engineer"
     assert (store.apps_dir / b / "meta.json").exists()       # interrupted: left in place, retried next start
     monkeypatch.setattr(Path, "rename", real_rename)
@@ -313,7 +313,7 @@ def test_migration_records_each_move_as_it_happens(env, monkeypatch):
 def test_unreadable_meta_is_skipped_and_flat_folders_without_meta_migrate(env):
     _, store, _ = env
     bad = _flat(store, "2026-10-01_broken_thing")
-    (store.apps_dir / bad / "meta.json").write_text("{not json")
+    (store.apps_dir / bad / "meta.json").write_text("{not json", encoding="utf-8")
     nometa = _flat(store, "2026-10-02_acme-corp_security-lead", meta=False)
     moved = store.migrate_layout()
     assert moved == {nometa: "acme-corp~2026-10-02_security-lead"}
@@ -327,9 +327,9 @@ def test_server_starts_with_corrupt_files(env):
     _, store, engine = env
     good = new_app(env[0])
     broken = store.create_app("Broken Co", "Role", JD)
-    (store.app_path(broken) / "meta.json").write_text("{oops")
-    (store.apps_dir / LEGACY_IDS).write_text("[not, json")
-    store.profile_path.write_text(store.profile_path.read_text().replace("headlines:", "headlinez:"))
+    (store.app_path(broken) / "meta.json").write_text("{oops", encoding="utf-8")
+    (store.apps_dir / LEGACY_IDS).write_text("[not, json", encoding="utf-8")
+    store.profile_path.write_text(store.profile_path.read_text(encoding="utf-8").replace("headlines:", "headlinez:"), encoding="utf-8")
     client = client_for(create_app(store, engine))           # must not raise
     rows = {r["id"]: r for r in client.get("/api/applications").json()}
     assert set(rows) == {good, broken} and rows[broken]["broken"] and not rows[good].get("broken")
@@ -593,11 +593,11 @@ def test_delete_by_old_id_clears_every_reference(env):
     client, store, _ = env
     old = _flat(store, "2026-10-01_northwind_engineer")
     (store.private / "knowledge.yaml").write_text(yaml.safe_dump({"answers": [
-        {"id": "k1", "topic": "t", "question": "q", "kind": "no_experience", "app_id": old, "date": "2026-10-01"}]}))
+        {"id": "k1", "topic": "t", "question": "q", "kind": "no_experience", "app_id": old, "date": "2026-10-01"}]}), encoding="utf-8")
     store.migrate_layout()
     assert client.delete(f"/api/applications/{old}").status_code == 204
     assert store.knowledge().answers[0].app_id is None
-    assert old not in json.loads((store.apps_dir / LEGACY_IDS).read_text())
+    assert old not in json.loads((store.apps_dir / LEGACY_IDS).read_text(encoding="utf-8"))
 
 
 def test_builds_from_before_fingerprints_count_as_current(env):

@@ -15,7 +15,7 @@ from autocv.store import Store
 
 FIX = Path(__file__).parent / "fixtures"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10
-TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text())
+TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text(encoding="utf-8"))
 
 
 def analysis(**extra):
@@ -81,7 +81,7 @@ def test_rejected_answer_is_remembered_but_never_evidence(env):
         {"question_id": "q1", "requirement": "Kubernetes", "question": "Any K8s?", "answer": "Some labs", "status": "rejected"}])
     (entry,) = store.knowledge().answers
     assert entry.kind == "experience" and entry.evidence_id is None
-    assert "Some labs" not in store.profile_path.read_text()
+    assert "Some labs" not in store.profile_path.read_text(encoding="utf-8")
 
 
 def test_analysis_sees_past_answers_and_ids_are_sanitised(env, tmp_path):

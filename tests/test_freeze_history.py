@@ -15,7 +15,7 @@ from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10
-TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text())
+TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text(encoding="utf-8"))
 ANALYSIS = {"company": "Example Capital", "role": "Lead", "industry": "quant", "track": "ic", "seniority": "S",
             "location": "SG", "summary": "x", "requirements": [], "keywords": [], "known_gaps": [], "questions": []}
 

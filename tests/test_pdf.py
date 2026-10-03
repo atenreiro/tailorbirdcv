@@ -78,7 +78,7 @@ def test_word_converts_in_one_fixed_folder_and_cleans_up(docx, monkeypatch, tmp_
                            "shutil.copyfile(s, d)")
     out = pdf.to_pdf(docx, timeout=10)  # no preference → Word
     assert out == docx.with_suffix(".pdf") and out.read_bytes() == docx.read_bytes()  # Word gets the docx as is
-    assert seen.read_text() == str((tmp_path / "word").resolve())  # Word only ever sees this folder
+    assert seen.read_text(encoding="utf-8") == str((tmp_path / "word").resolve())  # Word only ever sees this folder
     assert [p.name for p in (tmp_path / "word").iterdir()] == [".lock"]  # staged copies removed
 
 
@@ -104,7 +104,7 @@ def soffice(tmp_path, monkeypatch):
     log = tmp_path / "soffice.json"
     exe = tmp_path / "bin" / "soffice.py"  # run through Python, so it works on every OS
     exe.parent.mkdir()
-    exe.write_text(FAKE_SOFFICE.format(log=str(log)))
+    exe.write_text(FAKE_SOFFICE.format(log=str(log)), encoding="utf-8")
     monkeypatch.setattr(pdf, "soffice", lambda: exe)
     fonts = tmp_path / "fonts"
     fonts.mkdir()
@@ -119,8 +119,8 @@ def soffice(tmp_path, monkeypatch):
 def test_libreoffice_runs_headless_with_its_own_profile(docx, soffice, tmp_path):
     import json
     out = pdf.to_pdf(docx, timeout=10, engine="libreoffice")
-    assert out.read_text() == "%PDF stand-in"
-    run = json.loads(soffice.read_text())
+    assert out.read_text(encoding="utf-8") == "%PDF stand-in"
+    run = json.loads(soffice.read_text(encoding="utf-8"))
     profile = (tmp_path / "lo-profile").resolve()
     assert f"-env:UserInstallation={profile.as_uri()}" in run["args"] and "--headless" in run["args"]
     assert run["args"][run["args"].index("--convert-to") + 1] == "pdf"
@@ -131,7 +131,7 @@ def test_libreoffice_gets_glued_ranges_but_the_users_docx_is_untouched(docx, sof
     import json
     original = docx.read_bytes()
     pdf.to_pdf(docx, timeout=10, engine="libreoffice")
-    xml = json.loads(soffice.read_text())["xml"]
+    xml = json.loads(soffice.read_text(encoding="utf-8"))["xml"]
     assert "2\u2060–\u20604" in xml and "2019\u2060-\u20602021" in xml
     assert docx.read_bytes() == original
 
@@ -147,7 +147,7 @@ def test_libreoffice_links_only_the_fonts_the_document_uses(docx, soffice, tmp_p
 
 def test_libreoffice_failure_is_reported(docx, soffice, monkeypatch, tmp_path):
     bad = tmp_path / "bin" / "bad.py"
-    bad.write_text("print('Error: source file could not be loaded')\n")
+    bad.write_text("print('Error: source file could not be loaded')\n", encoding="utf-8")
     monkeypatch.setattr(pdf, "soffice", lambda: bad)
     with pytest.raises(RuntimeError, match="LibreOffice did not produce the PDF: Error: source file could not be loaded"):
         pdf.to_pdf(docx, timeout=10, engine="libreoffice")
@@ -232,24 +232,24 @@ XCU_WITH_OTHER = ('<?xml version="1.0" encoding="UTF-8"?>\n<oor:items xmlns:oor=
 def test_a_missing_font_gets_its_open_stand_in_and_loses_it_once_installed(tmp_path, monkeypatch):
     xcu = tmp_path / "user" / "registrymodifications.xcu"
     xcu.parent.mkdir(parents=True)
-    xcu.write_text(XCU_WITH_OTHER)
+    xcu.write_text(XCU_WITH_OTHER, encoding="utf-8")
     monkeypatch.setattr(pdf, "installed", lambda family: family != "Georgia")
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri", "Aptos"})
-    text = xcu.read_text()
+    text = xcu.read_text(encoding="utf-8")
     assert '<node oor:name="autocv-georgia"' in text and "<value>Gelasio</value>" in text
     assert '<prop oor:name="Replacement" oor:op="fuse"><value>true</value>' in text
     assert "autocv-calibri" not in text and "UseOpenCL" in text  # installed fonts and other settings untouched
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})  # idempotent: one rule, not two
-    assert xcu.read_text().count("autocv-georgia") == 1
+    assert xcu.read_text(encoding="utf-8").count("autocv-georgia") == 1
     monkeypatch.setattr(pdf, "installed", lambda family: True)  # Georgia got installed
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})
-    assert xcu.read_text() == XCU_WITH_OTHER
+    assert xcu.read_text(encoding="utf-8") == XCU_WITH_OTHER
 
 
 def test_a_new_profile_gets_the_rules_before_libreoffice_first_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(pdf, "installed", lambda family: False)
     pdf.configure_substitutes(tmp_path, {"Georgia"})
-    assert "autocv-georgia" in (tmp_path / "user" / "registrymodifications.xcu").read_text()
+    assert "autocv-georgia" in (tmp_path / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
     other = tmp_path / "other"
     monkeypatch.setattr(pdf, "installed", lambda family: True)
     pdf.configure_substitutes(other, {"Georgia"})  # nothing missing: LibreOffice creates its own file

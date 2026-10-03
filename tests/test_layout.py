@@ -54,8 +54,8 @@ def _old_style(store, name, company, role, status="applied"):
     folder = store.apps_dir / name
     (folder / "sent" / "2026-10-01_120000").mkdir(parents=True)
     (folder / "meta.json").write_text(json.dumps({"company": company, "role": role, "status": status,
-                                                  "created": "2026-10-01T10:00:00"}))
-    (folder / "jd.md").write_text(JD)
+                                                  "created": "2026-10-01T10:00:00"}), encoding="utf-8")
+    (folder / "jd.md").write_text(JD, encoding="utf-8")
     (folder / "Jane_Example_Resume.pdf").write_bytes(b"%PDF-1.4")
     sent = folder / "sent" / "2026-10-01_120000" / "Jane_Example_Resume.pdf"
     sent.write_bytes(b"%PDF-1.4 sent")
@@ -70,7 +70,7 @@ def test_old_flat_folders_move_and_old_ids_keep_working(store):
         "answers": [{"id": "k1", "topic": "K8s", "question": "Any K8s?", "answer": "", "kind": "no_experience",
                      "app_id": old, "company": "Northwind", "date": "2026-10-01"}],
         "preferences": [{"id": "p1", "text": "Plain verbs.", "rationale": "x", "status": "proposed",
-                         "source_app": old2, "date": "2026-10-01"}]}))
+                         "source_app": old2, "date": "2026-10-01"}]}), encoding="utf-8")
 
     moved = store.migrate_layout()
     new = "northwind~2026-10-01_platform-engineer"
@@ -122,7 +122,7 @@ def test_deleting_an_application_keeps_answers_but_drops_their_link(store):
         "answers": [{"id": "k1", "topic": "K8s", "question": "Any K8s?", "answer": "", "kind": "no_experience",
                      "app_id": old, "company": "Northwind", "date": "2026-10-01"}],
         "preferences": [{"id": "p1", "text": "Plain verbs.", "rationale": "x", "status": "active",
-                         "source_app": old, "date": "2026-10-01"}]}))
+                         "source_app": old, "date": "2026-10-01"}]}), encoding="utf-8")
     store.migrate_layout()
     store.delete_app("northwind~2026-10-01_platform-engineer")
     assert store.list_apps() == [] and not (store.apps_dir / "binance").exists()

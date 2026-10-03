@@ -50,8 +50,8 @@ def test_windows_claude_cmd_runs_its_script_with_node(tmp_path, monkeypatch):
     cmd = tmp_path / "npm" / "claude.cmd"
     script = tmp_path / "npm" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
     script.parent.mkdir(parents=True)
-    cmd.write_text("@echo off")
-    script.write_text("")
+    cmd.write_text("@echo off", encoding="utf-8")
+    script.write_text("", encoding="utf-8")
     monkeypatch.setattr(engine.shutil, "which", lambda name: "C:/node/node.exe" if name == "node" else None)
     assert engine._windows_command(str(cmd)) == ["C:/node/node.exe", str(script)]
     assert engine._windows_command("C:/claude/claude.exe") == ["C:/claude/claude.exe"]

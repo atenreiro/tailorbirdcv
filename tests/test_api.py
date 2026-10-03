@@ -13,7 +13,7 @@ from autocv.store import Store
 
 FIX = Path(__file__).parent / "fixtures"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10
-TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text())
+TAILORED = yaml.safe_load((FIX / "tailored.yaml").read_text(encoding="utf-8"))
 
 ANALYSIS = {
     "company": "Example Capital", "role": "Detection Lead", "industry": "quant", "track": "ic",
@@ -103,7 +103,7 @@ def test_gap_answer_becomes_evidence_only_when_approved(env):
     proposals = client.post(f"/api/applications/{app_id}/proposals", json=[
         {"question_id": "q1", "question": "Any Kubernetes work?", "answer": "Hardened clusters at Acme."}]).json()
     assert proposals[0]["text"] == "Hardened Kubernetes clusters."
-    assert "Kubernetes" not in store.profile_path.read_text()  # nothing saved yet
+    assert "Kubernetes" not in store.profile_path.read_text(encoding="utf-8")  # nothing saved yet
 
     p = proposals[0]
     res = client.post("/api/profile/evidence", json={"target": p["target"], "text": p["text"], "skills": p["skills"]}).json()
