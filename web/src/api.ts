@@ -118,6 +118,8 @@ export interface Application {
   length: { lines: number; budget: number } | null
   build?: { pages: number | null; too_long: boolean }
 }
+/** What "Trim with AI" proposes; nothing is saved until it's reviewed and saved in Review. */
+export interface TrimProposal { tailored: Tailored; lines: number; budget: number; trim_rounds: number }
 export interface Progress {
   seniority?: string | null; requirements: number; gaps_open: number; drafted: boolean; verified: boolean | null
   critique: { verdict: CritiqueResult['verdict']['decision']; open: number; stale: boolean } | null
@@ -196,7 +198,7 @@ export const api = {
   knowledge: () => req<Knowledge>('GET', '/knowledge'),
   saveKnowledge: ({ version, ...k }: Knowledge) =>
     req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
-  trim: (id: string) => req<Application>('POST', `/applications/${id}/trim`),
+  trim: (id: string) => req<Application & { trim_proposal?: TrimProposal | null }>('POST', `/applications/${id}/trim`),
   critique: (id: string) => req<Application>('POST', `/applications/${id}/critique`),
   reveal: (id: string, snapshot?: string) =>
     req<void>('POST', `/applications/${id}/reveal${snapshot ? `?snapshot=${encodeURIComponent(snapshot)}` : ''}`),

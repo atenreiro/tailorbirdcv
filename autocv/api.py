@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import difflib
+import logging
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -25,7 +26,10 @@ from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import AppAnswer, Knowledge, Preference, TailoredResume
-from .store import OUTCOMES, ROOT, STATUSES, Conflict, NeedsBuild, Store, next_id
+from .store import (OUTCOMES, ROOT, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, RetiredIdReused, Store,
+                    next_id)
+
+log = logging.getLogger("autocv")
 
 MAX_PAGES = 2
 
@@ -153,22 +157,46 @@ def _engine_call(exc: EngineError) -> HTTPException:
 def create_app(store: Store | None = None, engine: Engine | None = None,
                allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")) -> FastAPI:
     store = store or Store.default()
-    moved = store.migrate_layout()  # older flat application folders → applications/<company>/<date>_<role>/
-    if moved:
-        print(f"AutoCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
+    try:  # older flat application folders → applications/<company>/<date>_<role>/
+        moved = store.migrate_layout()
+        if moved:
+            print(f"AutoCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
+    except Exception as e:  # noqa: BLE001 — the app must always start; the UI shows what's readable
+        log.warning("AutoCV: application folder migration failed (%s); starting anyway", e)
+    try:
+        if store.profile_path.exists():
+            store.profile()
+    except Exception as e:  # noqa: BLE001
+        log.warning("AutoCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
     engine = engine or default_engine()
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     # DNS-rebinding guard: a malicious site can't reach this local API through a hostname it controls.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
+    @app.exception_handler(AppNotFound)
+    async def app_not_found(request: Request, exc: AppNotFound):
+        # Also covers a request that finishes after its application was deleted.
+        return JSONResponse({"detail": "application not found"}, status_code=404)
+
+    @app.exception_handler(CorruptApp)
+    async def corrupt_app(request: Request, exc: CorruptApp):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        # Cross-site guard: a page on another site can send "simple" POSTs to localhost without
-        # a preflight. Requiring a custom header forces a CORS preflight, which this API never
-        # grants, so only the AutoCV UI itself can change data or start AI runs.
-        if request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD", "OPTIONS") \
-                and request.headers.get("x-autocv") != "1":
-            return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."}, status_code=403)
+        if request.url.path.startswith("/api/"):
+            # Browsers label every request with where it came from. Only AutoCV's own pages
+            # (same-origin) and typed URLs/bookmarks ("none") may read or change data: another
+            # site can't even GET a resume or the profile through a link, image or iframe.
+            site = request.headers.get("sec-fetch-site")
+            if site is not None and site not in ("same-origin", "none"):
+                return JSONResponse({"detail": "Cross-site request refused."}, status_code=403)
+            # Cross-site guard: a page on another site can send "simple" POSTs to localhost without
+            # a preflight. Requiring a custom header forces a CORS preflight, which this API never
+            # grants, so only the AutoCV UI itself can change data or start AI runs.
+            if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-autocv") != "1":
+                return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
+                                    status_code=403)
         response = await call_next(request)
         # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
         # (the Export step previews the PDF in an iframe).
@@ -179,11 +207,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     api = APIRouter(prefix="/api")
 
     def need_app(app_id: str) -> str:
+        """The application's current id (an old id from before a move/rename maps to it, so
+        answers and knowledge never get a second key for the same application)."""
         try:
-            store.app_path(app_id)
+            return store.canonical_id(app_id)
         except KeyError:
             raise HTTPException(404, "application not found")
-        return app_id
 
     def need_profile():
         if not store.profile_path.exists():
@@ -214,7 +243,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             profile = store.save_profile(data, base_version=if_match, cause="profile editor")
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except ValidationError as e:
+        except (ValidationError, RetiredIdReused) as e:
             raise HTTPException(422, str(e))
         return profile_payload(profile)
 
@@ -228,10 +257,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         need_profile()
         try:
             data = yaml.safe_load(body.yaml)
+            if not isinstance(data, dict):
+                raise TypeError("The profile must be a YAML mapping.")
             store.save_profile(data, base_version=if_match, cause="yaml edit")
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except (yaml.YAMLError, ValidationError, TypeError) as e:
+        except (yaml.YAMLError, ValidationError, RetiredIdReused, TypeError) as e:
             raise HTTPException(422, str(e))
         return get_profile_yaml()
 
@@ -239,8 +270,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def post_evidence(body: EvidenceIn):
         need_profile()
         with store.lock:
+            current = store.profile()
+            existing = ai.find_evidence(current, body.target, body.text)
+            if existing:  # the same approval twice (double-click, retry): don't add a duplicate
+                return {"id": existing, "evidence": factcheck.evidence_index(current)}
             try:
-                profile, new_id = ai.add_evidence(store.profile(), body.target, body.text, body.skills, body.note)
+                profile, new_id = ai.add_evidence(current, body.target, body.text, body.skills, body.note)
             except KeyError:
                 raise HTTPException(422, f"unknown role '{body.target}'")
             store.save_profile(profile.model_dump(exclude_none=True), cause="evidence approved")
@@ -273,15 +308,20 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.get("/applications")
     def list_applications():
         apps = store.list_apps()
-        profile = store.profile() if store.profile_path.exists() else None
+        try:
+            profile = store.profile() if store.profile_path.exists() else None
+        except Exception:  # noqa: BLE001 — an invalid profile: list without verification
+            profile = None
         for a in apps:
             try:
+                if a.get("broken"):
+                    raise CorruptApp(a["broken"])
                 a["outputs_stale"] = store.outputs_stale(a["id"])
                 sent = store.sent_copies(a["id"])
                 a["sent"] = sent[0] if sent else None
                 a["progress"] = progress(a["id"], profile)
                 a["reached"], a["reached_at"] = store.reached(a["id"])
-            except KeyError:
+            except Exception:  # noqa: BLE001 — one unreadable application never breaks the list
                 a["outputs_stale"], a["sent"], a["progress"] = False, None, None
                 a["reached"], a["reached_at"] = None, None
         return apps
@@ -305,7 +345,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.get("/applications/{app_id}")
     def get_application(app_id: str):
-        need_app(app_id)
+        app_id = need_app(app_id)
         tailored = store.tailored(app_id)
         out = {"id": app_id, "meta": store.meta(app_id), "jd": store.jd(app_id),
                "analysis": store.analysis(app_id), "files": store.files(app_id),
@@ -342,14 +382,14 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.post("/applications/{app_id}/critique")
     async def run_critique(app_id: str):
         """Hiring-manager + recruiter review of the current draft (on demand)."""
-        need_app(app_id)
+        app_id = need_app(app_id)
         tailored = store.tailored(app_id)
         if not tailored:
             raise HTTPException(409, "Compose a resume first.")
         profile = need_profile()
         if not factcheck.check(profile, tailored).ok:
             raise HTTPException(409, "Fix the fact-check errors first — the review assumes a valid draft.")
-        run_no = len(store.critique(app_id)["runs"]) + 1
+        run_no = store.next_critique_run(app_id)  # unique forever, even though only 5 runs are kept
         try:
             result = await hm.critique(engine, profile, tailored, store.analysis(app_id) or {}, store.knowledge(), run_no)
         except EngineError as e:
@@ -361,32 +401,39 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.put("/applications/{app_id}/critique/decisions")
     def put_critique_decisions(app_id: str, body: Decisions):
-        need_app(app_id)
+        app_id = need_app(app_id)
         store.set_critique_decisions(app_id, body.decisions)
         return critique_payload(app_id)
 
     @api.patch("/applications/{app_id}")
     def patch_application(app_id: str, body: MetaPatch):
-        need_app(app_id)
-        if body.status == "applied" and store.meta(app_id).get("status") != "applied":
-            # Applying freezes the exact files sent. If they're missing or stale, the UI
-            # offers "Build & freeze" instead of recording a version that doesn't match.
-            try:
-                store.freeze(app_id, "applied")
-            except NeedsBuild as e:
-                raise HTTPException(409, {"code": "needs_build", "message": str(e)})
-        if body.outcome and body.status not in (None, "closed"):
-            raise HTTPException(422, "An outcome only applies when closing an application.")
-        if body.status or body.outcome:
-            status = body.status or store.meta(app_id).get("status")
+        app_id = need_app(app_id)
+        with store.lock:
+            meta = store.meta(app_id)
+            # Validate everything before changing anything (a rejected request never freezes).
+            if body.outcome and body.status not in (None, "closed"):
+                raise HTTPException(422, "An outcome only applies when closing an application.")
+            status = body.status or (meta.get("status") if body.outcome else None)
             if body.outcome and status != "closed":
                 raise HTTPException(422, "Close the application to record how it ended.")
-            try:
-                store.set_status(app_id, status, body.outcome)
-            except ValueError as e:
-                raise HTTPException(422, str(e))
-        rest = body.model_dump(exclude_none=True, exclude={"status", "outcome"})
-        return store.update_meta(app_id, **rest) if rest else store.meta(app_id)
+            if status == "closed" and not body.outcome and not (meta.get("status") == "closed" and meta.get("outcome")):
+                raise HTTPException(422, "Say how it ended: pick an outcome to close the application.")
+            if status == "applied" and meta.get("status") == "applied":
+                pass  # already applied: nothing to freeze or change
+            elif status == "applied":
+                # Applying freezes the exact files sent (once). If they're missing or stale, the UI
+                # offers "Build & freeze" instead of recording a version that doesn't match.
+                try:
+                    store.mark_applied(app_id)
+                except NeedsBuild as e:
+                    raise HTTPException(409, {"code": "needs_build", "message": str(e)})
+            elif status:
+                try:
+                    store.set_status(app_id, status, body.outcome)
+                except ValueError as e:
+                    raise HTTPException(422, str(e))
+            rest = body.model_dump(exclude_none=True, exclude={"status", "outcome"})
+            return store.update_meta(app_id, **rest) if rest else store.meta(app_id)
 
     @api.delete("/applications/{app_id}", status_code=204)
     def delete_application(app_id: str):
@@ -394,7 +441,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/applications/{app_id}/analyze")
     async def analyze(app_id: str):
-        need_app(app_id)
+        app_id = need_app(app_id)
         try:
             analysis = await ai.analyze(engine, need_profile(), store.jd(app_id), store.knowledge())
         except EngineError as e:
@@ -417,7 +464,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/applications/{app_id}/proposals")
     async def proposals(app_id: str, answers: list[Answer]):
-        need_app(app_id)
+        app_id = need_app(app_id)
         try:
             return await ai.propose_evidence(engine, need_profile(), [a.model_dump() for a in answers])
         except EngineError as e:
@@ -425,7 +472,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/applications/{app_id}/compose")
     async def compose(app_id: str, body: ComposeIn):
-        need_app(app_id)
+        app_id = need_app(app_id)
         analysis = store.analysis(app_id)
         if not analysis:
             raise HTTPException(409, "Analyze the job description first.")
@@ -446,7 +493,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.post("/applications/{app_id}/trim")
     async def trim(app_id: str):
         """Shorten the current resume with the AI (after a build came out over 2 pages)."""
-        need_app(app_id)
+        app_id = need_app(app_id)
         tailored, analysis = store.tailored(app_id), store.analysis(app_id) or {}
         if not tailored:
             raise HTTPException(409, "Nothing to trim yet.")
@@ -461,13 +508,19 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             result = await ai.fit_to_length(engine, profile, tailored, analysis, target, max_rounds=1)
         except EngineError as e:
             raise _engine_call(e)
-        if result["trim_rounds"] and result["tailored"] is not tailored:
-            store.save_tailored(app_id, result["tailored"])
-        return get_application(app_id)
+        # Never saved here: the user reviews the shorter version and saves it (PUT /tailored).
+        proposal = None
+        trimmed = result["tailored"]
+        if result["trim_rounds"] and trimmed is not tailored and \
+                trimmed.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True) and \
+                factcheck.check(profile, trimmed).ok:
+            proposal = {"tailored": trimmed.model_dump(exclude_none=True), "lines": ai.estimate_lines(profile, trimmed),
+                        "budget": budget, "trim_rounds": result["trim_rounds"]}
+        return {**get_application(app_id), "trim_proposal": proposal}
 
     @api.put("/applications/{app_id}/tailored")
     def put_tailored(app_id: str, data: dict):
-        need_app(app_id)
+        app_id = need_app(app_id)
         try:
             tailored = TailoredResume.model_validate(data)
         except ValidationError as e:
@@ -475,32 +528,38 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         store.save_tailored(app_id, tailored)
         return get_application(app_id)
 
+    build_locks: dict[str, asyncio.Lock] = {}
+
     async def do_build(app_id: str, pdf: bool = True) -> int | None:
-        tailored = store.tailored(app_id)
-        if not tailored:
-            raise HTTPException(409, "Nothing to build yet.")
-        profile = need_profile()
-        report = factcheck.check(profile, tailored)
-        if not report.ok:
-            raise HTTPException(409, "Fact-check failed — fix the errors before building.")
-        store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
-        built_hash = store.tailored_hash(app_id)
-        docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
-        pages = None
-        if pdf:
-            from .pdf import page_count, to_pdf
-            try:
-                pages = page_count(await asyncio.to_thread(to_pdf, docx))
-            except Exception as e:  # Word missing / automation permission denied / timeout
-                store.update_meta(app_id, built_hash=built_hash, pages=None)
-                raise HTTPException(500, f"DOCX built, but PDF conversion via Word failed: {e}")
-        store.update_meta(app_id, built_hash=built_hash, pages=pages)
-        store.advance_status(app_id, "built")
-        return pages
+        need_profile()
+        lock = build_locks.setdefault(app_id, asyncio.Lock())
+        async with lock:  # one build per application at a time: files and meta always agree
+            try:  # the hashes recorded are of exactly the bytes rendered
+                tailored, built_hash, profile, profile_version = store.build_inputs(app_id)
+            except FileNotFoundError:
+                raise HTTPException(409, "Nothing to build yet.")
+            except (ValidationError, ValueError, yaml.YAMLError) as e:
+                raise HTTPException(409, f"The resume or profile can't be read: {e}")
+            report = factcheck.check(profile, tailored)
+            if not report.ok:
+                raise HTTPException(409, "Fact-check failed — fix the errors before building.")
+            store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
+            docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
+            pages = None
+            if pdf:
+                from .pdf import page_count, to_pdf
+                try:
+                    pages = page_count(await asyncio.to_thread(to_pdf, docx))
+                except Exception as e:  # Word missing / automation permission denied / timeout
+                    store.record_build(app_id, built_hash, profile_version, None)
+                    raise HTTPException(500, f"DOCX built, but PDF conversion via Word failed: {e}")
+            store.record_build(app_id, built_hash, profile_version, pages)
+            store.advance_status(app_id, "built")
+            return pages
 
     @api.post("/applications/{app_id}/build")
     async def build(app_id: str, pdf: bool = True):
-        need_app(app_id)
+        app_id = need_app(app_id)
         pages = await do_build(app_id, pdf)
         out = get_application(app_id)
         out["build"] = {"pages": pages, "too_long": bool(pages and pages > MAX_PAGES)}
@@ -510,23 +569,24 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def freeze(app_id: str, build: bool = False, mark_applied: bool = False):
         """Freeze a read-only copy of what's being sent. `build=true` rebuilds first
         ("Build & freeze"); `mark_applied=true` then records the application as applied."""
-        need_app(app_id)
+        app_id = need_app(app_id)
         if build:
             pages = await do_build(app_id, pdf=True)
             if pages and pages > MAX_PAGES:
                 raise HTTPException(409, {"code": "too_long", "message":
                                           f"The PDF is {pages} pages — trim it before sending. Nothing was frozen."})
         try:
-            store.freeze(app_id, "applied" if mark_applied else "manual copy")
+            if mark_applied:
+                store.mark_applied(app_id)  # freezes once; clears any outcome from a closed state
+            else:
+                store.freeze(app_id, "manual copy")
         except NeedsBuild as e:
             raise HTTPException(409, {"code": "needs_build", "message": str(e)})
-        if mark_applied:
-            store.update_meta(app_id, status="applied")
         return get_application(app_id)
 
     @api.get("/applications/{app_id}/sent/{snapshot}/{name}")
     def get_sent_file(app_id: str, snapshot: str, name: str, download: bool = False):
-        need_app(app_id)
+        app_id = need_app(app_id)
         try:
             path = store.sent_file(app_id, snapshot, name)
         except KeyError:
@@ -568,14 +628,16 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             store.restore(kind, snapshot_id)
         except KeyError:
             raise HTTPException(404, "snapshot not found")
-        except ValidationError as e:
+        except RetiredIdReused as e:
+            raise HTTPException(422, str(e))
+        except (ValidationError, ValueError) as e:
             raise HTTPException(422, f"That version can't be restored (it no longer validates): {e}")
         return profile_payload() if kind == "profile" else knowledge_payload()
 
     # -- gap answers + memory -------------------------------------------------------------
     @api.put("/applications/{app_id}/answers")
     def put_answers(app_id: str, answers: list[AppAnswer]):
-        need_app(app_id)
+        app_id = need_app(app_id)
         store.save_answers(app_id, answers)
         return [a.model_dump(exclude_none=True) for a in store.answers(app_id)]
 
@@ -591,13 +653,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                                           cause="answers & preferences editor"))
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except ValidationError as e:
+        except (ValidationError, RetiredIdReused) as e:
             raise HTTPException(422, str(e))
 
     @api.post("/applications/{app_id}/preferences")
     async def suggest_preferences(app_id: str):
         """Propose style preferences from this application's guidance and Review edits."""
-        need_app(app_id)
+        app_id = need_app(app_id)
         ai_draft, current = store.ai_tailored(app_id), store.tailored(app_id)
         edits = ai.edited_claims(ai_draft, current) if ai_draft and current else []
         guidance = [store.meta(app_id).get("guidance") or ""]
@@ -626,7 +688,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         the exact file can be uploaded from there — no "(1)" duplicates from Downloads."""
         import subprocess
         import sys
-        path = store.app_path(need_app(app_id))
+        app_id = need_app(app_id)
+        path = store.app_path(app_id)
         if snapshot:
             sent = next((c for c in store.sent_copies(app_id) if c["id"] == snapshot), None)
             if not sent:
@@ -650,7 +713,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.get("/applications/{app_id}/files/{name}")
     def get_file(app_id: str, name: str, download: bool = False):
-        path = store.app_path(need_app(app_id))
+        app_id = need_app(app_id)
+        path = store.app_path(app_id)
         if name not in store.files(app_id):
             raise HTTPException(404, "file not found")
         media = "application/pdf" if name.endswith(".pdf") else \

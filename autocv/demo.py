@@ -61,6 +61,17 @@ def _compose(prompt: str) -> dict:
     return base.model_dump(exclude_none=True) if base else {}
 
 
+def _trim(prompt: str) -> dict:
+    """Demo trim: drop the last bullet of the oldest role that has more than one (only removes)."""
+    import json as _json
+    draft = _json.loads(prompt.split("TAILORED RESUME:\n", 1)[1])
+    for role in reversed(draft.get("experience", [])):
+        if len(role.get("bullets", [])) > 1:
+            role["bullets"] = role["bullets"][:-1]
+            break
+    return draft
+
+
 def _learn(prompt: str) -> dict:
     return {"preferences": [{"text": "Demo preference: prefer plain verbs over buzzwords.",
                              "rationale": "demo (fake engine)"}]}
@@ -109,4 +120,4 @@ def _critique(prompt: str) -> dict:
 
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose, "learn_preferences": _learn, "critique": _critique})
+                       "repair": _compose, "trim": _trim, "learn_preferences": _learn, "critique": _critique})

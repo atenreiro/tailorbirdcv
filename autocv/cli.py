@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 from . import ats, factcheck
-from .ingest import ingest
+from .ingest import ingest, merge_reingest
 from .render import docx_text, render
 from .schema import MasterProfile, dump_yaml, load_profile, load_tailored, load_yaml
 
@@ -74,8 +74,20 @@ def cmd_ingest(args) -> int:
         sys.exit(f"{PROFILE} exists — it is the curated source of truth. Use --force to overwrite.")
     profile, base = ingest(SOURCE_DOCX)
     MasterProfile.model_validate(profile)  # never write an invalid source of truth
-    with STORE.lock:  # --force keeps the old profile in history (Master profile → History)
-        STORE._write_with_history("profile", PROFILE, profile, "ingest force")
+    with STORE.lock:
+        if PROFILE.exists():
+            # Re-ingest: keep interview/prep-guide evidence and approved extras, keep ids whose
+            # text is unchanged, give changed facts new ids (the old ones are retired).
+            try:
+                old = STORE.profile()
+            except Exception as e:  # noqa: BLE001
+                sys.exit(f"{PROFILE} doesn't validate ({e}). Fix it first (or move it aside to ingest from scratch).")
+            try:
+                profile, base = merge_reingest(old.model_dump(exclude_none=True), profile, base)
+            except ValueError as e:
+                sys.exit(f"ingest --force aborted: {e}")
+        # Through save_profile: ids that disappear are retired, the old profile goes to history.
+        STORE.save_profile(profile, cause="ingest force")
     dump_yaml(base, BASE_TAILORED)
     p = load_profile(PROFILE)
     n = sum(len(r.achievements) for r in p.roles)
@@ -140,12 +152,12 @@ def cmd_build(args) -> int:
     if not report.ok:
         print("build blocked: fix the fact-check errors first")
         return 1
-    analysis = load_yaml(app / "analysis.yaml") if (app / "analysis.yaml").exists() else {}
-    if not (app / "meta.json").exists():
-        STORE.save_meta(app_id, {"company": analysis.get("company") or app_id.split("~")[0],
-                                   "role": analysis.get("role", ""), "status": "draft"})
+    # Render from exactly the bytes that are hashed (a save during the build can't be mislabelled).
+    tailored, built_hash, profile, profile_version = STORE.build_inputs(app_id)
+    if not factcheck.check(profile, tailored).ok:
+        print("build blocked: the resume changed while checking — run build again")
+        return 1
     STORE.clear_outputs(app_id)  # never leave an older .docx/.pdf around
-    built_hash = STORE.tailored_hash(app_id)
     docx = render(profile, tailored, app / f"{STORE.output_stem(app_id)}.docx")
     print(f"docx: {docx}")
     pages = None
@@ -157,7 +169,7 @@ def cmd_build(args) -> int:
         if pages > args.max_pages:
             print(f"TOO LONG: {pages} pages > {args.max_pages} — trim lowest-relevance content and rebuild")
             return 2
-    STORE.update_meta(app_id, built_hash=built_hash, pages=pages)
+    STORE.record_build(app_id, built_hash, profile_version, pages)
     STORE.advance_status(app_id, "built")
     return 0
 
@@ -213,8 +225,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_serve)
     args = parser.parse_args(argv)
     if args.cmd != "serve":  # serve migrates when the API starts
-        for old, new in STORE.migrate_layout().items():
-            print(f"moved application {old} → {new.replace('~', '/')}")
+        try:
+            for old, new in STORE.migrate_layout().items():
+                print(f"moved application {old} → {new.replace('~', '/')}")
+        except Exception as e:  # noqa: BLE001 — never block a command on housekeeping
+            print(f"warning: application folder migration failed ({e})", file=sys.stderr)
     return args.fn(args)
 
 

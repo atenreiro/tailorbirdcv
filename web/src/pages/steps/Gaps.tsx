@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AppAnswer, type Knowledge } from '../../api'
 import { cx } from '../../lib'
-import { ErrorNote } from '../../ui'
+import { ErrorNote, Spinner } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
 import { gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
@@ -25,6 +25,13 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
   const saveTimer = useRef<number | undefined>(undefined)
   const pendingSave = useRef<Record<string, AppAnswer> | null>(null)
+  // Saves go out one at a time, in order, and only the newest one's response is applied: a slow
+  // debounced save can never land after (and undo) a later immediate one.
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve())
+  const saveSeq = useRef(0)
+  // Proposals being approved right now (by index): a second click must not add the evidence twice.
+  const approving = useRef(new Set<number>())
+  const [approvingNow, setApprovingNow] = useState<number[]>([])
 
   // State lives in Workspace (memo.gaps) so it survives switching steps; seeded from the server.
   const gaps = memo.gaps ?? {
@@ -45,7 +52,8 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   // Flush a debounced save if the step unmounts before it fires.
   useEffect(() => () => {
     window.clearTimeout(saveTimer.current)
-    if (pendingSave.current) void api.saveAnswers(app.id, Object.values(pendingSave.current)).catch(() => {})
+    const last = pendingSave.current
+    if (last) void saveChain.current.then(() => api.saveAnswers(app.id, Object.values(last))).catch(() => {})
   }, [app.id])
 
   useEffect(() => { api.knowledge().then(setKnowledge).catch(() => setKnowledge({ answers: [], preferences: [] })) }, [])
@@ -76,19 +84,23 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   const persist = (next: Record<string, AppAnswer>, immediate = false) => {
     window.clearTimeout(saveTimer.current)
     pendingSave.current = next
-    const save = async () => {
+    const save = () => {
       pendingSave.current = null
+      const seq = ++saveSeq.current
       setSaved('saving')
-      try {
-        const savedAnswers = await api.saveAnswers(app.id, Object.values(next))
-        setApp((prev) => ({ ...prev, answers: savedAnswers }))
-        setSaved('saved')
-      } catch (e) {
-        setError((e as Error).message)
-        setSaved('idle')
-      }
+      saveChain.current = saveChain.current.then(async () => {
+        try {
+          const savedAnswers = await api.saveAnswers(app.id, Object.values(next))
+          if (seq !== saveSeq.current) return  // a newer save is queued; its response wins
+          setApp((prev) => ({ ...prev, answers: savedAnswers }))
+          setSaved('saved')
+        } catch (e) {
+          setError((e as Error).message)
+          if (seq === saveSeq.current) setSaved('idle')
+        }
+      })
     }
-    if (immediate) void save()
+    if (immediate) save()
     else saveTimer.current = window.setTimeout(save, 700)
   }
 
@@ -141,6 +153,9 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
 
   async function approve(i: number) {
     const d = drafts[i]
+    if (!d || d.state !== 'pending' || approving.current.has(i)) return
+    approving.current.add(i)
+    setApprovingNow([...approving.current])
     try {
       const q = questionFor(d.question_id)
       const res = await api.addEvidence({
@@ -152,10 +167,14 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
       await reloadProfile()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      approving.current.delete(i)
+      setApprovingNow([...approving.current])
     }
   }
 
   function reject(i: number) {
+    if (approving.current.has(i)) return
     const d = drafts[i]
     setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, state: 'rejected' } : x)))
     const q = questionFor(d.question_id)
@@ -305,7 +324,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
               <div className="flex flex-col gap-3">
                 {shown.map(({ d, i }) => (
                   <ProposalBox key={i} d={d} roles={roles} categories={categories} question={d.question_id === sel.id ? undefined : questionFor(d.question_id)}
-                    onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
+                    saving={approvingNow.includes(i)} onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
                 ))}
               </div>
             )}
@@ -317,7 +336,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             <p className="text-body">Your profile and past answers cover every must-have. You can go straight to composing.</p>
             {/* proposals can't exist without questions, but never hide one that blocks composing */}
             {shown.map(({ d, i }) => (
-              <ProposalBox key={i} d={d} roles={roles} categories={categories}
+              <ProposalBox key={i} d={d} roles={roles} categories={categories} saving={approvingNow.includes(i)}
                 onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
             ))}
           </section>
@@ -352,8 +371,8 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
 }
 
 /** A drafted profile entry. the user edits it until it's exactly true; only approval writes it to the profile. */
-function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onReject }: {
-  d: Draft; roles: { id: string; employer: string }[]; categories: string[]; question?: Question
+function ProposalBox({ d, roles, categories, question, saving, onPatch, onApprove, onReject }: {
+  d: Draft; roles: { id: string; employer: string }[]; categories: string[]; question?: Question; saving: boolean
   onPatch: (p: Partial<Draft>) => void; onApprove: () => void; onReject: () => void
 }) {
   const live = d.state === 'pending'
@@ -365,7 +384,7 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
         <p className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
           Proposed evidence ·
           {live ? (
-            <select aria-label="Belongs to" className="cursor-pointer rounded-md border border-rule bg-sheet px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink"
+            <select aria-label="Belongs to" disabled={saving} className="cursor-pointer rounded-md border border-rule bg-sheet px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink"
               value={d.target} onChange={(e) => onPatch({ target: e.target.value })}>
               {roles.map((r) => <option key={r.id} value={r.id}>{r.employer}</option>)}
               <option value="general">General (not role-specific)</option>
@@ -377,7 +396,7 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
       {question && <p className="text-xs text-muted">For: {question.question}</p>}
       {live ? (
         <textarea aria-label="Proposed evidence wording" className={`field min-h-[104px] resize-y text-base leading-[1.4] ${semi}`}
-          value={d.text} onChange={(e) => onPatch({ text: e.target.value })} />
+          value={d.text} readOnly={saving} onChange={(e) => onPatch({ text: e.target.value })} />
       ) : (
         <p className={`text-base leading-[1.4] text-ink ${semi}`}>{d.text}</p>
       )}
@@ -387,7 +406,7 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
             <span key={j} className="inline-flex items-center gap-1 rounded-[5px] bg-paper px-1.5 py-px font-mono text-[11px] text-muted">
               +
               {live ? (
-                <select aria-label={`Skill group for ${s.item}`} className="cursor-pointer bg-transparent text-faint" value={s.category}
+                <select aria-label={`Skill group for ${s.item}`} disabled={saving} className="cursor-pointer bg-transparent text-faint" value={s.category}
                   onChange={(e) => onPatch({ skills: d.skills.map((x, k) => (k === j ? { ...x, category: e.target.value } : x)) })}>
                   {categories.map((c) => <option key={c}>{c}</option>)}
                   {!categories.includes(s.category) && <option>{s.category}</option>}
@@ -395,7 +414,7 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
               ) : <span>{s.category}</span>}
               : {s.item}
               {live && (
-                <button className="cursor-pointer text-faint hover:text-bad" onClick={() => onPatch({ skills: d.skills.filter((_, k) => k !== j) })} aria-label={`Drop skill ${s.item}`}>×</button>
+                <button className="cursor-pointer text-faint hover:text-bad" disabled={saving} onClick={() => onPatch({ skills: d.skills.filter((_, k) => k !== j) })} aria-label={`Drop skill ${s.item}`}>×</button>
               )}
             </span>
           ))}
@@ -405,8 +424,10 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
         <>
           <p className="text-xs text-muted">Edit the wording until it’s exactly true, then approve. Only approved items are saved, tagged as coming from you.</p>
           <div className="flex flex-wrap gap-2">
-            <button className={btnSmPrimary} disabled={!d.text.trim()} onClick={onApprove}>Approve into profile</button>
-            <button className={btnSm} onClick={onReject}>Reject</button>
+            <button className={btnSmPrimary} disabled={saving || !d.text.trim()} onClick={onApprove}>
+              {saving ? <><Spinner /> Saving…</> : 'Approve into profile'}
+            </button>
+            <button className={btnSm} disabled={saving} onClick={onReject}>Reject</button>
           </div>
         </>
       )}

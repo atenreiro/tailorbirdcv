@@ -21,7 +21,9 @@ export function useKnowledge() {
     } catch (e) {
       const conflict = (e as { status?: number }).status === 409
       setError(conflict ? 'Your answers/preferences changed elsewhere since this page loaded. Reload to get the latest, then re-apply your edit.' : (e as Error).message)
-      if (conflict && window.confirm('Reload the latest answers/preferences now? Unsaved edits here will be discarded.')) void load()
+      // Reloading replaces the local copy (and its version); declining keeps the edits, and every
+      // later save is refused the same way, so a stale copy never overwrites the newer file.
+      if (conflict && window.confirm('Reload the latest answers/preferences now? Unsaved edits here will be discarded.')) void load().then(() => setError(null))
       return false
     }
   }

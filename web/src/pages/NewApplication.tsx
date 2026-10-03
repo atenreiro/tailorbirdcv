@@ -72,9 +72,9 @@ export default function NewApplication() {
           <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">New tailoring</h1>
           <p className="text-lg text-body">What role are we going after?</p>
         </div>
-        <div role="tablist" className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]">
+        <div role="group" aria-label="Job description source" className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]">
           {(['paste', 'url'] as const).map((m) => (
-            <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+            <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)}
               className={cx('h-[34px] cursor-pointer rounded-md px-3.5 font-medium transition-colors',
                 mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
               {m === 'paste' ? 'Paste the description' : 'Fetch from a URL'}

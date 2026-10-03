@@ -211,7 +211,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
     setMemo((m) => {
       const next = clone(m.review?.draft ?? app.tailored!)
       fn(next)
-      return { ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }
+      return { ...m, review: { ...m.review, draft: next, rev: (m.review?.rev ?? 0) + 1 } }
     })
 
   const lines = useMemo(() => linesOf(draft, p), [draft, p])
@@ -288,7 +288,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
     for (const i of open.filter((x) => x.action !== 'advice')) {
       if (findsTarget(next, i)) { applyIssue(next, i); decided[i.id] = 'accepted' }
     }
-    setMemo((m) => ({ ...m, review: { draft: next, rev: (m.review?.rev ?? 0) + 1 } }))
+    setMemo((m) => ({ ...m, review: { ...m.review, draft: next, rev: (m.review?.rev ?? 0) + 1 } }))
     setFocus(null)
     void saveDecisions(decided)
   }
@@ -351,6 +351,9 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
 
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
+      {memo.review?.notice && (
+        <p role="status" className="animate-rise rounded-lg bg-accent-soft px-4 py-3 text-[13px] text-accent text-pretty lg:col-span-2">{memo.review.notice}</p>
+      )}
       {/* ---------------------------------------------------------------- the sheet */}
       <article className={`${sheetCard} animate-rise flex min-w-0 flex-col gap-[18px] px-4 py-7 text-[14px] sm:px-12 sm:py-10`} style={SHEET_FONT}>
         {app.sent.length > 0 && (

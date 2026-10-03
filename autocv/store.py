@@ -16,8 +16,10 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import logging
 import os
 import re
+import shutil
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -26,6 +28,8 @@ from pathlib import Path
 
 from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
                      load_profile, load_tailored, load_yaml)
+
+log = logging.getLogger("autocv")
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "closed"]
@@ -57,8 +61,45 @@ class NeedsBuild(Exception):
     """The PDF is missing or out of date, so there's nothing trustworthy to freeze."""
 
 
+class AppNotFound(KeyError):
+    """No application with this id (or the id isn't a valid one)."""
+
+
+class CorruptApp(Exception):
+    """An application folder whose meta.json can't be read."""
+
+
+class RetiredIdReused(ValueError):
+    """A save would bring back an id that was deleted earlier (ids are never reused)."""
+
+
+def render_fingerprint(profile: MasterProfile, tailored: TailoredResume) -> str:
+    """Hash of everything the renderer takes from the profile for this draft (contact, the
+    chosen headline, each role's header, and the sub-roles/projects/education/extras it
+    includes). Claim text comes from the draft itself. Unrelated profile edits (new evidence
+    elsewhere, skills, synonyms) therefore don't make built files 'outdated'."""
+    def dump(get, key, exclude=None):
+        try:
+            return get(key).model_dump(exclude=exclude)
+        except Exception:  # noqa: BLE001 — a dangling reference simply contributes nothing
+            return None
+    parts = {
+        "contact": profile.contact.model_dump(),
+        "headline": dump(profile.headline, tailored.headline),
+        "roles": [dump(profile.role, r.role, {"achievements", "scope", "sub_roles"}) for r in tailored.experience],
+        "items": [dump(profile.lead_item, i) for i in
+                  [s.id for r in tailored.experience for s in r.sub_roles] + [p.id for p in tailored.projects]
+                  + list(tailored.education) + list(tailored.extras)],
+    }
+    return _digest(json.dumps(parts, sort_keys=True, default=str).encode("utf-8"))
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
 def file_version(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.exists() else "none"
+    return _digest(path.read_bytes()) if path.exists() else "none"
 
 
 def _write_json_atomic(path: Path, data: dict) -> None:
@@ -101,6 +142,22 @@ def next_id(prefix: str, taken: set[str]) -> str:
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+SLUG_MAX = 60  # per folder-name part, so long company/role names can't exceed file-name limits
+
+
+def _short_slug(text: str, fallback: str) -> str:
+    return slug(text or "")[:SLUG_MAX].strip("-") or fallback
+
+
+def _app_like(folder: Path) -> bool:
+    """Looks like an application folder (old flat layout or new), never a company folder."""
+    return any((folder / f).exists() for f in ("meta.json", "jd.md", "tailored.yaml"))
+
+
+def _reused(live: set[str], *retired: list[str]) -> list[str]:
+    return sorted(live & set().union(*map(set, retired)))
 
 
 # Applications live in applications/<company>/<yyyy-mm-dd>_<role>/. Their id (used in URLs and
@@ -154,13 +211,45 @@ class Store:
                 raise Conflict("Your profile changed since this page loaded (another tab or an approval). "
                                "Reload, then re-apply your edits.")
             profile = MasterProfile.model_validate(data)  # raises on invalid
-            if self.profile_path.exists():
-                old = self.profile()
-                live = set(profile.all_ids())
-                retired = set(old.retired_ids) | set(profile.retired_ids) | (set(old.all_ids()) - live)
-                profile.retired_ids = sorted(retired - live)
+            live = set(profile.all_ids())
+            old_ids, old_retired = self._previous_ids("profile", self.profile_path)
+            reused = _reused(live, old_retired, profile.retired_ids)
+            if reused:
+                raise RetiredIdReused(
+                    f"These ids belonged to evidence that was deleted earlier, and ids are never reused: "
+                    f"{', '.join(reused)}. Give the items new ids (or add them through evidence approval).")
+            profile.retired_ids = sorted(set(old_retired) | set(profile.retired_ids) | (old_ids - live))
             self._write_with_history("profile", self.profile_path, profile.model_dump(exclude_none=True), cause)
             return profile
+
+    def _previous_ids(self, kind: str, path: Path) -> tuple[set[str], list[str]]:
+        """(live ids, retired ids) of the file being replaced. A file that no longer validates
+        still contributes the ids it lists, so a broken file can be fixed without losing them."""
+        if not path.exists():
+            return set(), []
+        try:
+            if kind == "profile":
+                old = self.profile()
+                return set(old.all_ids()), list(old.retired_ids)
+            k = self.knowledge()
+            return {x.id for x in [*k.answers, *k.preferences]}, list(k.retired_ids)
+        except Exception:  # noqa: BLE001 — invalid or unparsable: salvage what we can
+            raw = _parse(path.read_bytes())
+            raw = raw if isinstance(raw, dict) else {}
+            retired = [str(i) for i in raw.get("retired_ids") or [] if isinstance(i, (str, int))]
+            ids: set[str] = set()
+
+            def walk(node):
+                if isinstance(node, dict):
+                    if isinstance(node.get("id"), str):
+                        ids.add(node["id"])
+                    for v in node.values():
+                        walk(v)
+                elif isinstance(node, list):
+                    for v in node:
+                        walk(v)
+            walk({k: v for k, v in raw.items() if k != "retired_ids"})
+            return ids, retired
 
     @contextmanager
     def editing_profile(self, cause: str = "edit"):
@@ -213,47 +302,81 @@ class Store:
         retired ids are merged so a deleted id can never come back and collide."""
         import yaml as _yaml
         data = _yaml.safe_load(self.history_text(kind, snapshot_id)) or {}
+        if not isinstance(data, dict):
+            raise ValueError("That version isn't a valid YAML mapping.")
         with _LOCK:
-            if kind == "profile":
-                current = self.profile()
-                data["retired_ids"] = sorted(set(data.get("retired_ids", [])) | set(current.retired_ids))
-                return self.save_profile(data, cause=f"restore {snapshot_id[:15]}")
-            current = self.knowledge()
-            data["retired_ids"] = sorted(set(data.get("retired_ids", [])) | set(current.retired_ids))
-            return self.save_knowledge(Knowledge.model_validate(data), cause=f"restore {snapshot_id[:15]}")
+            path = self.profile_path if kind == "profile" else self.knowledge_path
+            _, retired = self._previous_ids(kind, path)
+            data["retired_ids"] = sorted(set(data.get("retired_ids") or []) | set(retired))
+            try:
+                if kind == "profile":
+                    return self.save_profile(data, cause=f"restore {snapshot_id[:15]}")
+                return self.save_knowledge(Knowledge.model_validate(data), cause=f"restore {snapshot_id[:15]}")
+            except RetiredIdReused as e:
+                raise RetiredIdReused(f"That version can't be restored: it contains items deleted since. {e}") from e
 
     def base_tailored(self) -> TailoredResume | None:
         p = self.base_tailored_path
         return load_tailored(p) if p.exists() else None
 
     # -- applications ----------------------------------------------------------------
-    def app_path(self, app_id: str) -> Path:
-        app_id = self._legacy_ids().get(app_id, app_id)
+    MAX_ID = 300
+
+    def _resolve_id(self, app_id: str) -> Path:
+        """applications/<company>/<folder>/ for a current-layout id. Names must match the
+        directory entries exactly (no case aliases on case-insensitive disks), neither level may
+        be a symlink, and the folder must be an application (has meta.json)."""
         company, sep, rest = app_id.partition(APP_SEP)
         if not sep or not company or not rest:
-            raise KeyError(app_id)
-        root = self.apps_dir.resolve()
-        path = (self.apps_dir / company / rest).resolve()
-        # confined to exactly applications/<company>/<folder>/
-        if path.parent.parent != root or path.parent.name != company or path.name != rest or not path.is_dir():
-            raise KeyError(app_id)
-        return path
+            raise AppNotFound(app_id)
+        for part in (company, rest):
+            if part in (".", "..") or part.startswith(".") or "/" in part or "\\" in part or len(part) > 200:
+                raise AppNotFound(app_id)
+        try:
+            if company not in os.listdir(self.apps_dir):
+                raise AppNotFound(app_id)
+            cdir = self.apps_dir / company
+            if cdir.is_symlink() or not cdir.is_dir() or _app_like(cdir) or rest not in os.listdir(cdir):
+                raise AppNotFound(app_id)
+            path = cdir / rest
+            if path.is_symlink() or not path.is_dir() or not (path / "meta.json").is_file():
+                raise AppNotFound(app_id)
+        except OSError:
+            raise AppNotFound(app_id) from None
+        return path.resolve()
+
+    def app_path(self, app_id: str) -> Path:
+        if not isinstance(app_id, str) or not app_id or "\x00" in app_id or len(app_id) > self.MAX_ID:
+            raise AppNotFound(str(app_id)[:80])
+        mapped = self._legacy_ids().get(app_id)
+        if mapped and mapped != app_id:
+            try:
+                return self._resolve_id(mapped)
+            except AppNotFound:
+                pass  # an interrupted move: the folder is still at its own id
+        return self._resolve_id(app_id)
 
     def app_id_for(self, path: Path) -> str:
         """The id of an application folder (raises KeyError if it isn't one)."""
         rel = path.resolve().relative_to(self.apps_dir.resolve()).parts
         if len(rel) != 2:
-            raise KeyError(str(path))
+            raise AppNotFound(str(path))
         app_id = f"{rel[0]}{APP_SEP}{rel[1]}"
-        self.app_path(app_id)
+        self._resolve_id(app_id)
         return app_id
 
+    def canonical_id(self, app_id: str) -> str:
+        """The current id for `app_id` (which may be an old id from before a move or rename)."""
+        return self.app_id_for(self.app_path(app_id))
+
     def _new_folder(self, company: str, date: str, role: str) -> tuple[str, Path]:
-        """A free applications/<company>/<date>_<role>[-n]/ folder (not created)."""
-        c = slug(company) or "company"
-        base = f"{date}_{slug(role) or 'role'}"
+        """A free applications/<company>/<date>_<role>[-n]/ folder (not created). Ids that once
+        belonged to another application (moved or renamed away) are never handed out again."""
+        c = _short_slug(company, "company")
+        base = f"{date}_{_short_slug(role, 'role')}"
+        legacy = self._legacy_ids()
         rest, n = base, 2
-        while (self.apps_dir / c / rest).exists():
+        while (self.apps_dir / c / rest).exists() or f"{c}{APP_SEP}{rest}" in legacy:
             rest, n = f"{base}-{n}", n + 1
         return f"{c}{APP_SEP}{rest}", self.apps_dir / c / rest
 
@@ -266,42 +389,105 @@ class Store:
 
     def _legacy_ids(self) -> dict[str, str]:
         p = self.apps_dir / LEGACY_IDS
-        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        if not p.exists():
+            return {}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            log.warning("AutoCV: ignoring unreadable %s (%s); old application links may not resolve", p, e)
+            return {}
+        if not isinstance(data, dict):
+            log.warning("AutoCV: ignoring %s (not a JSON object)", p)
+            return {}
+        return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+    def _save_legacy_ids(self, mapping: dict[str, str]) -> None:
+        self.apps_dir.mkdir(parents=True, exist_ok=True)
+        _write_json_atomic(self.apps_dir / LEGACY_IDS, mapping)
+
+    _FLAT = re.compile(r"^(\d{4}-\d{2}-\d{2})_([a-z0-9-]+)_(.+)$")
 
     def migrate_layout(self) -> dict[str, str]:
         """Move applications from the old flat layout (applications/<date>_<company>_<role>/) to
         applications/<company>/<date>_<role>/, and point stored references at the new ids.
-        Idempotent; returns {old id: new id} for what it moved."""
+        Idempotent and incremental (each move is recorded as it happens, so an interrupted run
+        never orphans an id); a folder that can't be read is skipped with a warning.
+        Returns {old id: new id} for what it moved."""
         if not self.apps_dir.exists():
             return {}
         moved: dict[str, str] = {}
         with _LOCK:
             for old in sorted(self.apps_dir.iterdir()):
-                if not (old.is_dir() and (old / "meta.json").exists()):
-                    continue  # company folders (and anything else) are left alone
-                meta = json.loads((old / "meta.json").read_text(encoding="utf-8"))
-                m = re.match(r"\d{4}-\d{2}-\d{2}", old.name)
-                date = m.group(0) if m else (meta.get("created") or f"{dt.date.today():%Y-%m-%d}")[:10]
-                new_id, target = self._new_folder(meta.get("company") or "", date, meta.get("role") or "")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                old.rename(target)
-                moved[old.name] = new_id
-            if moved:
-                _write_json_atomic(self.apps_dir / LEGACY_IDS, {**self._legacy_ids(), **moved})
-                self._repoint_knowledge(moved)
-            self.drop_company_from_filenames()
-            self._close_legacy_statuses()
+                try:
+                    new_id = self._migrate_one(old)
+                except Exception as e:  # noqa: BLE001 — one bad folder must never block the rest
+                    log.warning("AutoCV: couldn't move application folder %s (%s); left as is", old.name, e)
+                    continue
+                if new_id:
+                    moved[old.name] = new_id
+            for step in (self.drop_company_from_filenames, self._close_legacy_statuses):
+                try:
+                    step()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("AutoCV: %s skipped (%s)", step.__name__.strip("_").replace("_", " "), e)
         return moved
 
+    def _migrate_one(self, old: Path) -> str | None:
+        if old.name.startswith(".") or old.is_symlink() or not old.is_dir():
+            return None
+        meta_path = old / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if not isinstance(meta, dict):
+                    raise ValueError("not a JSON object")
+            except (OSError, ValueError) as e:
+                log.warning("AutoCV: skipping %s: unreadable meta.json (%s)", old.name, e)
+                return None
+        else:
+            m = self._FLAT.match(old.name)
+            if not (m and _app_like(old)):
+                return None  # a company folder (or something else): left alone
+            # An old application without meta.json: rebuild it from the folder name.
+            meta = {"company": m.group(2).replace("-", " ").title(), "role": m.group(3).replace("-", " ").title(),
+                    "status": "composed" if (old / "tailored.yaml").exists()
+                    else "analyzed" if (old / "analysis.yaml").exists() else "draft",
+                    "created": f"{m.group(1)}T00:00:00"}
+            _write_json_atomic(meta_path, meta)
+        m = re.match(r"\d{4}-\d{2}-\d{2}", old.name)
+        date = m.group(0) if m else str(meta.get("created") or f"{dt.date.today():%Y-%m-%d}")[:10]
+        legacy = self._legacy_ids()
+        planned = legacy.get(old.name)  # an earlier, interrupted run already chose its new id
+        new_id = target = None
+        if planned and APP_SEP in planned:
+            c, _, rest = planned.partition(APP_SEP)
+            if not (self.apps_dir / c / rest).exists():
+                new_id, target = planned, self.apps_dir / c / rest
+        if target is None:
+            new_id, target = self._new_folder(str(meta.get("company") or ""), date, str(meta.get("role") or ""))
+        self._save_legacy_ids({**legacy, old.name: new_id})  # recorded before the move
+        target.parent.mkdir(parents=True, exist_ok=True)
+        old.rename(target)
+        try:
+            self._repoint_knowledge({old.name: new_id})
+        except Exception as e:  # noqa: BLE001 — the old id still resolves through the map
+            log.warning("AutoCV: couldn't update knowledge links for %s (%s)", old.name, e)
+        return new_id
+
     def _close_legacy_statuses(self) -> None:
-        """rejected/withdrawn statuses (before outcomes existed) → closed + outcome. Keeps the
-        original 'updated' time, which is when the application was closed."""
+        """rejected/withdrawn statuses (before outcomes existed) → closed + outcome, recording
+        the stage the outcome implies. Keeps the original 'updated' time, which is when the
+        application was closed."""
         for app in self.list_apps():
-            if app.get("status") in LEGACY_CLOSED:
+            if app.get("status") in LEGACY_CLOSED and not app.get("broken"):
                 path = self.app_path(app["id"]) / "meta.json"
                 meta = json.loads(path.read_text(encoding="utf-8"))
-                meta.update(status="closed", outcome=LEGACY_CLOSED[meta["status"]],
-                            closed_at=meta.get("closed_at") or meta.get("updated"))
+                outcome = LEGACY_CLOSED[meta["status"]]
+                closed_at = meta.get("closed_at") or meta.get("updated")
+                meta.update(status="closed", outcome=outcome, closed_at=closed_at)
+                stage = OUTCOME_REACHED.get(outcome)
+                if stage and stage not in meta.get("milestones", {}):
+                    meta["milestones"] = {**meta.get("milestones", {}), stage: closed_at}
                 _write_json_atomic(path, meta)
 
     def drop_company_from_filenames(self) -> list[Path]:
@@ -314,7 +500,7 @@ class Store:
         with _LOCK:
             for app in self.list_apps():
                 company = re.sub(r"[^A-Za-z0-9]+", "_", app.get("company") or "").strip("_")
-                if not company:
+                if not company or app.get("broken"):
                     continue
                 folder, stem = self.app_path(app["id"]), self.output_stem(app["id"])
                 for ext in (".docx", ".pdf"):
@@ -343,7 +529,6 @@ class Store:
     def delete_app(self, app_id: str) -> None:
         """Delete an application folder (job description, drafts, built files, sent copies).
         Remembered answers and style preferences are kept; they just stop linking to it."""
-        import shutil
         with _LOCK:
             path = self.app_path(app_id)
             canonical = self.app_id_for(path)
@@ -352,45 +537,79 @@ class Store:
             legacy = self._legacy_ids()
             gone = [old for old, new in legacy.items() if new == canonical]
             if gone:
-                _write_json_atomic(self.apps_dir / LEGACY_IDS, {k: v for k, v in legacy.items() if k not in gone})
-            self._repoint_knowledge({i: None for i in [canonical, *gone]})
+                self._save_legacy_ids({k: v for k, v in legacy.items() if k not in gone})
+            try:
+                self._repoint_knowledge({i: None for i in [canonical, *gone]})
+            except Exception as e:  # noqa: BLE001 — the folder is gone either way
+                log.warning("AutoCV: couldn't unlink knowledge from %s (%s)", canonical, e)
 
     def create_app(self, company: str, role: str, jd: str, url: str | None = None) -> str:
-        app_id, path = self._new_folder(company, f"{dt.date.today():%Y-%m-%d}", role)
-        path.mkdir(parents=True)
-        (path / "jd.md").write_text(jd, encoding="utf-8")
-        now = dt.datetime.now().isoformat(timespec="seconds")
-        self.save_meta(app_id, {"company": company, "role": role, "url": url, "status": "draft",
-                                "created": now, "updated": now})
-        return app_id
+        with _LOCK:
+            app_id, path = self._new_folder(company, f"{dt.date.today():%Y-%m-%d}", role)
+            path.mkdir(parents=True)
+            try:
+                (path / "jd.md").write_text(jd, encoding="utf-8")
+                now = dt.datetime.now().isoformat(timespec="seconds")
+                self._write_meta(path, {"company": company, "role": role, "url": url, "status": "draft",
+                                        "created": now, "updated": now})
+            except BaseException:
+                shutil.rmtree(path, ignore_errors=True)  # never leave a half-created folder behind
+                self._prune(path.parent)
+                raise
+            return app_id
 
     def rename_app(self, app_id: str, company: str, role: str) -> str:
-        """Move a folder created before the company/role were known to its readable place."""
+        """Move a folder created before the company/role were known to its readable place.
+        The old id keeps resolving (and is never handed to another application)."""
         with _LOCK:
             old = self.app_path(app_id)
-            want = f"{slug(company) or 'company'}{APP_SEP}{old.name[:10]}_{slug(role) or 'role'}"
-            if app_id == want or app_id.startswith(want + "-"):
+            app_id = self.app_id_for(old)
+            date = old.name[:10]
+            want = f"{_short_slug(company, 'company')}{APP_SEP}{date}_{_short_slug(role, 'role')}"
+            if re.fullmatch(re.escape(want) + r"(-\d+)?", app_id):
                 return app_id
-            new_id, target = self._new_folder(company, old.name[:10], role)
+            new_id, target = self._new_folder(company, date, role)
+            if target.resolve() == old:
+                return app_id
+            legacy = self._legacy_ids()
+            self._save_legacy_ids({**{k: (new_id if v == app_id else v) for k, v in legacy.items()}, app_id: new_id})
             target.parent.mkdir(parents=True, exist_ok=True)
             old.rename(target)
             self._prune(old.parent)
-            self._repoint_knowledge({app_id: new_id})
+            try:
+                self._repoint_knowledge({app_id: new_id})
+            except Exception as e:  # noqa: BLE001 — the old id still resolves through the map
+                log.warning("AutoCV: couldn't update knowledge links for %s (%s)", app_id, e)
             return new_id
 
     def meta(self, app_id: str) -> dict:
         path = self.app_path(app_id) / "meta.json"
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise CorruptApp(f"This application's meta.json can't be read ({e}). Fix or delete the application.") from e
+        if not isinstance(data, dict):
+            raise CorruptApp("This application's meta.json isn't a JSON object. Fix or delete the application.")
+        return data
 
-    def save_meta(self, app_id: str, meta: dict) -> dict:
+    @staticmethod
+    def _stamp_meta(meta: dict) -> dict:
         now = dt.datetime.now().isoformat(timespec="seconds")
         meta = {**meta, "updated": now}
         stage = meta.get("status") if meta.get("status") in MILESTONES else \
             OUTCOME_REACHED.get(meta.get("outcome")) if meta.get("status") == "closed" else None
         if stage and stage not in meta.get("milestones", {}):
             meta["milestones"] = {**meta.get("milestones", {}), stage: now}
-        _write_json_atomic(self.app_path(app_id) / "meta.json", meta)
         return meta
+
+    def _write_meta(self, folder: Path, meta: dict) -> dict:
+        meta = self._stamp_meta(meta)
+        _write_json_atomic(folder / "meta.json", meta)
+        return meta
+
+    def save_meta(self, app_id: str, meta: dict) -> dict:
+        with _LOCK:
+            return self._write_meta(self.app_path(app_id), meta)
 
     def update_meta(self, app_id: str, **changes) -> dict:
         with _LOCK:
@@ -412,6 +631,20 @@ class Store:
                 meta["closed_at"] = dt.datetime.now().isoformat(timespec="seconds")
             return self.save_meta(app_id, {**meta, "status": "closed", "outcome": outcome})
 
+    def applied_copy(self, app_id: str) -> dict | None:
+        """The sent copy frozen when the application was marked applied (oldest, if several)."""
+        applied = [c for c in self.sent_copies(app_id) if c.get("reason") == "applied"]
+        return applied[-1] if applied else None
+
+    def mark_applied(self, app_id: str) -> dict:
+        """Record the application as applied. The first time, freeze exactly what is being sent
+        (raises NeedsBuild if that isn't trustworthy); re-entering 'applied' later (after an
+        interview, a reopen…) never freezes another copy."""
+        with _LOCK:
+            if self.applied_copy(app_id) is None:
+                self.freeze(app_id, "applied")
+            return self.set_status(app_id, "applied")
+
     def advance_status(self, app_id: str, status: str) -> dict:
         """Pipeline steps only move the status forward, and never override a status
         the user set (applied, interview, offer…)."""
@@ -424,15 +657,19 @@ class Store:
     def reached(self, app_id: str) -> tuple[str | None, str | None]:
         """The furthest funnel stage this application reached, and when. Uses recorded
         milestones, falling back to evidence for applications from before they were
-        recorded: the current status, a frozen sent copy, or built files."""
+        recorded: the current status, how it was closed, the copy frozen when applying
+        (a manual "freeze a copy" isn't evidence of applying), or built files."""
         meta = self.meta(app_id)
         seen = dict(meta.get("milestones", {}))
         status = meta.get("status")
         if status in MILESTONES:
             seen.setdefault(status, meta.get("updated"))
-        sent = self.sent_copies(app_id)
-        if sent:
-            seen.setdefault("applied", sent[-1].get("created"))
+        applied = self.applied_copy(app_id)
+        if applied:
+            seen.setdefault("applied", applied.get("created"))
+        outcome = meta.get("outcome") if status == "closed" else LEGACY_CLOSED.get(status)
+        if outcome in OUTCOME_REACHED:
+            seen.setdefault(OUTCOME_REACHED[outcome], meta.get("closed_at") or meta.get("updated"))
         pdf = next((f for f in self.app_path(app_id).glob("*.pdf")), None)
         if pdf or meta.get("built_hash"):
             when = dt.datetime.fromtimestamp(pdf.stat().st_mtime).isoformat(timespec="seconds") if pdf else meta.get("updated")
@@ -444,29 +681,71 @@ class Store:
     def tailored_hash(self, app_id: str) -> str:
         return file_version(self.app_path(app_id) / "tailored.yaml")
 
+    def build_inputs(self, app_id: str) -> tuple[TailoredResume, str, MasterProfile, str]:
+        """What a build renders from: (draft, its hash, profile, its version), each parsed from
+        exactly the bytes that were hashed, so a save racing the build can't be mislabelled."""
+        import yaml
+        with _LOCK:
+            draft = self.app_path(app_id) / "tailored.yaml"
+            if not draft.exists():
+                raise FileNotFoundError("Nothing to build yet.")
+            t_bytes, p_bytes = draft.read_bytes(), self.profile_path.read_bytes()
+        tailored = TailoredResume.model_validate(yaml.safe_load(t_bytes.decode("utf-8")) or {})
+        profile = MasterProfile.model_validate(yaml.safe_load(p_bytes.decode("utf-8")) or {})
+        return tailored, _digest(t_bytes), profile, render_fingerprint(profile, tailored)
+
+    def record_build(self, app_id: str, built_hash: str, profile_version: str, pages: int | None) -> dict:
+        return self.update_meta(app_id, built_hash=built_hash, built_profile=profile_version, pages=pages)
+
     def clear_outputs(self, app_id: str) -> None:
         for f in self.app_path(app_id).iterdir():
             if f.suffix in (".docx", ".pdf"):
                 f.unlink()
 
     def outputs_stale(self, app_id: str) -> bool:
-        """Built files exist but the tailored resume changed after they were built."""
-        built = self.meta(app_id).get("built_hash")
-        return bool(self.files(app_id)) and built != self.tailored_hash(app_id)
+        """Built files exist but the tailored resume or the profile changed after they were built."""
+        if not self.files(app_id):
+            return False
+        meta = self.meta(app_id)
+        return meta.get("built_hash") != self.tailored_hash(app_id) or self._profile_moved_on(app_id, meta)
+
+    def _profile_moved_on(self, app_id: str, meta: dict) -> bool:
+        """True when something this application's resume prints from the profile changed since
+        the build. Builds from before fingerprints were recorded count as current (the freeze
+        gate still re-runs the fact-check against the current profile)."""
+        if not meta.get("built_profile"):
+            return False
+        try:
+            tailored = self.tailored(app_id)
+            return tailored is None or meta["built_profile"] != render_fingerprint(self.profile(), tailored)
+        except Exception:  # noqa: BLE001 — unreadable draft/profile: treat as outdated
+            return True
 
     def list_apps(self) -> list[dict]:
+        """Every application, newest first. One whose files can't be read is still listed
+        (flagged `broken`) so it can be deleted, and never breaks the list."""
         if not self.apps_dir.exists():
             return []
-        folders = [p for c in self.apps_dir.iterdir() if c.is_dir() for p in c.iterdir()
-                   if p.is_dir() and (p / "meta.json").exists()]
         apps = []
-        for path in sorted(folders, key=lambda p: (p.name, p.parent.name), reverse=True):  # newest first
-            app_id = f"{path.parent.name}{APP_SEP}{path.name}"
-            meta = self.meta(app_id)
-            analysis = self.analysis(app_id) or {}
-            apps.append({"id": app_id, **meta,
-                         "industry": analysis.get("industry"), "track": analysis.get("track"),
-                         "files": self.files(app_id)})
+        for c in self.apps_dir.iterdir():
+            if c.name.startswith(".") or c.is_symlink() or not c.is_dir() or _app_like(c):
+                continue
+            for p in c.iterdir():
+                if p.is_symlink() or not p.is_dir() or not (p / "meta.json").is_file():
+                    continue
+                app_id = f"{c.name}{APP_SEP}{p.name}"
+                try:
+                    meta = self.meta(app_id)
+                    analysis = self.analysis(app_id) or {}
+                    row = {"id": app_id, **meta, "industry": analysis.get("industry"), "track": analysis.get("track"),
+                           "files": self.files(app_id)}
+                except Exception as e:  # noqa: BLE001
+                    log.warning("AutoCV: application %s can't be read (%s)", app_id, e)
+                    row = {"id": app_id, "company": c.name, "role": p.name, "status": "draft",
+                           "created": p.name[:10], "files": [], "broken": str(e)}
+                apps.append(row)
+        apps.sort(key=lambda a: (str(a.get("created") or a["id"].partition(APP_SEP)[2][:10]),
+                                 a["id"].partition(APP_SEP)[2], a["id"]), reverse=True)  # newest first
         return apps
 
     def jd(self, app_id: str) -> str:
@@ -484,7 +763,8 @@ class Store:
         return load_tailored(p) if p.exists() else None
 
     def save_tailored(self, app_id: str, tailored: TailoredResume) -> None:
-        dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.yaml")
+        with _LOCK:  # so a freeze (which holds the lock) copies exactly the draft it verified
+            dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.yaml")
 
     def ai_tailored(self, app_id: str) -> TailoredResume | None:
         p = self.app_path(app_id) / "tailored.ai.yaml"
@@ -497,7 +777,19 @@ class Store:
     def critique(self, app_id: str) -> dict:
         p = self.app_path(app_id) / "review.yaml"
         data = load_yaml(p) if p.exists() else {}
-        return {"runs": data.get("runs", []), "decisions": data.get("decisions", {})}
+        return {"runs": data.get("runs", []), "decisions": data.get("decisions", {}),
+                "run_counter": int(data.get("run_counter") or 0)}
+
+    def next_critique_run(self, app_id: str) -> int:
+        """Reserve a review run number. Unique forever (issue ids rN-iM key the decisions, and
+        only the last few runs are kept), so it's a stored counter, never len(runs)."""
+        with _LOCK:
+            data = self.critique(app_id)
+            ids = [i.get("id", "") for run in data["runs"] for i in (run.get("result") or {}).get("issues", [])]
+            used = [int(m.group(1)) for x in [*ids, *data["decisions"]] if (m := re.match(r"r(\d+)-i", str(x)))]
+            data["run_counter"] = max([data["run_counter"], len(data["runs"]), *used]) + 1
+            dump_yaml(data, self.app_path(app_id) / "review.yaml")
+            return data["run_counter"]
 
     def add_critique_run(self, app_id: str, result: dict) -> dict:
         with _LOCK:
@@ -560,11 +852,14 @@ class Store:
             if base_version is not None and base_version != self.knowledge_version():
                 raise Conflict("Your answers/preferences changed since this page loaded. Reload, then retry.")
             knowledge = Knowledge.model_validate(knowledge.model_dump())
-            if self.knowledge_path.exists():
-                old = self.knowledge()
-                old_ids = {x.id for x in [*old.answers, *old.preferences]}
-                live = {x.id for x in [*knowledge.answers, *knowledge.preferences]}
-                knowledge.retired_ids = sorted((set(old.retired_ids) | set(knowledge.retired_ids) | (old_ids - live)) - live)
+            live = {x.id for x in [*knowledge.answers, *knowledge.preferences]}
+            old_ids, old_retired = self._previous_ids("knowledge", self.knowledge_path)
+            reused = _reused(live, old_retired, knowledge.retired_ids)
+            if reused:
+                raise RetiredIdReused(
+                    f"These answer/preference ids were deleted earlier, and ids are never reused: "
+                    f"{', '.join(reused)}.")
+            knowledge.retired_ids = sorted(set(old_retired) | set(knowledge.retired_ids) | (old_ids - live))
             self._write_with_history("knowledge", self.knowledge_path, knowledge.model_dump(exclude_none=True), cause)
             return knowledge
 
@@ -626,16 +921,29 @@ class Store:
         return self.app_path(app_id) / "sent"
 
     def freeze_problem(self, app_id: str) -> str | None:
+        """Why the built files can't be frozen as what was sent (None: they can). They must be
+        built from the current draft and the current profile, and that draft must pass the
+        fact-check against the current profile."""
+        from . import factcheck
         if not any(f.endswith(".pdf") for f in self.files(app_id)):
             return "There's no PDF for this application yet."
-        if self.outputs_stale(app_id):
+        meta = self.meta(app_id)
+        if meta.get("built_hash") != self.tailored_hash(app_id):
             return "The PDF is out of date: the resume changed after it was built."
+        if self._profile_moved_on(app_id, meta):
+            return "The PDF is out of date: your master profile changed after it was built. Rebuild it."
+        try:
+            tailored, profile = self.tailored(app_id), self.profile()
+            ok = tailored is not None and factcheck.check(profile, tailored).ok
+        except Exception:  # noqa: BLE001 — unreadable draft/profile: certainly not verified
+            ok = False
+        if not ok:
+            return "The resume doesn't pass the fact-check against your current profile. Fix it, then rebuild."
         return None
 
     def freeze(self, app_id: str, reason: str) -> dict:
         """Copy exactly what is being sent (PDF, DOCX, job description, resume data) into a
         dated, read-only snapshot. Never overwrites an earlier snapshot."""
-        import shutil
         with _LOCK:
             problem = self.freeze_problem(app_id)
             if problem:
@@ -654,7 +962,8 @@ class Store:
             meta = self.meta(app_id)
             record = {"id": dest.name, "created": dt.datetime.now().isoformat(timespec="seconds"), "reason": reason,
                       "company": meta.get("company"), "role": meta.get("role"), "pages": meta.get("pages"),
-                      "tailored_hash": self.tailored_hash(app_id), "files": copied}
+                      "tailored_hash": self.tailored_hash(app_id), "profile_version": meta.get("built_profile"),
+                      "files": copied}
             (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
             for f in dest.iterdir():
                 f.chmod(0o444)  # read-only: this is the record of what was sent
@@ -667,7 +976,13 @@ class Store:
         out = []
         for d in sorted(folder.iterdir(), reverse=True):
             if (d / "sent.json").exists():
-                out.append(json.loads((d / "sent.json").read_text(encoding="utf-8")))
+                try:
+                    record = json.loads((d / "sent.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError) as e:
+                    log.warning("AutoCV: unreadable sent copy %s (%s)", d, e)
+                    continue
+                if isinstance(record, dict):
+                    out.append(record)
         return out
 
     def sent_file(self, app_id: str, snapshot: str, name: str) -> Path:

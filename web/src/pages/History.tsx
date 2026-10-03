@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { api, type HistoryDiff, type HistoryEntry, type HistoryKind } from '../api'
 import { cx } from '../lib'
 import { ErrorNote, Spinner } from '../ui'
@@ -21,12 +21,20 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
   const load = (k: HistoryKind) =>
     api.history(k).then((list) => setListed({ kind: k, entries: list })).catch((e) => setError(e.message))
   useEffect(() => { void load(kind) }, [kind])
-  const switchKind = (k: HistoryKind) => { setKind(k); setOpen(null) }
+  // Only the latest "What changed" request may open its diff (responses can arrive out of order).
+  const diffSeq = useRef(0)
+  const switchKind = (k: HistoryKind) => { diffSeq.current++; setKind(k); setOpen(null) }
 
   async function toggle(id: string) {
+    const seq = ++diffSeq.current
     if (open?.id === id) { setOpen(null); return }
     setError(null)
-    try { setOpen(await api.historyDiff(kind, id)) } catch (e) { setError((e as Error).message) }
+    try {
+      const diff = await api.historyDiff(kind, id)
+      if (seq === diffSeq.current) setOpen(diff)
+    } catch (e) {
+      if (seq === diffSeq.current) setError((e as Error).message)
+    }
   }
 
   async function restore(e: HistoryEntry) {
@@ -38,6 +46,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
       await api.restore(kind, e.id)
       setFlash(`Restored the version from ${fmt(e.time)}`); setTimeout(() => setFlash(null), 3000)
       onRestored(kind)
+      diffSeq.current++
       setOpen(null)
       void load(kind)
     } catch (err) {
@@ -57,9 +66,9 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
           Every save keeps a snapshot of the version <em>before</em> it. Restoring one replaces the current file; your current
           version is snapshotted first, so a restore can be undone. Deleted evidence ids stay retired either way.
         </p>
-        <div className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]" role="tablist">
+        <div className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]" role="group" aria-label="Show the history of">
           {(['profile', 'knowledge'] as const).map((k) => (
-            <button key={k} role="tab" aria-selected={kind === k} onClick={() => switchKind(k)}
+            <button key={k} aria-pressed={kind === k} onClick={() => switchKind(k)}
               className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors', kind === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
               {k === 'profile' ? 'Master profile' : 'Answers & preferences'}
             </button>

@@ -200,3 +200,137 @@ def ingest(path: Path) -> tuple[dict, dict]:
             base[section].append({"id": item["id"]} if section == "projects" else item["id"])
 
     return profile, base
+
+
+# --------------------------------------------------------------------------- re-ingest (--force)
+
+
+def _items(profile: dict):
+    """(container, item) for every citable item with an id and text."""
+    for key in ("headlines", "summary_facts", "highlights", "projects", "education", "extras"):
+        for item in profile.get(key) or []:
+            yield key, item
+    for role in profile.get("roles") or []:
+        if role.get("scope"):
+            yield f"{role['id']}/scope", role["scope"]
+        for key in ("achievements", "sub_roles"):
+            for item in role.get(key) or []:
+                yield f"{role['id']}/{key}", item
+
+
+def _content(item: dict) -> tuple:
+    return item.get("label"), " ".join(str(item.get("text", "")).split())
+
+
+def _fresh(gen: str, taken: set[str]) -> str:
+    """A new id in the same family as `gen` (acme.a3 → acme.a4…, edu.bsc → edu.bsc-2…)."""
+    m = re.match(r"^(.*?)(\d+)$", gen)
+    stem, n = (m.group(1), int(m.group(2)) + 1) if m else (f"{gen}-", 2)
+    while f"{stem}{n}" in taken:
+        n += 1
+    return f"{stem}{n}"
+
+
+def _container_list(profile: dict, container: str) -> list | None:
+    if "/" not in container:
+        return profile.setdefault(container, [])
+    role_id, _, key = container.partition("/")
+    role = next((r for r in profile.get("roles") or [] if r["id"] == role_id), None)
+    if role is None:
+        return None
+    if key == "scope":
+        return None
+    return role.setdefault(key, [])
+
+
+def merge_reingest(old: dict, new: dict, base: dict) -> tuple[dict, dict]:
+    """Merge a fresh ingest of the base resume into the existing (curated) profile.
+
+    - An id keeps its meaning forever: an item whose text is unchanged keeps its old id
+      (even if it moved), a changed or new item gets an id never used before, and ids of
+      facts that changed or disappeared are retired (by save_profile).
+    - Evidence that didn't come from the resume (interview / prep guide, in_base_resume:
+      false), approved headlines, skills, synonyms and vocabulary are kept.
+    Returns (profile, base_tailored) with the base layout pointing at the final ids."""
+    old_roles = {r["id"]: r for r in old.get("roles") or []}
+    for role in new.get("roles") or []:
+        prev = old_roles.get(role["id"])
+        if prev and prev.get("employer") != role.get("employer"):
+            raise ValueError(f"role id {role['id']!r} now belongs to a different employer "
+                             f"({prev.get('employer')!r} → {role.get('employer')!r}); edit the profile by hand")
+
+    old_ids = {item["id"] for _, item in _items(old)} | set(old_roles)
+    blocked = old_ids | set(old.get("retired_ids") or [])
+    pools: dict[str, list[dict]] = {}
+    for container, item in _items(old):
+        pools.setdefault(container, []).append(item)
+
+    used: set[str] = {r["id"] for r in new.get("roles") or []}
+    rename: dict[str, str] = {}
+    for container, item in _items(new):
+        gen = item["id"]
+        match = next((o for o in pools.get(container, []) if _content(o) == _content(item) and o["id"] not in used), None)
+        if match:
+            final = match["id"]
+            for extra in ("tags", "note", "tracks"):  # curated details on an unchanged fact
+                if extra in match:
+                    item[extra] = match[extra]
+        elif gen not in blocked and gen not in used:
+            final = gen
+        else:
+            final = _fresh(gen, blocked | used)
+        used.add(final)
+        rename[gen] = final
+        item["id"] = final
+
+    # Keep what didn't come from the resume.
+    for container, item in _items(old):
+        if item["id"] in used:
+            continue
+        curated = container == "headlines" or item.get("source", "resume") != "resume" or \
+            item.get("in_base_resume") is False
+        if not curated:
+            continue  # a resume fact that changed or disappeared: retired
+        target = _container_list(new, container)
+        if target is None:
+            raise ValueError(f"{item['id']} ({item.get('source', 'resume')} evidence) can't be kept: its place "
+                             f"({container}) no longer exists in the re-ingested resume")
+        target.append(item)
+        used.add(item["id"])
+
+    groups = {g["category"]: g for g in new.setdefault("skills", [])}
+    for g in old.get("skills") or []:
+        if g["category"] in groups:
+            groups[g["category"]]["items"] += [i for i in g["items"] if i not in groups[g["category"]]["items"]]
+        else:
+            new["skills"].append(dict(g))
+    new["synonyms"] = [s for s in old.get("synonyms") or []] + \
+        [s for s in new.get("synonyms") or [] if s not in (old.get("synonyms") or [])]
+    new["vocabulary"] = list(dict.fromkeys([*(old.get("vocabulary") or []), *(new.get("vocabulary") or [])]))
+    new["retired_ids"] = list(old.get("retired_ids") or [])
+    return new, _remap_base(base, rename)
+
+
+def _remap_base(base: dict, rename: dict[str, str]) -> dict:
+    ids = lambda xs: [rename.get(x, x) for x in xs]  # noqa: E731
+
+    def claim(c):
+        if c:
+            c["sources"] = ids(c.get("sources") or [])
+        return c
+    if base.get("headline"):
+        base["headline"] = rename.get(base["headline"], base["headline"])
+    claim(base.get("summary"))
+    for c in base.get("highlights") or []:
+        claim(c)
+    for r in base.get("experience") or []:
+        claim(r.get("scope"))
+        for c in r.get("bullets") or []:
+            claim(c)
+        for s in r.get("sub_roles") or []:
+            s["id"] = rename.get(s["id"], s["id"])
+    for p in base.get("projects") or []:
+        p["id"] = rename.get(p["id"], p["id"])
+    for key in ("education", "extras"):
+        base[key] = ids(base.get(key) or [])
+    return base

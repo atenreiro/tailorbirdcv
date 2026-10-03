@@ -8,7 +8,7 @@ import { btn, btnPrimary, chip, label } from './v3'
 const card = 'rounded-xl border border-rule bg-sheet'
 const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
 
-export default function Export({ app, profile, setApp, go, run, memo }: StepProps) {
+export default function Export({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
   const pdf = app.files.find((f) => f.endsWith('.pdf'))
   const docx = app.files.find((f) => f.endsWith('.docx'))
   const pages = app.build?.pages ?? app.meta.pages
@@ -37,11 +37,29 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
       }
     }, false)
 
+  // The AI proposes a shorter version; it opens in Review as unsaved edits, and nothing is saved
+  // until you Save & check there.
   const trim = () =>
     run('Trimming to 2 pages', [
       'Dropping the least relevant bullets, oldest roles first…',
       'Re-running the fact-check…',
-    ], async () => setApp(await api.trim(app.id)))
+    ], async () => {
+      const { trim_proposal: proposal, ...next } = await api.trim(app.id)
+      setApp(next)
+      if (proposal === undefined) return  // an older server saved the trim itself
+      if (!proposal) {
+        throw new Error('The AI couldn’t find anything to cut without changing the facts. Trim it yourself in Review: remove the least relevant lines, then rebuild.')
+      }
+      const before = app.length ? `~${app.length.lines}` : 'the current length'
+      setMemo((m) => ({
+        ...m,
+        review: {
+          draft: proposal.tailored, rev: (m.review?.rev ?? 0) + 1,
+          notice: `AI trim suggestions — review the changes, then Save & check. Estimated ${before} → ~${proposal.lines} of ${proposal.budget} lines; edited lines are marked with a dot. Nothing is saved until you save, and Discard keeps the current version.`,
+        },
+      }))
+      go('review')
+    })
 
   return (
     <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[320px_minmax(0,1fr)]">

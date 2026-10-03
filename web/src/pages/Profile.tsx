@@ -103,7 +103,10 @@ export default function Profile() {
   const [query, setQuery] = useState('')
   const [yaml, setYaml] = useState('')
   const [savedYaml, setSavedYaml] = useState('')
-  const [version, setVersion] = useState('')
+  const [version, setVersion] = useState('')  // of the profile the form edits
+  // Of the file the YAML editor was loaded from: a YAML save is checked against this, so text
+  // loaded before an external change can never overwrite it (the save gets a 409 instead).
+  const [yamlVersion, setYamlVersion] = useState('')
   const [historyCount, setHistoryCount] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,11 +120,19 @@ export default function Profile() {
       .catch((e) => setError(e.message))
   const countHistory = () => api.history('profile').then((h) => setHistoryCount(h.length)).catch(() => setHistoryCount(null))
   useEffect(() => { void load(); void countHistory() }, [])
+  // Replaces the YAML editor's content (and any edits in it) with the file on disk.
+  const loadYaml = () =>
+    api.profileYaml().then((r) => { setYaml(r.yaml); setSavedYaml(r.yaml); setYamlVersion(r.version) }).catch((e) => setError(e.message))
   const yamlDirty = yaml !== savedYaml
   useEffect(() => {
     // Reload on entering the tab, unless there are YAML edits pending from an earlier visit.
-    if (tab === 'yaml' && !yamlDirty) api.profileYaml().then((r) => { setYaml(r.yaml); setSavedYaml(r.yaml); setVersion(r.version) }).catch((e) => setError(e.message))
+    if (tab === 'yaml' && !yamlDirty) void loadYaml()
   }, [tab, yamlDirty])
+  /** The latest profile from disk, for the form and the YAML editor alike (discarding edits in both). */
+  const reloadAll = async () => {
+    await load()
+    if (tab === 'yaml' || yaml !== '') await loadYaml()
+  }
   const profileDirty = !!p && JSON.stringify(p) !== JSON.stringify(saved)
   useEffect(() => { setUnsaved('profile', profileDirty || yamlDirty) }, [profileDirty, yamlDirty])
   useEffect(() => () => setUnsaved('profile', false), [])
@@ -147,8 +158,8 @@ export default function Profile() {
     setBusy(true); setError(null)
     try {
       if (yamlDirty) {
-        const r = await api.saveProfileYaml(yaml, version)
-        setYaml(r.yaml); setSavedYaml(r.yaml)
+        const r = await api.saveProfileYaml(yaml, yamlVersion)
+        setYaml(r.yaml); setSavedYaml(r.yaml); setYamlVersion(r.version)
         await load()
       } else if (profileDirty) {
         const r = await api.saveProfile(p!, version)
@@ -241,7 +252,9 @@ export default function Profile() {
           {conflict && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-warn">
               Your profile changed elsewhere (another tab, or evidence approved during a tailoring).
-              <button className="btn py-1" onClick={() => { if (!dirty || window.confirm('Reload and discard your unsaved edits here?')) void load() }}>Reload latest</button>
+              <button className="btn py-1" onClick={() => {
+              if (!(profileDirty || yamlDirty) || window.confirm('Reload the latest profile and discard your unsaved profile and YAML edits here?')) void reloadAll().then(() => setError(null))
+            }}>Reload latest</button>
             </div>
           )}
           {noMatches && (
@@ -411,7 +424,7 @@ export default function Profile() {
           {view === 'prefs' && k && <PreferencesPanel k={k} setK={kn.setK} />}
           {view === 'history' && (
             <HistoryPanel hasUnsaved={dirty}
-              onRestored={(kind) => { if (kind === 'profile') { void load(); void countHistory() } else void kn.load() }} />
+              onRestored={(kind) => { if (kind === 'profile') { void reloadAll(); void countHistory() } else void kn.load() }} />
           )}
 
           {view === 'yaml' && (

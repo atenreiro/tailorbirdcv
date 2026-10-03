@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -149,11 +150,33 @@ JOB DESCRIPTION:
     known, known_k = set(ids), set(kids)
     for req in result.get("requirements", []):
         req["evidence"] = [e for e in req.get("evidence", []) if e in known]
+    _number_questions(result.get("questions", []))
     for q in result.get("questions", []):
         if q.get("prefill_from") not in known_k:
             q["prefill_from"] = ""
     result["known_gaps"] = [g for g in result.get("known_gaps", []) if g.get("knowledge_id") in known_k]
     return result
+
+
+def _number_questions(questions: list[dict]) -> None:
+    """Question ids are q1, q2… only. Other prefixes mean something to the app ("kg-<id>"
+    reopens a remembered answer and replaces it, "hm-" is a review question), so a job
+    description must never be able to make the model emit them. Bad or duplicate ids are
+    renumbered."""
+    taken: set[str] = set()
+    bad = []
+    for q in questions:
+        qid = q.get("id")
+        if isinstance(qid, str) and re.fullmatch(r"q\d{1,4}", qid) and qid not in taken:
+            taken.add(qid)
+        else:
+            bad.append(q)
+    n = 1
+    for q in bad:
+        while f"q{n}" in taken:
+            n += 1
+        q["id"] = f"q{n}"
+        taken.add(q["id"])
 
 
 # --------------------------------------------------------------------------- gap answers → evidence
@@ -198,6 +221,18 @@ ANSWERS:
     schema = proposals_schema([r.id for r in profile.roles], [g.category for g in profile.skills] or ["Other"])
     result = await engine.complete(SYSTEM, prompt, schema)
     return result.get("proposals", [])
+
+
+def find_evidence(profile: MasterProfile, target: str, text: str) -> str | None:
+    """The id of evidence with exactly this text already approved for `target` (a role id,
+    or "general" for summary facts), if any."""
+    want = " ".join(text.split())
+    if target == "general":
+        pool = profile.summary_facts
+    else:
+        role = next((r for r in profile.roles if r.id == target), None)
+        pool = role.achievements if role else []
+    return next((e.id for e in pool if " ".join(e.text.split()) == want), None)
 
 
 def add_evidence(profile: MasterProfile, target: str, text: str,

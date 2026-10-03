@@ -262,9 +262,15 @@ def test_trim_endpoint_shortens_the_current_resume(env):
     app_id = composed_app(client)
     t = client.get(f"/api/applications/{app_id}").json()["tailored"]
     client.put(f"/api/applications/{app_id}/tailored", json={**t, "experience": long_tailored()["experience"]})
-    before = client.get(f"/api/applications/{app_id}").json()["length"]["lines"]
-    after = client.post(f"/api/applications/{app_id}/trim").json()["length"]["lines"]
-    assert after < before
+    before = client.get(f"/api/applications/{app_id}").json()
+    data = client.post(f"/api/applications/{app_id}/trim").json()
+    # a proposal only: the saved draft is unchanged until the user saves it (PUT /tailored)
+    assert data["tailored"] == before["tailored"] and data["length"]["lines"] == before["length"]["lines"]
+    proposal = data["trim_proposal"]
+    assert proposal["lines"] < before["length"]["lines"] and proposal["trim_rounds"] == 1
+    assert proposal["budget"] == before["length"]["budget"]
+    saved = client.put(f"/api/applications/{app_id}/tailored", json=proposal["tailored"]).json()
+    assert saved["length"]["lines"] == proposal["lines"] and saved["report"]["ok"]
 
 
 

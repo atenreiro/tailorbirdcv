@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Application, type Outcome, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
-import { confirmLeave, setUnsaved } from '../unsaved'
-import { changeStatus } from '../status'
+import { NO_GUARD, setUnsaved } from '../unsaved'
+import { changeStatus, sentAsApplied } from '../status'
 import { cx, fmtDate, useTitle } from '../lib'
 import { ErrorNote, Spinner, StatusSelect } from '../ui'
 import Brief from './steps/Brief'
@@ -11,8 +11,6 @@ import Gaps from './steps/Gaps'
 import Review from './steps/Review'
 import { openIssues } from './steps/critique'
 import { gapQuestions, openGaps, type Draft } from './steps/gapState'
-
-export type { Draft }
 
 const STEPS = [
   { key: 'brief', label: 'Brief' },
@@ -25,7 +23,8 @@ const isStep = (s: string | null): s is Step => STEPS.some((x) => x.key === s)
 
 /** Work in progress that must survive switching steps (each step unmounts when hidden). */
 interface StepMemo {
-  review: { draft: Tailored; rev: number } | null  // unsaved Review edits
+  // Unsaved Review edits; `notice` explains where they came from (e.g. an AI trim proposal).
+  review: { draft: Tailored; rev: number; notice?: string } | null
   gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
   gapFocus: string | null  // the gap question open in Gaps (Brief and Review can point at one)
 }
@@ -93,9 +92,12 @@ export default function Workspace() {
 
   const setMemo = useCallback((fn: (m: StepMemo) => StepMemo) => setMemoState(fn), [])
 
-  // Unsaved Review edits guard navigation away from the workspace and closing the tab.
+  // Unsaved Review edits, and AI evidence proposals awaiting approval (or being reworded), guard
+  // navigation away from the workspace and closing the tab: both live only in this page's memory.
+  const pendingProposals = !!memo.gaps?.proposals.some((d) => d.state === 'pending')
   useEffect(() => { setUnsaved('review', !!memo.review) }, [memo.review])
-  useEffect(() => () => setUnsaved('review', false), [])
+  useEffect(() => { setUnsaved('proposals', pendingProposals) }, [pendingProposals])
+  useEffect(() => () => { setUnsaved('review', false); setUnsaved('proposals', false) }, [])
 
   // A new analysis renumbers the gap questions: re-seed the Gaps step from the server.
   const questionsKey = useMemo(() => JSON.stringify(app?.analysis?.questions ?? []), [app?.analysis])
@@ -121,6 +123,7 @@ export default function Workspace() {
 
   useEffect(() => {
     if (app?.id === id) return  // already loaded (e.g. after a folder rename)
+    if (app) setMemoState({ review: null, gaps: null, gapFocus: null })  // another application: drop the old one's work
     const want = params.get('step')  // e.g. /a/<id>?step=review from the Applications list
     Promise.all([api.get(id), api.profile()])
       .then(([a, p]) => {
@@ -147,7 +150,7 @@ export default function Workspace() {
     ], async () => {
       const next = await api.analyze(app.id)
       setApp(next)
-      if (next.id !== app.id) nav(`/a/${next.id}`, { replace: true })
+      if (next.id !== app.id) nav(`/a/${next.id}`, { replace: true, state: NO_GUARD })
     })
   }, [app, params, setParams, run, nav, setApp])
 
@@ -159,12 +162,16 @@ export default function Workspace() {
   const notes = stepNotes(app, memo)
 
   async function setStatus(status: string, outcome?: Outcome) {
+    const alreadySent = sentAsApplied(app!.sent)
+    if (status === 'applied' && memo.review && !alreadySent && !window.confirm(
+      'You have unsaved Review edits. Marking this applied freezes the last saved version as the copy you sent, without these edits.\n\n'
+      + 'Cancel, then Save & check in Review (and rebuild) to send the edited version. Mark applied anyway?')) return
     setError(null)
     try {
-      const r = await changeStatus(app!.id, status, (on) => setWorking(on ? {
+      const r = await changeStatus(app!.id, status, { alreadySent, outcome, onBuilding: (on) => setWorking(on ? {
         title: 'Building & freezing the copy you send', ai: false,
         lines: ['Rendering your resume…', 'Converting to PDF through Microsoft Word…', 'Saving a read-only sent copy…'],
-      } : null), outcome)
+      } : null) })
       if (!r) return
       // reload: applying freezes a sent copy, which the status response doesn't include
       setApp('app' in r ? r.app : await api.get(app!.id))
@@ -179,7 +186,7 @@ export default function Workspace() {
     <div className="flex flex-col gap-6">
       <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <div className="flex min-w-0 flex-col gap-2">
-          <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="self-start text-[13px] text-muted hover:text-accent">← Applications</Link>
+          <Link to="/" className="self-start text-[13px] text-muted hover:text-accent">← Applications</Link>
           <h1 className="font-display text-[44px] leading-[0.92] tracking-[-0.02em] text-ink [overflow-wrap:anywhere] sm:text-[56px]">{app.meta.company}</h1>
           <p className="text-[17px] text-body">{app.meta.role}</p>
         </div>

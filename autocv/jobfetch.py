@@ -65,13 +65,41 @@ def _resolve(host: str, port: int | None) -> list[str]:
     return [info[4][0].split("%")[0] for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)]
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")         # well-known NAT64 prefix: IPv4 in the last 32 bits
+_NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")  # local-use NAT64 (RFC 8215): never a public target
+_COMPAT = ipaddress.ip_network("::/96")                # deprecated IPv4-compatible ::a.b.c.d
+
+
+def _embedded_ipv4(addr: ipaddress.IPv6Address) -> list[ipaddress.IPv4Address]:
+    """IPv4 addresses an IPv6 address can carry to the network (translation/tunnel formats)."""
+    out = []
+    if addr.ipv4_mapped:
+        out.append(addr.ipv4_mapped)
+    if addr in _NAT64 or addr in _COMPAT:
+        out.append(ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF))
+    if addr.sixtofour:
+        out.append(addr.sixtofour)
+    if addr.teredo:
+        out.extend(addr.teredo)  # (server, client)
+    return out
+
+
 def check_addr(ip: str, port: int | None = None) -> None:
-    """Raise BlockedURL unless `ip` is a public unicast address. (`port` is for tests.)"""
+    """Raise BlockedURL unless `ip` is a public unicast address, including any IPv4 address
+    embedded in an IPv6 one (mapped, NAT64, IPv4-compatible, 6to4, Teredo). (`port` is for tests.)"""
+    blocked = BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
     addr = ipaddress.ip_address(ip)
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-        addr = addr.ipv4_mapped
-    if not addr.is_global or addr.is_multicast:
-        raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
+    candidates: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = [addr]
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr in _NAT64_LOCAL:
+            raise blocked
+        embedded = _embedded_ipv4(addr)
+        # A translated/tunnelled address is judged by the IPv4 address it reaches.
+        candidates = embedded or [addr]
+    for a in candidates:
+        if not a.is_global or a.is_multicast or a.is_unspecified or a.is_loopback or a.is_link_local \
+                or a.is_reserved or a.is_private:
+            raise blocked
 
 
 async def check_public_url(url: str) -> None:
@@ -342,6 +370,33 @@ _VISIBLE_TEXT_JS = """() => {
 }"""
 
 
+class TooLarge(FetchError):
+    """A response over MAX_BYTES."""
+
+
+async def _capped_request(client: httpx.AsyncClient, method: str, url: str, headers: dict,
+                          body: bytes | None) -> tuple[httpx.Response, bytes]:
+    """Perform a request for the headless browser, streaming the body and giving up past
+    MAX_BYTES (a redirect's body is never read)."""
+    request = client.build_request(method, url, headers=headers, content=body)
+    resp = await client.send(request, stream=True)
+    try:
+        if resp.status_code in (301, 302, 303, 307, 308) and resp.headers.get("location"):
+            return resp, b""
+        declared = resp.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_BYTES:
+            raise TooLarge("That page is too large.")
+        chunks, size = [], 0
+        async for chunk in resp.aiter_bytes():
+            size += len(chunk)
+            if size > MAX_BYTES:
+                raise TooLarge("That page is too large.")
+            chunks.append(chunk)
+        return resp, b"".join(chunks)
+    finally:
+        await resp.aclose()
+
+
 @dataclass
 class Rendered:
     html: str
@@ -379,7 +434,9 @@ async def render_page(url: str) -> Rendered:
         for _ in range(MAX_REDIRECTS + 1):
             try:
                 await check_public_url(target)
-                resp = await client.request(method, target, headers=headers, content=body)
+                resp, content = await _capped_request(client, method, target, headers, body)
+            except TooLarge:
+                return await route.abort()
             except FetchError:
                 blocked.append(target)
                 return await route.abort("blockedbyclient")
@@ -396,7 +453,7 @@ async def render_page(url: str) -> Rendered:
                 if k.lower() in drop_response:
                     continue
                 out_headers[k] = f"{out_headers[k]}\n{v}" if k in out_headers and k.lower() == "set-cookie" else v
-            return await route.fulfill(status=resp.status_code, headers=out_headers, body=resp.content)
+            return await route.fulfill(status=resp.status_code, headers=out_headers, body=content)
         blocked.append(target)
         return await route.abort("blockedbyclient")
 

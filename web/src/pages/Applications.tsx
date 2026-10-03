@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type Application, type AppSummary, type Outcome, type ScoreKey } from '../api'
-import { cx, OUTCOME_GROUPS, OUTCOMES, useTitle } from '../lib'
+import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, useTitle } from '../lib'
 import { ErrorNote, Spinner, StatusPill, StatusSelect } from '../ui'
-import { changeStatus } from '../status'
+import { changeStatus, sentAsApplied } from '../status'
+import { setPendingSave } from '../unsaved'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
 type View = 'board' | 'table'
@@ -16,7 +17,7 @@ const STAGE_TITLE = Object.fromEntries(COLS) as Record<Stage, string>
 const LANE_LIMIT = 5
 
 type Tone = 'warn' | 'act' | 'ok' | 'mute'
-type Kind = 'brief' | 'gaps' | 'review' | 'rebuild' | 'build' | 'critique' | 'apply' | 'delete'
+type Kind = 'brief' | 'gaps' | 'review' | 'rebuild' | 'build' | 'critique' | 'apply' | 'status' | 'delete'
 interface Next { text: string; short?: string; tone: Tone; cta?: string; kind?: Kind }
 // text colour, dot colour, soft background
 const TONE: Record<Tone, [string, string, string]> = {
@@ -111,12 +112,22 @@ const BUSY_TEXT: Partial<Record<Kind, string>> = {
   rebuild: 'Rebuilding the PDF and DOCX from the current resume (Word opens briefly)…',
   build: 'Building the PDF and DOCX (Word opens briefly)…',
   critique: 'Reading the resume as the hiring manager. This takes about a minute…',
-  apply: 'Building a fresh PDF and freezing the copy you’re sending…',
+  apply: 'Building a fresh PDF and freezing the copy you’re sending…',  // only while marking applied runs a build
+  status: 'Saving…',
 }
 
+const VIEW_KEY = 'autocv.view'
 function savedView(): View {
-  try { return localStorage.getItem('acv3.view') === 'table' ? 'table' : 'board' } catch { return 'board' }
+  try {
+    const old = localStorage.getItem('acv3.view')  // the key's earlier name: migrate it once
+    if (old !== null) {
+      if (localStorage.getItem(VIEW_KEY) === null) localStorage.setItem(VIEW_KEY, old)
+      localStorage.removeItem('acv3.view')
+    }
+    return localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'board'
+  } catch { return 'board' }
 }
+const noModifier = (e: { ctrlKey: boolean; metaKey: boolean; altKey: boolean }) => !e.ctrlKey && !e.metaKey && !e.altKey
 
 export default function Applications() {
   useTitle(['Applications'])
@@ -130,20 +141,49 @@ export default function Applications() {
   const [open, setOpen] = useState(false)
   const [fetched, setFetched] = useState<Application | null>(null)
   const [busy, setBusy] = useState<{ id: string; kind: Kind } | null>(null)
-  const [draft, setDraft] = useState<{ id: string; text: string } | null>(null)  // unsaved notes
+  const [draft, setDraft] = useState<{ id: string; text: string } | null>(null)  // notes as typed (saved debounced)
   const [drag, setDrag] = useState<string | null>(null)
   const [over, setOver] = useState<Stage | null>(null)
   const [expanded, setExpanded] = useState<Partial<Record<Stage, boolean>>>({})
+  const [asking, setAsking] = useState<string | null>(null)  // the application whose closing outcome we're asking for
+  const [confirming, setConfirming] = useState(false)  // the delete confirmation is showing
+  // What the panel keeps showing while it slides out after a delete (the application is gone).
+  const [ghost, setGhost] = useState<{ a: AppSummary; detail: Application | null } | null>(null)
   const closeBtn = useRef<HTMLButtonElement>(null)
+  const deleteBtn = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
   const search = useRef<HTMLInputElement>(null)
-  const opener = useRef<HTMLElement | null>(null)
-  const [asking, setAsking] = useState<string | null>(null)  // the application whose closing outcome we're asking for  // the card/row that opened the panel; focus returns there
+  const opener = useRef<HTMLElement | null>(null)  // the card/row that opened the panel; focus returns there
 
   const reload = useCallback(() => api.applications().then(setApps).catch((e) => setError(e.message)), [])
   useEffect(() => { void reload() }, [reload])
 
-  const setView = (v: View) => { try { localStorage.setItem('acv3.view', v) } catch { /* private mode */ } setViewState(v) }
+  const setView = (v: View) => { try { localStorage.setItem(VIEW_KEY, v) } catch { /* private mode */ } setViewState(v) }
+
+  // Notes save while typing (debounced), and right away on blur, close or switching cards.
+  // Saves run one after another so an older one never lands last.
+  const notesTimer = useRef<number | undefined>(undefined)
+  const pendingNotes = useRef<{ id: string; text: string } | null>(null)
+  const notesChain = useRef<Promise<unknown>>(Promise.resolve())
+  const flushNotes = useCallback(() => {
+    window.clearTimeout(notesTimer.current)
+    const p = pendingNotes.current
+    if (!p) return
+    pendingNotes.current = null
+    const tail = notesChain.current = notesChain.current
+      .then(() => api.patch(p.id, { notes: p.text }))
+      .then(() => setApps((prev) => prev?.map((x) => (x.id === p.id ? { ...x, notes: p.text } : x)) ?? prev))
+      .catch((e) => setError((e as Error).message))
+      .finally(() => { if (notesChain.current === tail && !pendingNotes.current) setPendingSave('notes', false) })
+  }, [])
+  const typeNotes = (id: string, text: string) => {
+    setDraft({ id, text })
+    pendingNotes.current = { id, text }
+    setPendingSave('notes', true)  // closing the tab mid-save asks first
+    window.clearTimeout(notesTimer.current)
+    notesTimer.current = window.setTimeout(flushNotes, 800)
+  }
+  useEffect(() => () => flushNotes(), [flushNotes])  // leaving the page saves what's typed
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -165,47 +205,72 @@ export default function Applications() {
     return () => { live = false }
   }, [sel, apps])
   const detail = fetched?.id === sel ? fetched : null
-  const notes = draft?.id === sel ? draft.text : null
+  const shown = a ?? ghost?.a ?? null
+  const shownDetail = a ? detail : ghost?.detail ?? null
 
-  // On open, focus Close, or the first outcome when we're asking how an application ended.
+  // On open (and after switching cards, which remounts the sheet), focus Close, or the first
+  // outcome when we're asking how an application ended. Cancelling the delete confirmation
+  // returns focus to its trigger.
+  const wasConfirming = useRef(false)
   useEffect(() => {
-    if (!open) return
+    const was = wasConfirming.current
+    wasConfirming.current = confirming
+    if (!open || confirming) return  // the confirmation focuses its own Cancel
     const first = asking ? panel.current?.querySelector<HTMLElement>('[data-outcome]') : null
-    ;(first ?? closeBtn.current)?.focus({ preventScroll: true })
-  }, [open, asking])
+    ;(first ?? (was ? deleteBtn.current : null) ?? closeBtn.current)?.focus({ preventScroll: true })
+  }, [open, asking, sel, confirming])
 
   const show = useCallback((id: string, from?: HTMLElement | null) => {
+    flushNotes()
     opener.current = from ?? document.querySelector<HTMLElement>(`[data-app-id="${CSS.escape(id)}"]`)
     setSel(id)
     setOpen(true)
-  }, [])
-  // Close and hand focus back to whatever opened the panel (or the search box if it's gone).
-  const close = useCallback(() => {
-    setOpen(false)
     setAsking(null)
+    setConfirming(false)
+    setGhost(null)
+  }, [flushNotes])
+  // Close and hand focus back to whatever opened the panel (or the search box if it's gone).
+  // After a delete the content is kept as it was while the panel slides out.
+  const close = useCallback((keepContent = false) => {
+    flushNotes()
+    setOpen(false)
+    if (!keepContent) { setAsking(null); setConfirming(false) }
     const back = opener.current
     setTimeout(() => (back?.isConnected ? back : search.current)?.focus({ preventScroll: true }), 0)
-  }, [])
+  }, [flushNotes])
 
-  // ↑ ↓ (or j k) move and open the sheet; Enter opens the workspace; Esc closes; Tab stays in the open panel.
+  // Esc cancels the delete confirmation or the outcome picker first, then closes; Tab stays in the
+  // open panel. ↑ ↓ (or j k) move between applications and open the sheet, but only while a card
+  // or row is focused or the panel is open (never hijacking page scroll). Enter opens the workspace.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return  // already handled (e.g. Enter on a card just opened the panel)
       const active = document.activeElement as HTMLElement | null
-      if (e.key === 'Escape') { if (open) close(); return }
+      if (e.key === 'Escape') {
+        if (!open) return
+        e.preventDefault()
+        if (confirming) setConfirming(false)
+        else if (asking) setAsking(null)
+        else close()
+        return
+      }
       if (e.key === 'Tab' && open && panel.current) { trapFocus(e, panel.current); return }
-      if (/INPUT|TEXTAREA|SELECT/.test(active?.tagName ?? '')) return
+      if (!noModifier(e) || /INPUT|TEXTAREA|SELECT/.test(active?.tagName ?? '')) return
+      const inPanel = open && !!active && !!panel.current?.contains(active)
       // Enter on another control inside the panel (a link, the action button) keeps its own meaning.
-      const ownEnter = !!active && active !== closeBtn.current && /^(BUTTON|A)$/.test(active.tagName) && !!panel.current?.contains(active)
+      const ownEnter = !!active && active !== closeBtn.current && /^(BUTTON|A)$/.test(active.tagName) && inPanel
       if (e.key === 'Enter' && open && sel && !ownEnter) { e.preventDefault(); nav(`/a/${sel}`); return }
       if (!['ArrowDown', 'ArrowUp', 'j', 'k'].includes(e.key) || !visible.length) return
+      const card = open ? null : active?.closest<HTMLElement>('[data-app-id]')
+      if (!inPanel && !card) return
       e.preventDefault()
-      const i = visible.findIndex((x) => x.id === sel)
+      const i = visible.findIndex((x) => x.id === (card ? card.dataset.appId : sel))
       const d = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
       show(visible[Math.max(0, Math.min(visible.length - 1, i < 0 ? 0 : i + d))].id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [visible, sel, open, nav, show, close])
+  }, [visible, sel, open, asking, confirming, nav, show, close])
 
   /** Runs an action for one application, then refreshes the list. Returns whether it succeeded. */
   async function run(app: AppSummary, kind: Kind, fn: () => Promise<unknown>): Promise<boolean> {
@@ -233,11 +298,17 @@ export default function Applications() {
         if (r.build?.too_long) setError(`${app.company}: the PDF came out at ${r.build.pages} pages. Open the workspace to trim it.`)
       })
     } else if (n.kind === 'critique') void run(app, 'critique', () => api.critique(app.id))
-    else if (n.kind === 'apply') void run(app, 'apply', () => changeStatus(app.id, 'applied'))
+    else if (n.kind === 'apply') void setStatus(app, 'applied')
   }
 
-  const setStatus = (app: AppSummary, status: string, outcome?: Outcome) =>
-    run(app, 'apply', () => changeStatus(app.id, status, undefined, outcome)).then((ok) => { if (ok) setAsking(null) })
+  // A plain "Saving…" unless marking it applied has to build a fresh PDF first.
+  const setStatus = (app: AppSummary, status: string, outcome?: Outcome) => {
+    const sent = detail?.id === app.id ? detail.sent : [app.sent]
+    return run(app, 'status', () => changeStatus(app.id, status, {
+      outcome, alreadySent: sentAsApplied(sent),
+      onBuilding: (on) => { if (on) setBusy({ id: app.id, kind: 'apply' }) },
+    })).then((ok) => { if (ok) setAsking(null) })
+  }
 
   // Dropping a card on a column changes the status; it never claims work that hasn't happened.
   function drop(app: AppSummary, to: Stage) {
@@ -252,19 +323,17 @@ export default function Applications() {
   }
 
   // Only called after the user confirms in the panel. The card is gone afterwards, so focus
-  // falls back to the search box.
+  // falls back to the search box. The selection is cleared before the list reloads, so the
+  // deleted application is never fetched again; the panel shows a snapshot while it slides out.
   async function remove(app: AppSummary) {
-    if (await run(app, 'delete', () => api.remove(app.id))) close()
-  }
-
-  async function saveNotes(app: AppSummary) {
-    if (notes === null || notes === (app.notes ?? '')) return
-    try {
-      await api.patch(app.id, { notes })
-      setApps((prev) => prev?.map((x) => (x.id === app.id ? { ...x, notes } : x)) ?? prev)
-    } catch (e) {
-      setError((e as Error).message)
-    }
+    if (pendingNotes.current?.id === app.id) { window.clearTimeout(notesTimer.current); pendingNotes.current = null }
+    const snapshot = { a: app, detail }
+    const ok = await run(app, 'delete', async () => {
+      await api.remove(app.id)
+      setGhost(snapshot)
+      setSel(null)
+    })
+    if (ok) close(true)
   }
 
   const all = apps ?? []
@@ -331,11 +400,12 @@ export default function Applications() {
                   {shown.map((x) => {
                     const on = open && x.id === sel
                     return (
-                      <article key={x.id} data-app-id={x.id} draggable tabIndex={0} aria-current={on ? 'true' : undefined}
+                      <div key={x.id} data-app-id={x.id} draggable role="button" tabIndex={0} aria-haspopup="dialog" aria-current={on ? 'true' : undefined}
+                        aria-label={`${x.company}, ${x.role}. ${statusLabel(x.status, x.outcome)}. ${nextOf(x).short ?? nextOf(x).text}`}
                         onDragStart={(e: DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', x.id); setDrag(x.id) }}
                         onDragEnd={() => { setDrag(null); setOver(null) }}
                         onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
-                        onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id, e.currentTarget) } }}
+                        onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
                         className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#aeb7c6]',
                           on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(14_20_34/0.05)]', dim(x))}>
                         <div className="flex items-baseline justify-between gap-2.5">
@@ -347,7 +417,7 @@ export default function Applications() {
                         <div className={cx('-mx-1 -mb-1 mt-0.5 rounded-md px-2 py-[7px]', TONE[nextOf(x).tone][2])}>
                           <NextLine a={x} working={busy?.id === x.id} />
                         </div>
-                      </article>
+                      </div>
                     )
                   })}
                   {rows.length === 0 && (
@@ -380,9 +450,9 @@ export default function Applications() {
               {list.map((x) => {
                 const on = open && x.id === sel
                 return (
-                  <div key={x.id} data-app-id={x.id} role="row" tabIndex={0} aria-current={on ? 'true' : undefined}
+                  <div key={x.id} data-app-id={x.id} role="row" tabIndex={0} aria-haspopup="dialog" aria-current={on ? 'true' : undefined}
                     onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
-                    onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); show(x.id, e.currentTarget) } }}
+                    onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
                     className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#eef0f4] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
                       on && 'bg-[#eef1fd] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
                     <div role="cell" className="min-w-0">
@@ -404,29 +474,30 @@ export default function Applications() {
         </>
       )}
 
-      <div onClick={close} aria-hidden
+      <div onClick={() => close()} aria-hidden
         className={cx('fixed inset-0 z-40 bg-[rgb(14_20_34/0.28)] transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')} />
       <aside ref={panel} role="dialog" aria-modal="true" aria-labelledby="app-detail-title" aria-hidden={!open} inert={!open}
         className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
           open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
-        {a && (
-          <Sheet key={a.id} a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
-            onClose={close} onNotes={(text) => setDraft({ id: a.id, text })} onNotesBlur={() => saveNotes(a)}
-            onStatus={(st, o) => void setStatus(a, st, o)} onAct={(n) => act(a, n)} onDelete={() => void remove(a)}
-            asking={asking === a.id} onStopAsking={() => setAsking(null)} />
+        {shown && (
+          <Sheet key={shown.id} a={shown} detail={shownDetail} busy={busy} notes={(draft?.id === shown.id ? draft.text : null) ?? shown.notes ?? ''}
+            closeRef={closeBtn} deleteRef={deleteBtn} confirming={confirming} onConfirming={setConfirming}
+            onClose={() => close()} onNotes={(text) => typeNotes(shown.id, text)} onNotesBlur={flushNotes}
+            onStatus={(st, o) => void setStatus(shown, st, o)} onAct={(n) => act(shown, n)} onDelete={() => void remove(shown)}
+            asking={asking === shown.id} onStopAsking={() => setAsking(null)} />
         )}
       </aside>
     </div>
   )
 }
 
-function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete, asking, onStopAsking }: {
+function Sheet({ a, detail, busy, notes, closeRef, deleteRef, confirming, onConfirming: setConfirming, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete, asking, onStopAsking }: {
   a: AppSummary; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
-  closeRef: RefObject<HTMLButtonElement | null>
+  closeRef: RefObject<HTMLButtonElement | null>; deleteRef: RefObject<HTMLButtonElement | null>
+  confirming: boolean; onConfirming: (on: boolean) => void
   onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string, outcome?: Outcome) => void; onAct: (n: Next) => void
   onDelete: () => void; asking: boolean; onStopAsking: () => void
 }) {
-  const [confirming, setConfirming] = useState(false)
   const deleting = busy?.id === a.id && busy.kind === 'delete'
   const sentCount = detail?.sent.length ?? (a.sent ? 1 : 0)
   const p = a.progress
@@ -584,7 +655,7 @@ function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur
         </div>
       ) : (
         <div className="flex justify-end border-t border-line px-[26px] py-2">
-          <button className="cursor-pointer rounded-md px-2 py-1 text-[13px] text-muted hover:bg-bad-soft hover:text-bad disabled:cursor-not-allowed disabled:opacity-50"
+          <button ref={deleteRef} className="cursor-pointer rounded-md px-2 py-1 text-[13px] text-muted hover:bg-bad-soft hover:text-bad disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!!busy} onClick={() => setConfirming(true)}>
             Delete application…
           </button>
