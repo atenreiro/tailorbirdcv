@@ -28,11 +28,21 @@ from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, Tailo
                      load_profile, load_tailored, load_yaml)
 
 ROOT = Path(__file__).resolve().parent.parent
-STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "rejected", "withdrawn"]
+STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "closed"]
 PIPELINE = ["draft", "analyzed", "composed", "built"]  # set by the tool; the rest are set by the user
 # Funnel stages, in order. An application "reached" a stage once its status got there,
-# even if it later moved on to rejected/withdrawn.
+# even if it was later closed.
 MILESTONES = ["built", "applied", "interview", "offer"]
+# How a closed application ended. Who ended it matters more than the label; the stage it
+# reached is already known from its milestones (so "rejected" + reached "interview" means
+# rejected after interviewing).
+OUTCOMES = ["rejected", "no_response", "role_closed",              # ended by them
+            "withdrew", "declined_offer", "did_not_apply",          # ended by you
+            "accepted_offer"]                                       # success
+# Closing this way implies the application got at least this far.
+OUTCOME_REACHED = {"rejected": "applied", "no_response": "applied",
+                   "declined_offer": "offer", "accepted_offer": "offer"}
+LEGACY_CLOSED = {"rejected": "rejected", "withdrawn": "withdrew"}  # old statuses → outcome
 
 # One lock for every read-modify-write of private data. FastAPI runs sync endpoints in
 # a thread pool, so concurrent requests are real. Never hold it across an AI call.
@@ -280,7 +290,19 @@ class Store:
                 _write_json_atomic(self.apps_dir / LEGACY_IDS, {**self._legacy_ids(), **moved})
                 self._repoint_knowledge(moved)
             self.drop_company_from_filenames()
+            self._close_legacy_statuses()
         return moved
+
+    def _close_legacy_statuses(self) -> None:
+        """rejected/withdrawn statuses (before outcomes existed) → closed + outcome. Keeps the
+        original 'updated' time, which is when the application was closed."""
+        for app in self.list_apps():
+            if app.get("status") in LEGACY_CLOSED:
+                path = self.app_path(app["id"]) / "meta.json"
+                meta = json.loads(path.read_text(encoding="utf-8"))
+                meta.update(status="closed", outcome=LEGACY_CLOSED[meta["status"]],
+                            closed_at=meta.get("closed_at") or meta.get("updated"))
+                _write_json_atomic(path, meta)
 
     def drop_company_from_filenames(self) -> list[Path]:
         """Rename resumes built before file names became company-neutral
@@ -363,14 +385,32 @@ class Store:
     def save_meta(self, app_id: str, meta: dict) -> dict:
         now = dt.datetime.now().isoformat(timespec="seconds")
         meta = {**meta, "updated": now}
-        if meta.get("status") in MILESTONES and meta.get("status") not in meta.get("milestones", {}):
-            meta["milestones"] = {**meta.get("milestones", {}), meta["status"]: now}
+        stage = meta.get("status") if meta.get("status") in MILESTONES else \
+            OUTCOME_REACHED.get(meta.get("outcome")) if meta.get("status") == "closed" else None
+        if stage and stage not in meta.get("milestones", {}):
+            meta["milestones"] = {**meta.get("milestones", {}), stage: now}
         _write_json_atomic(self.app_path(app_id) / "meta.json", meta)
         return meta
 
     def update_meta(self, app_id: str, **changes) -> dict:
         with _LOCK:
             return self.save_meta(app_id, {**self.meta(app_id), **changes})
+
+    def set_status(self, app_id: str, status: str, outcome: str | None = None) -> dict:
+        """A user status change. Closing needs an outcome (or keeps the one it has); any other
+        status clears it, so a reopened application doesn't carry a stale reason."""
+        with _LOCK:
+            meta = self.meta(app_id)
+            if status != "closed":
+                meta.pop("outcome", None)
+                meta.pop("closed_at", None)
+                return self.save_meta(app_id, {**meta, "status": status})
+            outcome = outcome or (meta.get("outcome") if meta.get("status") == "closed" else None)
+            if outcome not in OUTCOMES:
+                raise ValueError("Say how it ended: pick an outcome to close the application.")
+            if meta.get("status") != "closed":
+                meta["closed_at"] = dt.datetime.now().isoformat(timespec="seconds")
+            return self.save_meta(app_id, {**meta, "status": "closed", "outcome": outcome})
 
     def advance_status(self, app_id: str, status: str) -> dict:
         """Pipeline steps only move the status forward, and never override a status

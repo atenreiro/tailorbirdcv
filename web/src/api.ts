@@ -104,6 +104,7 @@ export interface Ats {
 }
 export interface Meta {
   company: string; role: string; url?: string | null; status: string
+  outcome?: Outcome | null; closed_at?: string | null
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
   guidance?: string; trim_rounds?: number; built_hash?: string
 }
@@ -131,7 +132,9 @@ export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
 
-export const STATUSES = ['draft', 'analyzed', 'composed', 'built', 'applied', 'interview', 'offer', 'rejected', 'withdrawn']
+export const STATUSES = ['draft', 'analyzed', 'composed', 'built', 'applied', 'interview', 'offer', 'closed']
+/** How a closed application ended (mirrors OUTCOMES in autocv/store.py). */
+export type Outcome = 'rejected' | 'no_response' | 'role_closed' | 'withdrew' | 'declined_offer' | 'did_not_apply' | 'accepted_offer'
 
 export class ApiError extends Error {
   status: number

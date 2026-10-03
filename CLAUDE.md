@@ -25,6 +25,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - URL fetching goes through `jobfetch.pinned_client()` (PinnedBackend: resolve once, validate every address, connect to the validated one). The headless browser's requests are performed by that client too, never by Chromium's network stack.
 - The AI engine runs fully isolated (`engine.ISOLATION_ARGS`): no tools, MCP, user/local settings, plugins, hooks, skills or sessions.
 - Hiring-manager review (`autocv/critique.py`): on-demand verdict/scores/skim + issues pinned to claims by their original text; every suggested rewrite is fact-checked before it's shown (failures become advice); fixes needing new info become `hm-` questions in Gaps; accepted/rejected decisions live in `review.yaml` and feed style learning.
+- Closing an application sets status `closed` plus an **outcome** (rejected, no_response, role_closed, withdrew, declined_offer, did_not_apply, accepted_offer); the stage it reached comes from its funnel milestones. Old `rejected`/`withdrawn` statuses migrate automatically.
 - Marking an application **applied** freezes a read-only copy of exactly what was sent (`sent/<timestamp>/`); stale or missing PDFs → "Build & freeze". Never edit `sent/`.
 - Every save of `profile.yaml`/`knowledge.yaml` keeps the previous version in `private/history/` (content changes only; kept forever); restore is itself undoable and merges `retired_ids`.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.

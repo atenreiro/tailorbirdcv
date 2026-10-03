@@ -193,7 +193,7 @@ def test_funnel_remembers_the_furthest_stage_after_rejection(env):
     assert reached(client)[0] == "built"
     client.post(f"/api/applications/{app_id}/freeze?build=true&mark_applied=true")
     client.patch(f"/api/applications/{app_id}", json={"status": "interview"})
-    client.patch(f"/api/applications/{app_id}", json={"status": "rejected"})
+    assert client.patch(f"/api/applications/{app_id}", json={"status": "closed", "outcome": "rejected"}).status_code == 200
     stage, when = reached(client)
     assert stage == "interview" and when == store.meta(app_id)["milestones"]["interview"]
     assert set(store.meta(app_id)["milestones"]) == {"built", "applied", "interview"}
@@ -209,3 +209,46 @@ def test_funnel_falls_back_to_evidence_for_older_applications(env):
     _write_json_atomic(store.app_path(app_id) / "meta.json", meta)   # as written before milestones existed
     stage, when = reached(client)
     assert stage == "applied" and when == store.sent_copies(app_id)[-1]["created"]
+
+
+# ---- closing with an outcome -----------------------------------------------------------------
+
+def patch(client, app_id, **body):
+    return client.patch(f"/api/applications/{app_id}", json=body)
+
+
+def test_closing_needs_an_outcome_and_reopening_clears_it(env):
+    client, store, app_id, _ = env
+    assert patch(client, app_id, status="closed").status_code == 422           # how did it end?
+    assert patch(client, app_id, status="rejected").status_code == 422         # old statuses are gone
+    assert patch(client, app_id, status="built", outcome="rejected").status_code == 422
+    meta = patch(client, app_id, status="closed", outcome="did_not_apply").json()
+    assert meta["status"] == "closed" and meta["outcome"] == "did_not_apply" and meta["closed_at"]
+    closed_at = meta["closed_at"]
+    meta = patch(client, app_id, outcome="role_closed").json()                  # change the reason only
+    assert meta["outcome"] == "role_closed" and meta["closed_at"] == closed_at
+    meta = patch(client, app_id, status="composed").json()                      # reopened
+    assert meta["status"] == "composed" and "outcome" not in meta and "closed_at" not in meta
+    assert patch(client, app_id, outcome="rejected").status_code == 422         # not closed any more
+
+
+def test_outcomes_imply_the_stage_reached(env):
+    client, store, app_id, _ = env
+    client.post(f"/api/applications/{app_id}/build")
+    patch(client, app_id, status="closed", outcome="no_response")      # can't get no response without applying
+    assert reached(client)[0] == "applied"
+    patch(client, app_id, status="interview")
+    patch(client, app_id, status="closed", outcome="declined_offer")   # declining means there was an offer
+    assert reached(client)[0] == "offer"
+
+
+def test_legacy_rejected_and_withdrawn_become_closed(env):
+    client, store, app_id, _ = env
+    from autocv.store import _write_json_atomic
+    meta = store.meta(app_id)
+    meta.update(status="withdrawn", updated="2026-09-20T10:00:00")
+    _write_json_atomic(store.app_path(app_id) / "meta.json", meta)
+    store.migrate_layout()
+    meta = store.meta(app_id)
+    assert (meta["status"], meta["outcome"], meta["closed_at"]) == ("closed", "withdrew", "2026-09-20T10:00:00")
+    assert meta["updated"] == "2026-09-20T10:00:00"                     # migration doesn't touch "updated"

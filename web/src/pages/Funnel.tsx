@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
 import { cx, useTitle } from '../lib'
-import { ErrorNote, Spinner } from '../ui'
+import { ErrorNote, Spinner, StatusPill } from '../ui'
 
 type Stage = 'built' | 'applied' | 'interview' | 'offer'
 type Range = '30' | '90' | 'all'
@@ -157,10 +157,15 @@ export default function Funnel() {
           <div className="overflow-hidden rounded-[14px] border border-rule bg-sheet">
             {list.map((a) => (
               <Link key={a.id} to={`/a/${a.id}`}
-                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-5 border-b border-[#eef0f4] px-5 py-[13px] text-ink last:border-b-0 hover:bg-wash hover:text-ink">
+                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-5 gap-y-1.5 border-b sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] border-[#eef0f4] px-5 py-[13px] text-ink last:border-b-0 hover:bg-wash hover:text-ink">
                 <span className="min-w-0">
                   <span className="block truncate text-[15px] font-semibold">{a.company}</span>
                   <span className="block truncate text-[13px] text-muted">{a.role}</span>
+                </span>
+                <span className="col-span-3 sm:col-span-1 sm:justify-self-end">
+                  {a.status === 'closed'
+                    ? <StatusPill status="closed" outcome={a.outcome} />
+                    : <span className="font-mono text-[11px] text-faint">still open</span>}
                 </span>
                 {a.track
                   ? <span className="rounded bg-[#e6e9ef] px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-body">{a.track}</span>

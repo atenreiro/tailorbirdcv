@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
+import { api, type Application, type Outcome, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
 import { changeStatus } from '../status'
-import { cx, fmtDate, statusStyle, useTitle } from '../lib'
-import { ErrorNote, Spinner } from '../ui'
+import { cx, fmtDate, useTitle } from '../lib'
+import { ErrorNote, Spinner, StatusSelect } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
@@ -158,13 +158,13 @@ export default function Workspace() {
   const enabled = enabledSteps(app)
   const notes = stepNotes(app, memo)
 
-  async function setStatus(status: string) {
+  async function setStatus(status: string, outcome?: Outcome) {
     setError(null)
     try {
       const r = await changeStatus(app!.id, status, (on) => setWorking(on ? {
         title: 'Building & freezing the copy you send', ai: false,
         lines: ['Rendering your resume…', 'Converting to PDF through Microsoft Word…', 'Saving a read-only sent copy…'],
-      } : null))
+      } : null), outcome)
       if (!r) return
       // reload: applying freezes a sent copy, which the status response doesn't include
       setApp('app' in r ? r.app : await api.get(app!.id))
@@ -185,13 +185,8 @@ export default function Workspace() {
         </div>
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs text-muted">Created {fmtDate(app.meta.created)}</span>
-          <label className={cx('relative inline-flex cursor-pointer items-center gap-1.5 rounded-[5px] px-[9px] py-[5px] font-mono text-[11px] font-medium uppercase tracking-[0.08em]', statusStyle(app.meta.status))}>
-            <span>{app.meta.status}</span><span className="text-[9px] no-underline" aria-hidden>▼</span>
-            <select aria-label="Status" className="absolute inset-0 cursor-pointer opacity-0" value={app.meta.status} disabled={!!working}
-              onChange={(e) => setStatus(e.target.value)}>
-              {STATUSES.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </label>
+          <StatusSelect label="Status" status={app.meta.status} outcome={app.meta.outcome} disabled={!!working}
+            onChange={(s, o) => void setStatus(s, o)} />
         </div>
       </div>
 

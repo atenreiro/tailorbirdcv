@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, STATUSES, type Application, type AppSummary, type ScoreKey } from '../api'
-import { cx, useTitle } from '../lib'
-import { ErrorNote, Spinner, StatusPill } from '../ui'
+import { api, type Application, type AppSummary, type Outcome, type ScoreKey } from '../api'
+import { cx, OUTCOME_GROUPS, OUTCOMES, useTitle } from '../lib'
+import { ErrorNote, Spinner, StatusPill, StatusSelect } from '../ui'
 import { changeStatus } from '../status'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
 type View = 'board' | 'table'
 const STAGE: Record<string, Stage> = {
   draft: 'progress', analyzed: 'progress', composed: 'progress', built: 'ready',
-  applied: 'flight', interview: 'flight', offer: 'flight', rejected: 'closed', withdrawn: 'closed',
+  applied: 'flight', interview: 'flight', offer: 'flight', closed: 'closed',
 }
 const COLS: [Stage, string][] = [['progress', 'In progress'], ['ready', 'Ready to send'], ['flight', 'In flight'], ['closed', 'Closed']]
 const STAGE_TITLE = Object.fromEntries(COLS) as Record<Stage, string>
@@ -36,8 +36,10 @@ const recent = (x: AppSummary, y: AppSummary) => (y.updated ?? '').localeCompare
 /** The one thing to do next for an application, derived from its real state. */
 function nextOf(a: AppSummary): Next {
   const p = a.progress
-  if (a.status === 'rejected') return { text: 'Closed', tone: 'mute' }
-  if (a.status === 'withdrawn') return { text: 'Withdrawn', tone: 'mute' }
+  if (a.status === 'closed') {
+    return a.outcome === 'accepted_offer' ? { text: 'Offer accepted', tone: 'ok' }
+      : { text: a.closed_at ? `Closed ${short(a.closed_at)}` : 'Closed', tone: 'mute' }  // the pill says how
+  }
   if (a.status === 'offer') return { text: 'Offer received', tone: 'ok' }
   if (a.status === 'interview') return { text: a.notes?.split('\n')[0] || 'Interviewing', tone: 'ok' }
   if (a.status === 'applied') return { text: a.sent ? `Sent ${short(a.sent.created)}` : 'Applied', tone: 'mute' }
@@ -135,7 +137,8 @@ export default function Applications() {
   const closeBtn = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
   const search = useRef<HTMLInputElement>(null)
-  const opener = useRef<HTMLElement | null>(null)  // the card/row that opened the panel; focus returns there
+  const opener = useRef<HTMLElement | null>(null)
+  const [asking, setAsking] = useState<string | null>(null)  // the application whose closing outcome we're asking for  // the card/row that opened the panel; focus returns there
 
   const reload = useCallback(() => api.applications().then(setApps).catch((e) => setError(e.message)), [])
   useEffect(() => { void reload() }, [reload])
@@ -164,7 +167,12 @@ export default function Applications() {
   const detail = fetched?.id === sel ? fetched : null
   const notes = draft?.id === sel ? draft.text : null
 
-  useEffect(() => { if (open) closeBtn.current?.focus({ preventScroll: true }) }, [open])
+  // On open, focus Close, or the first outcome when we're asking how an application ended.
+  useEffect(() => {
+    if (!open) return
+    const first = asking ? panel.current?.querySelector<HTMLElement>('[data-outcome]') : null
+    ;(first ?? closeBtn.current)?.focus({ preventScroll: true })
+  }, [open, asking])
 
   const show = useCallback((id: string, from?: HTMLElement | null) => {
     opener.current = from ?? document.querySelector<HTMLElement>(`[data-app-id="${CSS.escape(id)}"]`)
@@ -174,6 +182,7 @@ export default function Applications() {
   // Close and hand focus back to whatever opened the panel (or the search box if it's gone).
   const close = useCallback(() => {
     setOpen(false)
+    setAsking(null)
     const back = opener.current
     setTimeout(() => (back?.isConnected ? back : search.current)?.focus({ preventScroll: true }), 0)
   }, [])
@@ -227,7 +236,8 @@ export default function Applications() {
     else if (n.kind === 'apply') void run(app, 'apply', () => changeStatus(app.id, 'applied'))
   }
 
-  const setStatus = (app: AppSummary, status: string) => run(app, 'apply', () => changeStatus(app.id, status))
+  const setStatus = (app: AppSummary, status: string, outcome?: Outcome) =>
+    run(app, 'apply', () => changeStatus(app.id, status, undefined, outcome)).then((ok) => { if (ok) setAsking(null) })
 
   // Dropping a card on a column changes the status; it never claims work that hasn't happened.
   function drop(app: AppSummary, to: Stage) {
@@ -238,7 +248,7 @@ export default function Applications() {
       if (!hasPdf(app) || app.outputs_stale) setError(`${app.company}: build an up-to-date PDF first (Export step), then move it to Ready to send.`)
       else void setStatus(app, 'built')
     } else if (to === 'flight') void setStatus(app, 'applied')
-    else void setStatus(app, 'rejected')
+    else { show(app.id); setAsking(app.id) }  // closing: ask how it ended
   }
 
   // Only called after the user confirms in the panel. The card is gone afterwards, so focus
@@ -333,7 +343,7 @@ export default function Applications() {
                           <span className="flex-none font-mono text-[11px] text-faint">{short(x.updated)}</span>
                         </div>
                         <p className="text-[13px] leading-[1.3] text-muted text-pretty">{x.role}</p>
-                        <div className="flex items-center gap-2.5"><StatusPill status={x.status} /><Meter a={x} /></div>
+                        <div className="flex items-center gap-2.5"><StatusPill status={x.status} outcome={x.outcome} /><Meter a={x} /></div>
                         <div className={cx('-mx-1 -mb-1 mt-0.5 rounded-md px-2 py-[7px]', TONE[nextOf(x).tone][2])}>
                           <NextLine a={x} working={busy?.id === x.id} />
                         </div>
@@ -380,7 +390,7 @@ export default function Applications() {
                       <p className="truncate text-[13px] text-muted">{x.role}</p>
                     </div>
                     <span role="cell" className="text-[13px] text-body">{STAGE_TITLE[STAGE[x.status] ?? 'progress']}</span>
-                    <span role="cell" className="justify-self-start"><StatusPill status={x.status} /></span>
+                    <span role="cell" className="justify-self-start"><StatusPill status={x.status} outcome={x.outcome} /></span>
                     <div role="cell" className="flex"><Meter a={x} /></div>
                     <div role="cell" className="min-w-0"><NextLine a={x} working={busy?.id === x.id} /></div>
                     <span role="cell" className="justify-self-end whitespace-nowrap font-mono text-[11px] text-faint">{short(x.updated)}</span>
@@ -402,18 +412,19 @@ export default function Applications() {
         {a && (
           <Sheet key={a.id} a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
             onClose={close} onNotes={(text) => setDraft({ id: a.id, text })} onNotesBlur={() => saveNotes(a)}
-            onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} onDelete={() => void remove(a)} />
+            onStatus={(st, o) => void setStatus(a, st, o)} onAct={(n) => act(a, n)} onDelete={() => void remove(a)}
+            asking={asking === a.id} onStopAsking={() => setAsking(null)} />
         )}
       </aside>
     </div>
   )
 }
 
-function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete }: {
+function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete, asking, onStopAsking }: {
   a: AppSummary; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
   closeRef: RefObject<HTMLButtonElement | null>
-  onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string) => void; onAct: (n: Next) => void
-  onDelete: () => void
+  onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string, outcome?: Outcome) => void; onAct: (n: Next) => void
+  onDelete: () => void; asking: boolean; onStopAsking: () => void
 }) {
   const [confirming, setConfirming] = useState(false)
   const deleting = busy?.id === a.id && busy.kind === 'delete'
@@ -440,19 +451,32 @@ function Sheet({ a, detail, busy, notes, closeRef, onClose, onNotes, onNotesBlur
           <p className="text-[15px] text-body">{a.role}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <label className="relative inline-flex cursor-pointer items-center" title="Change status">
-            <StatusPill status={a.status} className="!py-[5px] !pl-[9px] !pr-6 !text-[11px]" />
-            <span className="pointer-events-none absolute right-2 text-[9px] opacity-70">▼</span>
-            <select aria-label={`Status for ${a.company}`} className="absolute inset-0 cursor-pointer opacity-0" value={a.status}
-              disabled={working} onChange={(e) => onStatus(e.target.value)}>
-              {STATUSES.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </label>
+          <StatusSelect label={`Status for ${a.company}`} status={a.status} outcome={a.outcome} disabled={working} onChange={onStatus} />
           <span className="font-mono text-[11px] text-faint">
             Created {short(a.created)} · updated {short(a.updated)}{a.pages ? ` · ${plural(a.pages, 'page')}` : ''}
           </span>
         </div>
       </div>
+
+      {asking && (
+        <div role="group" aria-labelledby={`outcome-title-${a.id}`} className="flex flex-col gap-3 border-b border-line bg-wash px-[26px] py-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <p id={`outcome-title-${a.id}`} className="font-semibold text-ink">How did it end?</p>
+            <button className="cursor-pointer text-[13px] text-muted hover:text-ink" onClick={onStopAsking}>Cancel</button>
+          </div>
+          {OUTCOME_GROUPS.map(([who, title]) => (
+            <div key={who} className="flex flex-col gap-1.5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-faint">{title}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {OUTCOMES.filter((o) => o.who === who).map((o) => (
+                  <button key={o.key} data-outcome={o.key} disabled={working}
+                    className="btn h-8 px-3 py-0 text-[13px]" onClick={() => onStatus('closed', o.key)}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col overflow-y-auto">
         <div className="grid grid-cols-4 gap-2.5 border-b border-line px-[26px] py-5">

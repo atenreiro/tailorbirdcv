@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, type EngineStatus } from './api'
-import { cx, statusStyle } from './lib'
+import { api, STATUSES, type EngineStatus, type Outcome } from './api'
+import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, statusStyle } from './lib'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
@@ -22,11 +22,39 @@ export function ErrorNote({ error, onDismiss }: { error: string | null; onDismis
   )
 }
 
-export function StatusPill({ status, className }: { status: string; className?: string }) {
+export function StatusPill({ status, outcome, className }: { status: string; outcome?: string | null; className?: string }) {
   return (
-    <span className={cx('inline-block rounded px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em]', statusStyle(status), className)}>
-      {status}
+    <span className={cx('inline-block whitespace-nowrap rounded px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em]', statusStyle(status, outcome), className)}>
+      {statusLabel(status, outcome)}
     </span>
+  )
+}
+
+/** A status pill that is also the status picker. Closing goes through "Close as…" so the
+ *  outcome is always recorded. */
+export function StatusSelect({ status, outcome, disabled, label, onChange }: {
+  status: string; outcome?: string | null; disabled?: boolean; label: string
+  onChange: (status: string, outcome?: Outcome) => void
+}) {
+  const value = status === 'closed' ? `closed:${outcome ?? ''}` : status
+  return (
+    <label className="relative inline-flex shrink-0 cursor-pointer items-center" title="Change status">
+      <StatusPill status={status} outcome={outcome} className="!py-[5px] !pl-[9px] !pr-6 !text-[11px]" />
+      <span className="pointer-events-none absolute right-2 text-[9px] opacity-70" aria-hidden>▼</span>
+      <select aria-label={label} className="absolute inset-0 cursor-pointer opacity-0" value={value} disabled={disabled}
+        onChange={(e) => {
+          const [s, o] = e.target.value.split(':')
+          onChange(s, (o || undefined) as Outcome | undefined)
+        }}>
+        {STATUSES.filter((s) => s !== 'closed').map((s) => <option key={s} value={s}>{s}</option>)}
+        {status === 'closed' && !OUTCOMES.some((o) => o.key === outcome) && <option value={value}>closed</option>}
+        {OUTCOME_GROUPS.map(([who, title]) => (
+          <optgroup key={who} label={`Close · ${title.toLowerCase()}`}>
+            {OUTCOMES.filter((o) => o.who === who).map((o) => <option key={o.key} value={`closed:${o.key}`}>{o.label}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </label>
   )
 }
 

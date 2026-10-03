@@ -25,7 +25,7 @@ from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import AppAnswer, Knowledge, Preference, TailoredResume
-from .store import ROOT, STATUSES, Conflict, NeedsBuild, Store, next_id
+from .store import OUTCOMES, ROOT, STATUSES, Conflict, NeedsBuild, Store, next_id
 
 MAX_PAGES = 2
 
@@ -42,6 +42,7 @@ class NewApplication(BaseModel):
 
 class MetaPatch(BaseModel):
     status: Literal[tuple(STATUSES)] | None = None  # type: ignore[valid-type]
+    outcome: Literal[tuple(OUTCOMES)] | None = None  # type: ignore[valid-type]  # with status "closed"
     notes: str | None = None
     guidance: str | None = None
     company: str | None = None
@@ -374,7 +375,18 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 store.freeze(app_id, "applied")
             except NeedsBuild as e:
                 raise HTTPException(409, {"code": "needs_build", "message": str(e)})
-        return store.update_meta(app_id, **body.model_dump(exclude_none=True))
+        if body.outcome and body.status not in (None, "closed"):
+            raise HTTPException(422, "An outcome only applies when closing an application.")
+        if body.status or body.outcome:
+            status = body.status or store.meta(app_id).get("status")
+            if body.outcome and status != "closed":
+                raise HTTPException(422, "Close the application to record how it ended.")
+            try:
+                store.set_status(app_id, status, body.outcome)
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+        rest = body.model_dump(exclude_none=True, exclude={"status", "outcome"})
+        return store.update_meta(app_id, **rest) if rest else store.meta(app_id)
 
     @api.delete("/applications/{app_id}", status_code=204)
     def delete_application(app_id: str):
