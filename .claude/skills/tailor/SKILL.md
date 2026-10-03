@@ -16,8 +16,8 @@ Read `CLAUDE.md` rules first. The master profile `private/profile.yaml` is the o
 ```yaml
 company: ...
 role: ...
-industry: banking | tech | quant | fintech | telco | consulting   # see config/industries.yaml
-track: manager | ic | hybrid                                      # see config/tracks.yaml
+industry: banking | tech | quant | fintech | telco | consulting   # see autocv/data/config/industries.yaml
+track: manager | ic | hybrid                                      # see autocv/data/config/tracks.yaml
 seniority: ...
 location: ...
 requirements:            # each JD requirement, in JD order
@@ -54,7 +54,7 @@ The schema is in `autocv/schema.py`; `private/source/base_tailored.yaml` is a co
   - You may surface profile evidence with `in_base_resume: false`.
   - Older roles get fewer bullets.
 - Each claim's `sources` must contain everything it relies on (numbers, tools, names). Citing a role-bound id also allows that role's employer and title.
-- Apply `config/industries.yaml` (`lead_with`, `mirror_terms`, tone) and `config/tracks.yaml` (ordering, bullet style) as emphasis only.
+- Apply `autocv/data/config/industries.yaml` (`lead_with`, `mirror_terms`, tone) and `autocv/data/config/tracks.yaml` (ordering, bullet style) as emphasis only.
 
 ## 5. Gate
 `uv run autocv check <app>` must PASS. To fix an error:

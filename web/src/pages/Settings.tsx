@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { api, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData } from '../api'
+import { useCallback, useEffect, useState } from 'react'
+import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { ErrorNote, Spinner } from '../ui'
@@ -74,6 +74,54 @@ function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
         <span className="pl-[30px] text-[13px] text-muted text-pretty">{info.missing}</span>
       )}
     </label>
+  )
+}
+
+const TONE: Record<DoctorCheck['status'], [string, string]> = {
+  ok: ['bg-ok', 'text-ok'], warn: ['bg-[#d08a1c]', 'text-warn'], error: ['bg-bad', 'text-bad'],
+}
+
+function SystemCheck() {
+  const [checks, setChecks] = useState<DoctorCheck[] | null>(null)
+  const [busy, setBusy] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(() => api.doctor().then(setChecks).catch((e) => setError(e.message)).finally(() => setBusy(false)), [])
+  useEffect(() => { void load() }, [load])
+  const run = () => {
+    setBusy(true)
+    setError(null)
+    void load()
+  }
+  const problems = checks?.filter((c) => c.status !== 'ok').length ?? 0
+  return (
+    <section aria-labelledby="doctor-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex max-w-[640px] flex-col gap-1.5">
+          <p className={cx(label, 'text-accent')}>System check</p>
+          <h2 id="doctor-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">
+            {checks ? (problems ? `${problems} thing${problems > 1 ? 's' : ''} to look at` : 'Everything’s ready') : 'Checking…'}
+          </h2>
+          <p className="text-sm leading-[1.5] text-muted text-pretty">What AutoCV needs on this computer. Same as running <code className="font-mono text-[13px]">autocv doctor</code>.</p>
+        </div>
+        <button className="btn" onClick={run} disabled={busy}>{busy && <Spinner />}Check again</button>
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      {checks && (
+        <ul className="flex flex-col divide-y divide-line">
+          {checks.map((c) => (
+            <li key={c.id} className="flex items-start gap-3 py-2.5">
+              <span aria-hidden className={cx('mt-[7px] size-2 flex-none rounded-full', TONE[c.status][0])} />
+              <span className="flex min-w-0 flex-col gap-0.5 text-[13px]">
+                <span className="text-ink"><span className="font-semibold">{c.label}</span>
+                  <span className={cx('ml-2 font-mono text-[11px] uppercase tracking-[0.06em]', TONE[c.status][1])}>{c.status === 'ok' ? 'ok' : c.status === 'warn' ? 'optional' : 'needs attention'}</span></span>
+                <span className="break-words text-muted">{c.detail}</span>
+                {c.fix && c.status !== 'ok' && <span className="text-body">→ {c.fix}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 
@@ -161,6 +209,8 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      <SystemCheck />
     </div>
   )
 }

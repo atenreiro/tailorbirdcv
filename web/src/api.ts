@@ -134,6 +134,7 @@ export type PdfEngine = 'word' | 'libreoffice'
 export interface PdfEngineInfo { id: PdfEngine; name: string; available: boolean; path: string | null; version: string | null }
 /** pdf_engine: the user's choice (null = automatic: Word when installed); pdf_effective: what builds use now. */
 export type Platform = 'macos' | 'windows' | 'linux'
+export interface DoctorCheck { id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string }
 export interface Settings { pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
@@ -180,6 +181,7 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
 export const api = {
   engine: () => req<EngineStatus>('GET', '/engine'),
   settings: () => req<Settings>('GET', '/settings'),
+  doctor: () => req<DoctorCheck[]>('GET', '/doctor'),
   saveSettings: (b: { pdf_engine: PdfEngine | null }) => req<Settings>('PUT', '/settings', b),
   profile: () => req<ProfileResponse>('GET', '/profile'),
   saveProfile: (p: Profile, version: string) => req<ProfileResponse>('PUT', '/profile', p, { 'If-Match': version }),

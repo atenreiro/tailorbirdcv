@@ -8,6 +8,9 @@
     autocv build <app>               check → .docx → .pdf → page limit → status "built"
     autocv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
                  [--no-browser]
+    autocv doctor                    check this machine: data folder, AI engine, PDF engine, fonts, browser
+    autocv install-browser           install the headless browser used for JavaScript-only job pages
+    autocv --version
 """
 
 from __future__ import annotations
@@ -196,9 +199,9 @@ def cmd_serve(args) -> int:
     import uvicorn
 
     from .api import create_app
-    from .store import ROOT
+    from .paths import web_dir
     url = f"http://127.0.0.1:{args.port}"
-    built = (ROOT / "web" / "dist").exists()
+    built = web_dir() is not None
     if not built:
         print("note: web UI not built — run `npm --prefix web install && npm --prefix web run build` "
               "(or use `npm --prefix web run dev` on :5173). Serving the API only.")
@@ -209,9 +212,31 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_doctor(args) -> int:
+    import asyncio
+
+    from . import doctor
+    from .engine import default_engine
+    checks = asyncio.run(doctor.run_checks(default_engine(), PRIVATE, STORE.settings()["pdf_engine"]))
+    print(doctor.render(checks))
+    return 1 if any(c["status"] == "error" for c in checks) else 0
+
+
+def cmd_install_browser(args) -> int:
+    import subprocess
+    print("Installing the headless browser for JavaScript-only job pages (about 100 MB)…", flush=True)
+    code = subprocess.call([sys.executable, "-m", "playwright", "install", "chromium"])
+    if code == 0 and sys.platform.startswith("linux"):
+        print("On Linux it may also need system libraries; if pages fail to load, run:\n"
+              f"  sudo {sys.executable} -m playwright install-deps chromium")
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
+    from .doctor import version
     parser = argparse.ArgumentParser(prog="autocv", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--version", action="version", version=f"autocv {version()}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("ingest"); p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_ingest)
     p = sub.add_parser("baseline"); p.add_argument("--no-pdf", action="store_true"); p.set_defaults(fn=cmd_baseline)
@@ -223,11 +248,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=8000)
     p.add_argument("--no-browser", action="store_true", help="don't open the web UI in the default browser")
     p.set_defaults(fn=cmd_serve)
+    sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
+    sub.add_parser("install-browser").set_defaults(fn=cmd_install_browser)
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
             stream.reconfigure(encoding="utf-8", errors="replace")
-    if args.cmd != "serve":  # serve migrates when the API starts
+    if args.cmd not in ("serve", "doctor", "install-browser"):  # serve migrates when the API starts
         try:
             for old, new in STORE.migrate_layout().items():
                 print(f"moved application {old} → {STORE.app_path(new).relative_to(STORE.apps_dir)}")

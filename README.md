@@ -16,31 +16,52 @@ JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► 
 - **Sent copies and history**: marking an application *applied* freezes a read-only copy of exactly what you sent. Every change to your profile and answers is kept in Master profile → History, with a diff and one-click (undoable) restore.
 - **Rendering**: reproduces the original resume's formatting exactly (verified pixel-identical via `autocv baseline`).
 
-## Requirements
-- [uv](https://docs.astral.sh/uv/) (Python), [Node.js](https://nodejs.org/) 20+ (to build the web UI), and [Claude Code](https://claude.com/claude-code) logged in with a Claude subscription. On Windows, use the native Claude Code installer (`claude.exe`).
+## Install
+You need:
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (or [pipx](https://pipx.pypa.io/)).
+- [Claude Code](https://claude.com/claude-code), logged in with your Claude subscription (run `claude`, then `/login`). On Windows, use the native installer (`claude.exe`).
 - A PDF engine, chosen in Settings (Word is the default when both are installed):
 
 | | macOS | Windows | Linux |
 |---|---|---|---|
 | Microsoft Word | ✓ (hidden, via AppleScript) | ✓ (hidden, via COM) | — |
-| LibreOffice | ✓ | ✓ | ✓ (`libreoffice-writer` package) |
+| LibreOffice (free) | ✓ | ✓ | ✓ (`libreoffice-writer` package) |
 
   Without Microsoft's fonts (typically Linux), LibreOffice uses free look-alikes with identical letter widths (Carlito, and Gelasio which ships with AutoCV), so page breaks still match Word's.
 
-## Setup (once)
 ```bash
+uv tool install autocv-app     # or: pipx install autocv-app   (or try it once: uvx autocv-app serve)
+autocv serve                   # opens http://127.0.0.1:8000 in your browser
+autocv doctor                  # optional: checks the AI engine, PDF engine, fonts and browser
+autocv install-browser         # optional: headless browser for job pages that need JavaScript (~100 MB)
+```
+Update with `uv tool upgrade autocv-app` (or `pipx upgrade autocv-app`).
+
+## Your data stays on your computer
+AutoCV runs only on `127.0.0.1`; there's no account, server or telemetry. Your profile, applications and settings live in:
+- macOS: `~/Library/Application Support/AutoCV`
+- Windows: `%LOCALAPPDATA%\AutoCV`
+- Linux: `~/.local/share/AutoCV`
+
+Set `AUTOCV_PRIVATE` to use another folder. The only data that leaves your computer is what the AI engine sends to Claude to analyze and write your resume.
+
+## Development
+```bash
+git clone https://github.com/atenreiro/autocv && cd autocv
 uv sync
 npm --prefix web install && npm --prefix web run build
-uv run playwright install chromium   # headless browser for JavaScript-only job pages (~95 MB)
-cp "<your resume>.docx" private/source/base_resume.docx
+uv run autocv serve            # a source checkout keeps its data in ./private if that folder exists
+uv run pytest
+```
+Releases: bump `version` in `pyproject.toml`, add a CHANGELOG entry, then push a tag `vX.Y.Z`; `.github/workflows/release.yml` builds the UI and publishes `autocv-app` to PyPI.
+
+### Importing an existing resume from the command line
+```bash
+cp "<your resume>.docx" "<data folder>/source/base_resume.docx"
 uv run autocv ingest && uv run autocv baseline
-claude          # in a terminal, then /login, so the CLI has a valid session
 ```
 
-## Run
-```bash
-uv run autocv serve        # opens http://127.0.0.1:8000 in your default browser (--no-browser to skip)
-```
+## Options
 - Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).
 - Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001` (PowerShell: `$env:AUTOCV_ENGINE="fake"; uv run autocv serve --port 8001`).
 - LibreOffice in an unusual location: set `AUTOCV_SOFFICE` to its `soffice` (Windows: `soffice.com`) path.
@@ -49,4 +70,4 @@ uv run autocv serve        # opens http://127.0.0.1:8000 in your default browser
 
 The Claude Code skills `/tailor` and `/profile` still work and share the same data.
 
-Everything under `private/` is gitignored. Tests use a fictional profile in `tests/fixtures/`.
+In a source checkout, `private/` is gitignored. Tests use a fictional profile in `tests/fixtures/`.

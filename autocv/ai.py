@@ -17,12 +17,11 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from . import factcheck
+from . import factcheck, paths
 from .engine import Engine
 from .render import docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
-ROOT = Path(__file__).resolve().parent.parent
 INDUSTRIES = ["banking", "tech", "quant", "fintech", "telco", "consulting"]
 TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
@@ -49,7 +48,7 @@ def _yaml(data) -> str:
 
 
 def _config(name: str) -> dict:
-    return yaml.safe_load((ROOT / "config" / name).read_text(encoding="utf-8"))
+    return yaml.safe_load((paths.DATA / "config" / name).read_text(encoding="utf-8"))
 
 
 def _profile_text(profile: MasterProfile) -> str:

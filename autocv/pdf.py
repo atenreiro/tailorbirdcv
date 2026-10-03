@@ -42,7 +42,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from . import oscompat
+from . import oscompat, paths
 from .oscompat import IS_MAC, IS_WINDOWS
 
 PDF_TIMEOUT = float(os.environ.get("AUTOCV_PDF_TIMEOUT", "120"))
@@ -122,7 +122,7 @@ try {
 
 # -- locations ------------------------------------------------------------------------
 def _private() -> Path:
-    return Path(os.environ.get("AUTOCV_PRIVATE", Path(__file__).resolve().parent.parent / "private"))
+    return paths.private_dir()
 
 
 def work_dir() -> Path:

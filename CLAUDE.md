@@ -12,10 +12,11 @@ Tailors the user's resume to a job description without inventing anything. Senio
 
 ## Layout
 - `autocv/` — `schema.py` (models), `ingest.py` (docx → profile), `render.py` (pixel-faithful docx), `factcheck.py` (blocking gate), `ats.py` (keyword coverage), `pdf.py` (Word/LibreOffice → PDF), `cli.py`.
-- `config/industries.yaml`, `config/tracks.yaml` — emphasis heuristics only, never facts.
-- `templates/base.docx` — theme/page setup with empty body, no PII.
+- `autocv/data/` (shipped in the package): `config/industries.yaml`, `config/tracks.yaml` — emphasis heuristics only, never facts; `templates/base.docx` — theme/page setup with empty body, no PII; `fonts/` (Gelasio, OFL); `words.txt.gz` (fact-check word list). Never put personal data here.
+- `autocv/paths.py` — where things live: bundled data, the built UI (`autocv/web/` in a wheel, `web/dist/` in a checkout), and the user's data (`AUTOCV_PRIVATE`, else `./private` in a checkout that has one, else the OS per-user data folder via platformdirs).
+- Packaging: PyPI name `autocv-app` (commands `autocv` and `autocv-app`); `hatch_build.py` puts `web/dist` into the wheel as `autocv/web` (run the web build first). `autocv/doctor.py` backs `autocv doctor` and `GET /api/doctor`. Releases: tag `vX.Y.Z` → `.github/workflows/release.yml` → PyPI (trusted publishing). No licence has been chosen yet: don't add one.
 - `.claude/skills/profile` (`/profile`) and `.claude/skills/tailor` (`/tailor`).
-- `private/` — `profile.yaml` (source of truth), `knowledge.yaml` (memory: past gap answers + approved style preferences, **never citable**), `source/`, `applications/<company>/<yyyy-mm-dd>_<role>/` (id `<company>~<yyyy-mm-dd>_<role>`; `meta.json`, `answers.yaml`, `tailored.ai.yaml` = AI draft, `tailored.yaml` = edited).
+- `private/` (the data folder) — `profile.yaml` (source of truth), `knowledge.yaml` (memory: past gap answers + approved style preferences, **never citable**), `source/`, `applications/<company>/<yyyy-mm-dd>_<role>/` (id `<company>~<yyyy-mm-dd>_<role>`; `meta.json`, `answers.yaml`, `tailored.ai.yaml` = AI draft, `tailored.yaml` = edited).
 - Web UI: `autocv/api.py` (FastAPI), `autocv/ai.py` (prompts + fact-check repair loop), `autocv/engine.py` (headless `claude -p`, tools disabled — uses the Claude subscription, no API key), `autocv/store.py`, `autocv/jobfetch.py` (JD from URL: ATS APIs → JSON-LD → text → Playwright fallback, SSRF-guarded on every hop), `web/` (React + Vite + Tailwind). The model never writes to the profile: gap answers become *proposals* the user approves in the UI.
 
 ## Web API conventions
@@ -40,8 +41,9 @@ Tailors the user's resume to a job description without inventing anything. Senio
 
 ## Commands
 ```
-uv run autocv ingest | baseline | new "<Co>" "<Role>" | evidence [term] | check <app> | build <app> | serve
+uv run autocv ingest | baseline | new "<Co>" "<Role>" | evidence [term] | check <app> | build <app> | serve | doctor | install-browser
 uv run pytest
+npm --prefix web run build && uv build   # wheel + sdist in dist/ (the wheel includes the UI)
 npm --prefix web run build      # then `uv run autocv serve` → http://127.0.0.1:8000
 AUTOCV_ENGINE=fake uv run autocv serve --port 8001   # demo engine, no AI calls
 ```

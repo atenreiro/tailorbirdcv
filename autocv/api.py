@@ -21,12 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, oscompat, pdf as pdfmod
+from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod
 from .jobfetch import FetchError, fetch_job
 from .engine import Engine, EngineError, default_engine
 from .render import docx_text, render
 from .schema import AppAnswer, Knowledge, Preference, TailoredResume
-from .store import (OUTCOMES, ROOT, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
+from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
                     next_id)
 
 log = logging.getLogger("autocv")
@@ -243,6 +243,11 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except RuntimeError:
             effective = None
         return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM}
+
+    @api.get("/doctor")
+    async def get_doctor():
+        from . import doctor
+        return await doctor.run_checks(engine, store.private, store.settings()["pdf_engine"])
 
     @api.get("/settings")
     async def get_settings():
@@ -756,8 +761,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         raise HTTPException(404, "Unknown AutoCV endpoint. If you just updated AutoCV, restart the server "
                                  "(Ctrl+C, then `uv run autocv serve`).")
 
-    dist = ROOT / "web" / "dist"
-    if dist.exists():
+    dist = paths.web_dir()
+    if dist:
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)

@@ -2,7 +2,7 @@
 
 The base resume uses direct formatting (no Word styles), so each paragraph type is
 encoded here as the same pPr/rPr XML measured from the original. The template
-(templates/base.docx) carries the theme, fonts, settings and page setup with an
+(data/templates/base.docx) carries the theme, fonts, settings and page setup with an
 empty body and no personal data.
 """
 
@@ -19,7 +19,7 @@ from docx.oxml import parse_xml
 
 from .schema import MasterProfile, TailoredResume
 
-TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "base.docx"
+TEMPLATE = Path(__file__).resolve().parent / "data" / "templates" / "base.docx"
 
 W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 R_NS = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'

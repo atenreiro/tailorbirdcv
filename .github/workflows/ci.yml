@@ -49,3 +49,31 @@ jobs:
       - run: uv run pytest -q tests/test_pdf_real.py tests/test_pdf.py tests/test_oscompat.py -rs
         env:
           AUTOCV_EXPECT_LIBREOFFICE: "1"
+
+  package:
+    name: Installable package · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Install the wheel in a clean environment and check it outside the checkout
+        shell: bash
+        run: |
+          uv venv ../clean
+          uv pip install --python ../clean $(ls dist/*.whl)
+          cd ..
+          if [ -x clean/Scripts/python.exe ]; then PY=clean/Scripts/python.exe; else PY=clean/bin/python; fi
+          $PY -m autocv.cli --version
+          $PY -c "from autocv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); print(paths.private_dir())"

@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import oscompat
+from . import oscompat, paths
 from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
                      load_profile, load_tailored, load_yaml)
 
@@ -182,7 +182,7 @@ class Store:
 
     @classmethod
     def default(cls) -> Store:
-        return cls(Path(os.environ.get("AUTOCV_PRIVATE", ROOT / "private")))
+        return cls(paths.private_dir())
 
     # -- paths -------------------------------------------------------------------
     @property
