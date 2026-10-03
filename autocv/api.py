@@ -433,7 +433,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except importer.ImportError_ as e:
             raise HTTPException(422, str(e))
         try:
-            result = await importer.import_profile(engine, text)
+            result = await importer.import_profile(engine, text, store.used_ids("profile"))
         except EngineError as e:
             raise HTTPException(503, f"AI engine unavailable: {e}")
         try:

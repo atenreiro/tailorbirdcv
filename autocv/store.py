@@ -150,6 +150,10 @@ def next_id(prefix: str, taken: set[str]) -> str:
 _WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
 
 
+def _same_type(value, default) -> bool:
+    return isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
+
+
 def file_safe_name(name: str) -> str:
     """A person's name as a file name: accents dropped (José → Jose), letters of any script kept,
     everything else → "_"."""
@@ -235,8 +239,12 @@ class Store:
             value = saved.get(key, default)
             if isinstance(default, dict):
                 value = {**default, **{k: v for k, v in (value if isinstance(value, dict) else {}).items()
-                                       if k in default}}
+                                       if k in default and _same_type(v, default[k])}}
+            elif default is not None and not _same_type(value, default):
+                value = default  # a hand-edited value of the wrong type: fall back
             out[key] = value
+        if out["targets"]["pages"] not in (1, 2, 3):
+            out["targets"]["pages"] = self.TARGETS["pages"]
         return out
 
     def save_settings(self, patch: dict) -> dict:
@@ -340,7 +348,9 @@ class Store:
         """(live ids, retired ids) of the file being replaced. A file that no longer validates
         still contributes the ids it lists, so a broken file can be fixed without losing them."""
         if not path.exists():
-            return set(), []
+            # Deleted or moved away: every id an earlier version used stays retired, so a re-created
+            # profile can't hand an old id (still cited by old drafts and answers) to different text.
+            return set(), sorted(self.used_ids(kind))
         try:
             if kind == "profile":
                 old = self.profile()
@@ -364,6 +374,29 @@ class Store:
                         walk(v)
             walk({k: v for k, v in raw.items() if k != "retired_ids"})
             return ids, retired
+
+    def used_ids(self, kind: str = "profile") -> set[str]:
+        """Every id (live or retired) in the saved history of `kind`."""
+        ids: set[str] = set()
+
+        def walk(node):
+            if isinstance(node, dict):
+                if isinstance(node.get("id"), str):
+                    ids.add(node["id"])
+                ids.update(str(i) for i in node.get("retired_ids") or [] if isinstance(i, (str, int)))
+                for k, v in node.items():
+                    if k != "retired_ids":
+                        walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+        folder = self.history_dir(kind)
+        for f in folder.glob("*.yaml") if folder.exists() else []:
+            try:
+                walk(_parse(f.read_bytes()))
+            except Exception:  # noqa: BLE001 — a damaged snapshot just contributes nothing
+                continue
+        return ids
 
     @contextmanager
     def editing_profile(self, cause: str = "edit"):
@@ -813,7 +846,7 @@ class Store:
 
     def clear_outputs(self, app_id: str) -> None:
         for f in self.app_path(app_id).iterdir():
-            if f.suffix in (".docx", ".pdf"):
+            if f.suffix in (".docx", ".pdf") and not f.name.startswith(("~$", ".")):  # never Word's lock file
                 try:
                     f.unlink()
                 except PermissionError as e:  # Windows locks files that are open in another app

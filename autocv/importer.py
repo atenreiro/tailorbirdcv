@@ -163,10 +163,11 @@ RESUME:
 """
 
 
-async def import_profile(engine: Engine, text: str) -> dict:
-    """Ask the AI to transcribe, then assign ids and verify against the original text."""
+async def import_profile(engine: Engine, text: str, used_ids: set[str] | None = None) -> dict:
+    """Ask the AI to transcribe, then assign ids (never one an earlier profile used) and verify
+    against the original text."""
     raw = await engine.complete(SYSTEM, _prompt(text), import_schema())
-    profile = build_profile(raw)
+    profile = build_profile(raw, used_ids)
     return {"profile": profile, "unverified": unverified(profile, text),
             "suggested_targets": suggested_targets(raw.get("suggested_targets"))}
 
@@ -196,9 +197,9 @@ def _clean(x) -> str:
     return re.sub(r"\s+", " ", str(x or "")).strip().lstrip("•·-*–— ").strip()
 
 
-def build_profile(raw: dict) -> dict:
-    """The AI's transcription → a MasterProfile dict with AutoCV's own ids."""
-    taken: set[str] = set()
+def build_profile(raw: dict, used_ids: set[str] | None = None) -> dict:
+    """The AI's transcription → a MasterProfile dict with AutoCV's own ids (avoiding `used_ids`)."""
+    taken: set[str] = set(used_ids or ())
     c = raw.get("contact") or {}
     links = [{"text": _clean(lk.get("text")), "url": _clean(lk.get("url"))}
              for lk in c.get("links") or [] if _clean(lk.get("text")) and _clean(lk.get("url"))]

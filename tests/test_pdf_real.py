@@ -31,6 +31,11 @@ def test_libreoffice_converts_the_fixture_resume(tmp_path, monkeypatch):
     assert profile.contact.name in text
     assert "\N{WORD JOINER}" not in text  # the glue never leaks into the PDF's text
     fonts = {f.name for f in (tmp_path / "lo-profile" / "user" / "fonts").iterdir()}
-    if not pdf.installed("Georgia"):
-        assert "Gelasio-Bold.ttf" in fonts  # the open stand-in is there when Georgia isn't
+    embedded = {font for page in PdfReader(str(out)).pages
+                for font in (page.get("/Resources", {}).get("/Font", {}) or {}).values()
+                for font in [str(font.get_object().get("/BaseFont", ""))]}
+    for family, stand_in in pdf.SUBSTITUTES.items():  # missing fonts are replaced by the shipped look-alikes
+        if not pdf.installed(family):
+            assert f"{stand_in}-Regular.ttf" in fonts
+            assert any(stand_in in f for f in embedded), (family, embedded)
     assert [p.name for p in (tmp_path / "work").iterdir()] == [".lock"]

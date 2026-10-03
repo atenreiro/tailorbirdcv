@@ -9,15 +9,18 @@ permissions:
 
 jobs:
   test:
-    name: Tests · ${{ matrix.os }}
+    name: Tests · ${{ matrix.os }} · Python ${{ matrix.python }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+        python: ["3.11", "3.13"]  # the oldest supported, and a current one
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - run: uv run pytest -q
       - uses: actions/setup-node@v4

@@ -61,6 +61,12 @@ def _pdf(preferred: str | None) -> dict:
         return _check("pdf", "PDF engine", "error", "Neither Microsoft Word nor LibreOffice was found; "
                       "only the .docx can be built.", hint)
     found = ", ".join(f"{e['name']}{' ' + e['version'] if e['version'] else ''}" for e in engines if e["available"])
+    lo = next((e for e in engines if e["id"] == "libreoffice"), {})
+    if chosen == "libreoffice" and "/snap/" in (lo.get("path") or ""):
+        return _check("pdf", "PDF engine", "warn", f"Using LibreOffice from a Snap (found: {found}). Snaps can't read "
+                      "hidden folders such as AutoCV's data folder, so PDFs may fail.",
+                      "Install LibreOffice from your distribution's packages (e.g. apt install libreoffice-writer), "
+                      "or set AUTOCV_PRIVATE to a non-hidden folder.")
     return _check("pdf", "PDF engine", "ok", f"Using {pdf.NAMES[chosen]} (found: {found}).")
 
 
@@ -103,8 +109,12 @@ def _web() -> dict:
 
 
 async def run_checks(engine: Engine, private: Path, preferred_pdf: str | None) -> list[dict]:
-    return [_data(private), _profile(private), await _engine(engine), _pdf(preferred_pdf), _fonts(preferred_pdf),
-            _browser(), _web()]
+    import asyncio
+
+    def local() -> list[dict]:  # file system and app detection (mdfind, font folders): off the event loop
+        return [_data(private), _profile(private), _pdf(preferred_pdf), _fonts(preferred_pdf), _browser(), _web()]
+    ai_check, others = await asyncio.gather(_engine(engine), asyncio.to_thread(local))
+    return [*others[:2], ai_check, *others[2:]]
 
 
 def render(checks: list[dict]) -> str:

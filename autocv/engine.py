@@ -170,12 +170,17 @@ class AnthropicAPIEngine:
         self._client_factory = client_factory
         self._checked: tuple[str, float, dict] | None = None  # (key, when, status) — status is cached briefly
         self._tool_fallback: set[str] = set()  # schemas the API couldn't compile for structured outputs
+        self._clients: dict = {}
 
     def _client(self, key: str):
+        """One client (and connection pool) per key, reused across calls."""
         if self._client_factory:
             return self._client_factory(key)
-        import anthropic
-        return anthropic.AsyncAnthropic(api_key=key, timeout=self.timeout, max_retries=2)
+        if self._clients.get("key") != key:
+            import anthropic
+            self._clients = {"key": key,
+                             "client": anthropic.AsyncAnthropic(api_key=key, timeout=self.timeout, max_retries=2)}
+        return self._clients["client"]
 
     @staticmethod
     def _explain(e: Exception) -> str:

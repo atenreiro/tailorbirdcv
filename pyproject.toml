@@ -49,8 +49,8 @@ packages = ["autocv"]
 path = "hatch_build.py"  # bundles the built web UI (web/dist) as autocv/web
 
 [tool.hatch.build.targets.sdist]
-include = ["autocv", "web/dist", "README.md", "CHANGELOG.md", "hatch_build.py"]
-artifacts = ["web/dist/**"]  # git-ignored, but the wheel built from the sdist needs it
+include = ["/autocv", "/web/dist", "/README.md", "/CHANGELOG.md", "/hatch_build.py"]  # anchored: nothing from node_modules or worktrees
+artifacts = ["/web/dist/**"]  # git-ignored, but the wheel built from the sdist needs it
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

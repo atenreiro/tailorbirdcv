@@ -6,4 +6,7 @@
   bundling it makes the check behave identically on macOS, Windows and Linux.
 - `fonts/Gelasio-*.ttf` — Gelasio by SorkinType (https://github.com/SorkinType/Gelasio), a free font with the
   same character widths as Georgia, used by LibreOffice when Georgia isn't installed. SIL Open Font License 1.1
-  (`fonts/OFL.txt`).
+  (`fonts/OFL-Gelasio.txt`).
+- `fonts/Carlito-*.ttf` — Carlito (https://github.com/googlefonts/carlito), the same character widths as Calibri,
+  used by LibreOffice when Calibri isn't installed (many Linux systems don't ship it). SIL Open Font License 1.1
+  (`fonts/OFL-Carlito.txt`).

@@ -374,7 +374,12 @@ export function SystemCheck({ bare }: { bare?: boolean }) {
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const load = useCallback(() => api.doctor().then(setChecks).catch((e) => setError(e.message)).finally(() => setBusy(false)), [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    const again = () => { void load() }
+    window.addEventListener('autocv:settings', again)  // engine, key or PDF choice changed
+    return () => window.removeEventListener('autocv:settings', again)
+  }, [load])
   const run = () => {
     setBusy(true)
     setError(null)
@@ -421,6 +426,11 @@ export default function Settings() {
   const [flash, setFlash] = useState<string | null>(null)
 
   useEffect(() => { loadSettings(true).then(setS).catch((e) => setError(e.message)) }, [])
+  // Saves can overlap (different sections): show the server's latest state, not whichever answer came last.
+  const onSaved = (next: SettingsData) => {
+    setS(next)
+    loadSettings(true).then((latest) => { cacheSettings(latest); setS(latest) }).catch(() => {})
+  }
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 2200)
@@ -459,11 +469,11 @@ export default function Settings() {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {!s && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Looking for Word and LibreOffice…</p>}
 
-      {s && <YourTargets settings={s} onSaved={setS} />}
+      {s && <YourTargets settings={s} onSaved={onSaved} />}
 
-      {s && <ResumeDesign settings={s} onSaved={setS} />}
+      {s && <ResumeDesign settings={s} onSaved={onSaved} />}
 
-      {s && <AIEngine settings={s} onSaved={setS} />}
+      {s && <AIEngine settings={s} onSaved={onSaved} />}
 
       {s && (
         <section aria-labelledby="pdf-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">

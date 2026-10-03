@@ -199,9 +199,10 @@ monitoring testing offensive defensive product products digital transformation m
 additional general emerging edge perimeter operational policy policies secure software development
 endpoint endpoints systems services service enterprise investigations forensics engagement executive
 advisory consulting oversight planning design research reporting training awareness
-sales marketing finance financial accounting customer customers clinical care patient healthcare legal
-content creative communications education teaching quality project projects supply chain logistics
+quality project projects communications
 """.split())
+# Only structural words here: a label naming a domain ("Healthcare", "Sales") must find support in the
+# profile itself (its skills or text), so a label can't imply experience the evidence doesn't show.
 
 # Typographic characters always allowed in claim text (dashes/quotes are canonicalised).
 _ALLOWED_SYMBOLS = set(

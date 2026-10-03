@@ -17,8 +17,8 @@ is the default whenever both are installed).
 - **LibreOffice** runs headless (no window) with its own profile (`private/libreoffice/`), so it
   never touches a LibreOffice the user has open. The fonts the resume names (Georgia, Calibri,
   Aptos…) are linked into that profile (from the system and, on macOS, from inside Word), and when
-  one is missing a metric-compatible open font stands in (Georgia → Gelasio, shipped with AutoCV;
-  Calibri → Carlito, shipped with LibreOffice), so line breaks and page counts match Word's.
+  one is missing a metric-compatible open font stands in (Georgia → Gelasio, Calibri → Carlito, both
+  shipped with AutoCV), so line breaks and page counts match Word's.
   Number ranges ("2–4") are glued in LibreOffice's copy only, because it would otherwise break a
   line inside them where Word doesn't.
 
@@ -88,34 +88,46 @@ function run(argv) {
 """
 
 # Windows: Windows PowerShell 5.1 (.NET Framework, which has GetActiveObject) driving Word over COM.
-# __SRC__ / __DST__ are replaced with single-quoted PowerShell literals.
+# Paths arrive in environment variables (no quoting, whatever characters they contain). When the script
+# starts its own Word, it writes that process id to AUTOCV_PIDFILE so a timeout can stop exactly that
+# hidden instance (COM starts it outside our process tree). Errors are printed as one plain line.
 _WORD_PS = r"""
 $ErrorActionPreference = 'Stop'
-$src = __SRC__
-$dst = __DST__
-$missing = [System.Reflection.Missing]::Value
-$word = $null
-$created = $false
-try { $word = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application') } catch { }
-if ($null -eq $word) {
-  $word = New-Object -ComObject Word.Application
-  $created = $true
-  $word.Visible = $false
-}
-$alerts = $word.DisplayAlerts
-$word.DisplayAlerts = 0
-$doc = $null
+$ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 try {
-  # Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, ..., Visible=$false): never shown
-  $doc = $word.Documents.Open($src, $false, $true, $false, $missing, $missing, $missing, $missing,
-                              $missing, $missing, $missing, $false)
-  $doc.ExportAsFixedFormat($dst, 17)  # wdExportFormatPDF
-} finally {
-  if ($null -ne $doc) { $doc.Close(0) }  # our document, by its own object; wdDoNotSaveChanges
-  $word.DisplayAlerts = $alerts
-  # Quit only a Word we created, and only when nothing else is open in it (-2: ask to save).
-  if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }
-  [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)
+  $src = $env:AUTOCV_SRC
+  $dst = $env:AUTOCV_DST
+  $missing = [System.Reflection.Missing]::Value
+  $word = $null
+  $created = $false
+  try { $word = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application') } catch { }
+  if ($null -eq $word) {
+    $before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    $word = New-Object -ComObject Word.Application
+    $created = $true
+    $new = @(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } | ForEach-Object { $_.Id })
+    if ($new.Count -eq 1) { Set-Content -LiteralPath $env:AUTOCV_PIDFILE -Value $new[0] -Encoding ascii }
+    $word.Visible = $false
+  }
+  $alerts = $word.DisplayAlerts
+  $word.DisplayAlerts = 0
+  $doc = $null
+  try {
+    # Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, ..., Visible=$false): never shown
+    $doc = $word.Documents.Open($src, $false, $true, $false, $missing, $missing, $missing, $missing,
+                                $missing, $missing, $missing, $false)
+    $doc.ExportAsFixedFormat($dst, 17)  # wdExportFormatPDF
+  } finally {
+    if ($null -ne $doc) { $doc.Close(0) }  # our document, by its own object; wdDoNotSaveChanges
+    $word.DisplayAlerts = $alerts
+    # Quit only a Word we created, and only when nothing else is open in it (-2: ask to save).
+    if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)
+  }
+} catch {
+  [Console]::Out.WriteLine('Word error: ' + $_.Exception.Message)
+  exit 1
 }
 """
 
@@ -250,7 +262,13 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
         try:
             if engine == "word":
                 shutil.copyfile(docx, src)
-                _run(_command(src, dst), timeout, dst, engine, work)
+                pidfile = work / f"autocv-{tag}.pid"
+                try:
+                    _run(_command(src, dst), timeout, dst, engine, work,
+                         env={**os.environ, "AUTOCV_SRC": str(src), "AUTOCV_DST": str(dst), "AUTOCV_PIDFILE": str(pidfile)},
+                         pidfile=pidfile)
+                finally:
+                    pidfile.unlink(missing_ok=True)
             else:
                 _lo_copy(docx, src)
                 _run(_lo_command(src, work), timeout, dst, engine, work)
@@ -276,13 +294,15 @@ def _remove_output(pdf: Path) -> None:
                            "Close it in your PDF viewer, then rebuild.") from e
 
 
-def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path) -> None:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **oscompat.group_kwargs())
+def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path, env: dict | None = None,
+         pidfile: Path | None = None) -> None:
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, **oscompat.group_kwargs())
     try:
         out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         oscompat.kill_tree(proc.pid)  # the helper and anything it started
         proc.wait()
+        _kill_started_word(pidfile)
         if engine == "word":
             raise RuntimeError(f"Word didn't finish within {int(timeout)} s. {_word_dialog_hint(work)}")
         raise RuntimeError(f"LibreOffice didn't finish within {int(timeout)} s and was stopped. Try again, "
@@ -305,17 +325,25 @@ def _word_dialog_hint(work: Path) -> str:
             "answer it, then rebuild.")
 
 
-def _ps_literal(path: Path) -> str:
-    return "'" + str(path).replace("'", "''") + "'"
+def _kill_started_word(pidfile: Path | None) -> None:
+    """After a timeout on Windows: stop the hidden Word that this conversion started (and only that one)."""
+    if not (IS_WINDOWS and pidfile):
+        return
+    try:
+        pid = int(pidfile.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        return  # Word was already running (the user's), or didn't start
+    oscompat.kill_tree(pid)  # pragma: no cover - Windows only
 
 
 def _command(src: Path, dst: Path) -> list[str]:
+    """The Word command; on Windows the paths travel in AUTOCV_SRC / AUTOCV_DST (see to_pdf)."""
     if IS_WINDOWS:
-        script = _WORD_PS.replace("__SRC__", _ps_literal(src)).replace("__DST__", _ps_literal(dst))
+        script = _WORD_PS
         root = os.environ.get("SystemRoot", r"C:\Windows")
         powershell = Path(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         return [str(powershell) if powershell.is_file() else "powershell.exe", "-NoProfile", "-NonInteractive",
-                "-ExecutionPolicy", "Bypass", "-EncodedCommand",
+                "-ExecutionPolicy", "Bypass", "-OutputFormat", "Text", "-EncodedCommand",
                 base64.b64encode(script.encode("utf-16-le")).decode("ascii")]
     if IS_MAC:
         return ["/usr/bin/osascript", "-l", "JavaScript", "-e", _WORD_JXA, str(src), str(dst)]
@@ -358,7 +386,7 @@ def _lo_copy(docx: Path, dst: Path) -> None:
 
 # -- fonts for LibreOffice -------------------------------------------------------------
 # Metric-compatible open fonts: same character widths, so line breaks and page counts don't move.
-SUBSTITUTES = {"Georgia": "Gelasio", "Calibri": "Carlito", "Cambria": "Caladea"}
+SUBSTITUTES = {"Georgia": "Gelasio", "Calibri": "Carlito"}  # both shipped in data/fonts
 
 
 def system_font_dirs() -> list[Path]:

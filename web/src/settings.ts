@@ -9,7 +9,11 @@ export function loadSettings(force = false): Promise<Settings> {
   return cache
 }
 
-export const cacheSettings = (s: Settings) => { cache = Promise.resolve(s) }
+/** Store fresh settings and tell anything showing engine status (header badge, system check) to refresh. */
+export const cacheSettings = (s: Settings) => {
+  cache = Promise.resolve(s)
+  window.dispatchEvent(new Event('autocv:settings'))
+}
 
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null)

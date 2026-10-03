@@ -3,7 +3,7 @@ sizes and spacing on the same structure (so every theme works with the fact-chec
 
 Sizes are Word half-points (19 = 9.5 pt); spacing and margins are twips (1/1440 inch).
 Fonts are ones LibreOffice can match without Microsoft's fonts installed (Calibri → Carlito,
-Georgia → Gelasio, Cambria → Caladea), so page breaks stay the same on every OS.
+Georgia → Gelasio, both shipped in data/fonts), so page breaks stay the same on every OS.
 """
 
 from __future__ import annotations

@@ -76,7 +76,11 @@ export function EngineBadge() {
   const [status, setStatus] = useState<EngineStatus | null>(null)
   const [open, setOpen] = useState(false)
   useEffect(() => {
-    api.engine().then(setStatus).catch(() => setStatus({ engine: '?', ready: false, detail: 'Backend unreachable — is `uv run autocv serve` running?' }))
+    const load = () => api.engine().then(setStatus)
+      .catch(() => setStatus({ engine: '?', ready: false, detail: 'Backend unreachable — is `uv run autocv serve` running?' }))
+    void load()
+    window.addEventListener('autocv:settings', load)  // the AI engine or key changed
+    return () => window.removeEventListener('autocv:settings', load)
   }, [])
   const ready = status?.ready
   return (

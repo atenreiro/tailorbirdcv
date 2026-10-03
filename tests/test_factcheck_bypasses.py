@@ -277,3 +277,14 @@ def test_brand_names_that_are_dictionary_words_are_not_ordinary_first_words(prof
 def test_common_abbreviations_pass(profile, tailored):
     text = "Rebuilt detection logic (e.g. rules, lookups etc.) in Splunk, cutting false positives by over 65%."
     assert acme_bullet(profile, tailored, text) == []
+
+
+def test_a_group_label_cant_name_a_domain_the_profile_never_mentions():
+    from pathlib import Path
+    from autocv import factcheck
+    from autocv.schema import load_profile, load_tailored
+    fix = Path(__file__).parent / "fixtures"
+    profile, tailored = load_profile(fix / "profile.yaml"), load_tailored(fix / "tailored.yaml")
+    tailored.competencies[0].label = "Healthcare & Clinical Systems"
+    errors = [str(e) for e in factcheck.check(profile, tailored).errors]
+    assert any("healthcare" in e.lower() for e in errors), errors

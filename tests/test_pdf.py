@@ -268,13 +268,26 @@ def test_windows_word_runs_hidden_through_com_and_only_touches_our_document(monk
     import base64
     monkeypatch.setattr(pdf, "IS_WINDOWS", True)
     monkeypatch.setattr(pdf, "IS_MAC", False)
-    cmd = pdf._command(Path("C:/work/it's.docx"), Path("C:/work/out.pdf"))
-    assert cmd[1:6] == ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]
+    cmd = pdf._command(Path("C:/work/it\u2019s.docx"), Path("C:/work/out.pdf"))
+    assert cmd[1:8] == ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-OutputFormat", "Text",
+                        "-EncodedCommand"]
     script = base64.b64decode(cmd[-1]).decode("utf-16-le")
-    assert "$src = 'C:/work/it''s.docx'" in script.replace("\\", "/")  # quotes escaped, never interpolated
+    assert "$src = $env:AUTOCV_SRC" in script and "it" not in script.split("$src")[0]  # paths never in the script
     assert "ExportAsFixedFormat($dst, 17)" in script and "$doc.Close(0)" in script
     assert "if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }" in script
+    assert "AUTOCV_PIDFILE" in script and "Word error: " in script
     assert ".Activate" not in script and "Documents.Item(" not in script  # never by position
+
+
+def test_a_word_timeout_on_windows_stops_only_the_word_it_started(monkeypatch, tmp_path):
+    killed = []
+    monkeypatch.setattr(pdf, "IS_WINDOWS", True)
+    monkeypatch.setattr(pdf.oscompat, "kill_tree", lambda pid: killed.append(pid))
+    pidfile = tmp_path / "w.pid"
+    pdf._kill_started_word(pidfile)  # no pidfile: Word was the user's → left alone
+    pidfile.write_text("4242", encoding="ascii")
+    pdf._kill_started_word(pidfile)
+    assert killed == [4242]
 
 
 def test_word_is_not_offered_on_linux(monkeypatch):

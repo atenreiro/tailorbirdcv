@@ -6,6 +6,7 @@
     autocv evidence [term]           list citable evidence ids (optionally filtered)
     autocv check <app>               fact-check + ATS report (exit 1 on errors)
     autocv build <app>               check → .docx → .pdf → page limit → status "built"
+                                     (exit 1 fact-check, 2 too long, 3 PDF failed)
     autocv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
                  [--no-browser]
     autocv doctor                    check this machine: data folder, AI engine, PDF engine, fonts, browser
@@ -26,7 +27,9 @@ from .ingest import ingest, merge_reingest
 from .render import docx_text, render
 from .schema import MasterProfile, dump_yaml, load_profile, load_tailored, load_yaml
 
-from .store import Store
+from .store import OutputInUse, Store
+
+PDF_FAILED = 3  # exit code: the PDF couldn't be made (1 = fact-check, 2 = too long)
 
 STORE = Store.default()
 PRIVATE = STORE.private
@@ -100,14 +103,20 @@ def cmd_ingest(args) -> int:
 
 def cmd_baseline(args) -> int:
     profile = load_profile(PROFILE)
-    out = render(profile, load_tailored(BASE_TAILORED), PRIVATE / "baseline" / "baseline.docx")
+    # The baseline checks the Classic design against the original resume, whatever theme is chosen.
+    out = render(profile, load_tailored(BASE_TAILORED), PRIVATE / "baseline" / "baseline.docx", theme="classic",
+                 paper="letter")
     diff = list(difflib.unified_diff(docx_text(SOURCE_DOCX), docx_text(out), "original", "rebuilt", lineterm="", n=0))
     print("\n".join(diff) if diff else "text: identical to the original")
     report = factcheck.check(profile, load_tailored(BASE_TAILORED))
     _print_report(report)
     if not args.no_pdf:
         from .pdf import page_count, to_pdf
-        print(f"pages: {page_count(to_pdf(out, engine=STORE.settings()['pdf_engine']))}")
+        try:
+            print(f"pages: {page_count(to_pdf(out, engine=STORE.settings()['pdf_engine']))}")
+        except RuntimeError as e:
+            print(f"pdf failed: {e}", file=sys.stderr)
+            return PDF_FAILED
     print(f"→ {out}")
     return 0 if report.ok and not diff else 1
 
@@ -159,13 +168,22 @@ def cmd_build(args) -> int:
     if not factcheck.check(profile, tailored).ok:
         print("build blocked: the resume changed while checking — run build again")
         return 1
-    STORE.clear_outputs(app_id)  # never leave an older .docx/.pdf around
+    try:
+        STORE.clear_outputs(app_id)  # never leave an older .docx/.pdf around
+    except OutputInUse as e:
+        print(f"build blocked: {e}", file=sys.stderr)
+        return PDF_FAILED
     docx = render(profile, tailored, app / f"{STORE.output_stem(app_id)}.docx")
     print(f"docx: {docx}")
     pages = None
     if not args.no_pdf:
         from .pdf import page_count, to_pdf
-        pdf = to_pdf(docx, engine=STORE.settings()["pdf_engine"])
+        try:
+            pdf = to_pdf(docx, engine=STORE.settings()["pdf_engine"])
+        except RuntimeError as e:  # no engine, Word dialog/timeout, PDF open in a viewer…
+            STORE.record_build(app_id, built_hash, profile_version, None)
+            print(f"pdf failed (the .docx was built): {e}", file=sys.stderr)
+            return PDF_FAILED
         pages = page_count(pdf)
         print(f"pdf:  {pdf} ({pages} pages)")
         limit = args.max_pages or int(STORE.settings()["targets"]["pages"])
