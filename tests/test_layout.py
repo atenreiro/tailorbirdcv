@@ -100,3 +100,17 @@ def test_migration_runs_when_the_server_starts(store):
     assert client.get(f"/api/applications/{old}").status_code == 200   # old link still opens it
     assert client.delete(f"/api/applications/{row['id']}").status_code == 204
     assert not (store.apps_dir / "google").exists()
+
+
+def test_old_company_named_resumes_lose_the_company(store):
+    old = _old_style(store, "2026-10-01_example-capital_lead", "Example Capital", "Lead")
+    folder = store.apps_dir / old
+    (folder / "Jane_Example_Resume.pdf").unlink()
+    for ext in (".docx", ".pdf"):
+        (folder / f"Jane_Example_Resume_Example_Capital{ext}").write_bytes(b"built")
+    (folder / "Jane_Example_Resume_v2.docx").write_bytes(b"mine")      # not the old pattern: left alone
+    store.migrate_layout()
+    (app,) = store.list_apps()
+    assert store.files(app["id"]) == ["Jane_Example_Resume.docx", "Jane_Example_Resume.pdf", "Jane_Example_Resume_v2.docx"]
+    sent = store.app_path(app["id"]) / "sent" / "2026-10-01_120000"
+    assert [p.name for p in sent.iterdir()] == ["Jane_Example_Resume.pdf"]  # sent copies untouched

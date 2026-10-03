@@ -279,7 +279,28 @@ class Store:
             if moved:
                 _write_json_atomic(self.apps_dir / LEGACY_IDS, {**self._legacy_ids(), **moved})
                 self._repoint_knowledge(moved)
+            self.drop_company_from_filenames()
         return moved
+
+    def drop_company_from_filenames(self) -> list[Path]:
+        """Rename resumes built before file names became company-neutral
+        (<Name>_Resume_<Company>.docx/.pdf → <Name>_Resume.docx/.pdf). Only that exact pattern,
+        only the working files (never sent/ copies), and never over an existing file."""
+        if not self.apps_dir.exists() or not self.profile_path.exists():
+            return []
+        renamed = []
+        with _LOCK:
+            for app in self.list_apps():
+                company = re.sub(r"[^A-Za-z0-9]+", "_", app.get("company") or "").strip("_")
+                if not company:
+                    continue
+                folder, stem = self.app_path(app["id"]), self.output_stem(app["id"])
+                for ext in (".docx", ".pdf"):
+                    old, new = folder / f"{stem}_{company}{ext}", folder / f"{stem}{ext}"
+                    if old.is_file() and not new.exists():
+                        old.rename(new)
+                        renamed.append(new)
+        return renamed
 
     def _repoint_knowledge(self, renamed: dict[str, str]) -> None:
         """Answers and style preferences remember which application they came from."""
