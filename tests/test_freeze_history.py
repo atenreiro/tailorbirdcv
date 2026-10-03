@@ -115,7 +115,7 @@ def test_tracker_shows_latest_sent_copy_and_delete_still_works(env):
     (row,) = client.get("/api/applications").json()
     assert row["sent"]["reason"] == "applied"
     assert client.delete(f"/api/applications/{app_id}").status_code == 204   # read-only files included
-    assert not (store.apps_dir / app_id).exists()
+    assert not (store.apps_dir / "example-capital").exists()   # the empty company folder goes too
 
 
 def test_reveal_a_sent_copy(env, monkeypatch):

@@ -152,6 +152,9 @@ def _engine_call(exc: EngineError) -> HTTPException:
 def create_app(store: Store | None = None, engine: Engine | None = None,
                allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")) -> FastAPI:
     store = store or Store.default()
+    moved = store.migrate_layout()  # older flat application folders → applications/<company>/<date>_<role>/
+    if moved:
+        print(f"AutoCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
     engine = engine or default_engine()
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     # DNS-rebinding guard: a malicious site can't reach this local API through a hostname it controls.
@@ -375,8 +378,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.delete("/applications/{app_id}", status_code=204)
     def delete_application(app_id: str):
-        import shutil
-        shutil.rmtree(store.app_path(need_app(app_id)))
+        store.delete_app(need_app(app_id))
 
     @api.post("/applications/{app_id}/analyze")
     async def analyze(app_id: str):

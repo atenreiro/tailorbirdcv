@@ -4,7 +4,7 @@
       profile.yaml          the only citable facts
       knowledge.yaml        remembered answers + learned style preferences (not citable)
       source/base_resume.docx, base_tailored.yaml
-      applications/<YYYY-MM-DD>_<company>_<role>/
+      applications/<company>/<YYYY-MM-DD>_<role>/     id: <company>~<YYYY-MM-DD>_<role>
         meta.json  jd.md  analysis.yaml  answers.yaml
         tailored.ai.yaml    the AI's composed draft (to learn from the user's edits)
         tailored.yaml       the current, user-edited version
@@ -91,6 +91,12 @@ def next_id(prefix: str, taken: set[str]) -> str:
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+# Applications live in applications/<company>/<yyyy-mm-dd>_<role>/. Their id (used in URLs and
+# the API) is "<company>~<yyyy-mm-dd>_<role>": one URL segment, and "~" never occurs in a slug.
+APP_SEP = "~"
+LEGACY_IDS = ".moved.json"  # old flat-layout ids → new ids, so old links keep working
 
 
 @dataclass
@@ -212,17 +218,93 @@ class Store:
 
     # -- applications ----------------------------------------------------------------
     def app_path(self, app_id: str) -> Path:
-        path = (self.apps_dir / app_id).resolve()
-        if path.parent != self.apps_dir.resolve() or not path.is_dir():
+        app_id = self._legacy_ids().get(app_id, app_id)
+        company, sep, rest = app_id.partition(APP_SEP)
+        if not sep or not company or not rest:
+            raise KeyError(app_id)
+        root = self.apps_dir.resolve()
+        path = (self.apps_dir / company / rest).resolve()
+        # confined to exactly applications/<company>/<folder>/
+        if path.parent.parent != root or path.parent.name != company or path.name != rest or not path.is_dir():
             raise KeyError(app_id)
         return path
 
+    def app_id_for(self, path: Path) -> str:
+        """The id of an application folder (raises KeyError if it isn't one)."""
+        rel = path.resolve().relative_to(self.apps_dir.resolve()).parts
+        if len(rel) != 2:
+            raise KeyError(str(path))
+        app_id = f"{rel[0]}{APP_SEP}{rel[1]}"
+        self.app_path(app_id)
+        return app_id
+
+    def _new_folder(self, company: str, date: str, role: str) -> tuple[str, Path]:
+        """A free applications/<company>/<date>_<role>[-n]/ folder (not created)."""
+        c = slug(company) or "company"
+        base = f"{date}_{slug(role) or 'role'}"
+        rest, n = base, 2
+        while (self.apps_dir / c / rest).exists():
+            rest, n = f"{base}-{n}", n + 1
+        return f"{c}{APP_SEP}{rest}", self.apps_dir / c / rest
+
+    def _prune(self, company_dir: Path) -> None:
+        """Remove a company folder once its last application is gone."""
+        try:
+            company_dir.rmdir()
+        except OSError:
+            pass
+
+    def _legacy_ids(self) -> dict[str, str]:
+        p = self.apps_dir / LEGACY_IDS
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+    def migrate_layout(self) -> dict[str, str]:
+        """Move applications from the old flat layout (applications/<date>_<company>_<role>/) to
+        applications/<company>/<date>_<role>/, and point stored references at the new ids.
+        Idempotent; returns {old id: new id} for what it moved."""
+        if not self.apps_dir.exists():
+            return {}
+        moved: dict[str, str] = {}
+        with _LOCK:
+            for old in sorted(self.apps_dir.iterdir()):
+                if not (old.is_dir() and (old / "meta.json").exists()):
+                    continue  # company folders (and anything else) are left alone
+                meta = json.loads((old / "meta.json").read_text(encoding="utf-8"))
+                m = re.match(r"\d{4}-\d{2}-\d{2}", old.name)
+                date = m.group(0) if m else (meta.get("created") or f"{dt.date.today():%Y-%m-%d}")[:10]
+                new_id, target = self._new_folder(meta.get("company") or "", date, meta.get("role") or "")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                old.rename(target)
+                moved[old.name] = new_id
+            if moved:
+                _write_json_atomic(self.apps_dir / LEGACY_IDS, {**self._legacy_ids(), **moved})
+                self._repoint_knowledge(moved)
+        return moved
+
+    def _repoint_knowledge(self, renamed: dict[str, str]) -> None:
+        """Answers and style preferences remember which application they came from."""
+        if not self.knowledge_path.exists() or not renamed:
+            return
+        knowledge = self.knowledge()
+        changed = False
+        for a in knowledge.answers:
+            if a.app_id in renamed:
+                a.app_id, changed = renamed[a.app_id], True
+        for p in knowledge.preferences:
+            if p.source_app in renamed:
+                p.source_app, changed = renamed[p.source_app], True
+        if changed:
+            self.save_knowledge(knowledge, cause="application folders reorganized")
+
+    def delete_app(self, app_id: str) -> None:
+        import shutil
+        with _LOCK:
+            path = self.app_path(app_id)
+            shutil.rmtree(path)
+            self._prune(path.parent)
+
     def create_app(self, company: str, role: str, jd: str, url: str | None = None) -> str:
-        base = f"{dt.date.today():%Y-%m-%d}_{slug(company) or 'company'}_{slug(role) or 'role'}"
-        app_id, n = base, 2
-        while (self.apps_dir / app_id).exists():
-            app_id, n = f"{base}-{n}", n + 1
-        path = self.apps_dir / app_id
+        app_id, path = self._new_folder(company, f"{dt.date.today():%Y-%m-%d}", role)
         path.mkdir(parents=True)
         (path / "jd.md").write_text(jd, encoding="utf-8")
         now = dt.datetime.now().isoformat(timespec="seconds")
@@ -231,15 +313,18 @@ class Store:
         return app_id
 
     def rename_app(self, app_id: str, company: str, role: str) -> str:
-        """Give a folder created before the company/role were known a readable name."""
-        old = self.app_path(app_id)
-        base = f"{app_id[:10]}_{slug(company) or 'company'}_{slug(role) or 'role'}"
-        new_id, n = base, 2
-        while (self.apps_dir / new_id).exists() and new_id != app_id:
-            new_id, n = f"{base}-{n}", n + 1
-        if new_id != app_id:
-            old.rename(self.apps_dir / new_id)
-        return new_id
+        """Move a folder created before the company/role were known to its readable place."""
+        with _LOCK:
+            old = self.app_path(app_id)
+            want = f"{slug(company) or 'company'}{APP_SEP}{old.name[:10]}_{slug(role) or 'role'}"
+            if app_id == want or app_id.startswith(want + "-"):
+                return app_id
+            new_id, target = self._new_folder(company, old.name[:10], role)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(target)
+            self._prune(old.parent)
+            self._repoint_knowledge({app_id: new_id})
+            return new_id
 
     def meta(self, app_id: str) -> dict:
         path = self.app_path(app_id) / "meta.json"
@@ -250,7 +335,7 @@ class Store:
         meta = {**meta, "updated": now}
         if meta.get("status") in MILESTONES and meta.get("status") not in meta.get("milestones", {}):
             meta["milestones"] = {**meta.get("milestones", {}), meta["status"]: now}
-        _write_json_atomic(self.apps_dir / app_id / "meta.json", meta)
+        _write_json_atomic(self.app_path(app_id) / "meta.json", meta)
         return meta
 
     def update_meta(self, app_id: str, **changes) -> dict:
@@ -302,14 +387,16 @@ class Store:
     def list_apps(self) -> list[dict]:
         if not self.apps_dir.exists():
             return []
+        folders = [p for c in self.apps_dir.iterdir() if c.is_dir() for p in c.iterdir()
+                   if p.is_dir() and (p / "meta.json").exists()]
         apps = []
-        for path in sorted(self.apps_dir.iterdir(), reverse=True):
-            if path.is_dir() and (path / "meta.json").exists():
-                meta = self.meta(path.name)
-                analysis = self.analysis(path.name) or {}
-                apps.append({"id": path.name, **meta,
-                             "industry": analysis.get("industry"), "track": analysis.get("track"),
-                             "files": self.files(path.name)})
+        for path in sorted(folders, key=lambda p: (p.name, p.parent.name), reverse=True):  # newest first
+            app_id = f"{path.parent.name}{APP_SEP}{path.name}"
+            meta = self.meta(app_id)
+            analysis = self.analysis(app_id) or {}
+            apps.append({"id": app_id, **meta,
+                         "industry": analysis.get("industry"), "track": analysis.get("track"),
+                         "files": self.files(app_id)})
         return apps
 
     def jd(self, app_id: str) -> str:

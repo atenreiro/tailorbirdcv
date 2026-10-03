@@ -4,8 +4,8 @@
     autocv baseline                  re-render the base resume; verify text + page count
     autocv new "<Company>" "<Role>"  create an application folder
     autocv evidence [term]           list citable evidence ids (optionally filtered)
-    autocv check <app_dir>           fact-check + ATS report (exit 1 on errors)
-    autocv build <app_dir>           check → .docx → .pdf → page limit → status "built"
+    autocv check <app>               fact-check + ATS report (exit 1 on errors)
+    autocv build <app>               check → .docx → .pdf → page limit → status "built"
     autocv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
                  [--no-browser]
 """
@@ -34,15 +34,28 @@ APPS = STORE.apps_dir
 MAX_PAGES = 2
 
 
-def _app_dir(arg: str) -> Path:
-    path = Path(arg)
-    if not path.exists() and (APPS / arg).exists():
-        path = APPS / arg
-    if path.resolve().parent != APPS.resolve():
-        sys.exit(f"{path} is not an application folder under {APPS}")
+def _app(arg: str) -> tuple[str, Path]:
+    """An application given as its id (company~yyyy-mm-dd_role), its folder relative to
+    applications/ (company/yyyy-mm-dd_role), or any path to the folder."""
+    try:
+        return arg, STORE.app_path(arg)
+    except KeyError:
+        pass
+    for path in (Path(arg), APPS / arg):
+        try:
+            if path.is_dir():
+                app_id = STORE.app_id_for(path)
+                return app_id, STORE.app_path(app_id)
+        except (KeyError, ValueError):
+            pass
+    sys.exit(f"{arg} is not an application under {APPS} (use company~yyyy-mm-dd_role or company/yyyy-mm-dd_role)")
+
+
+def _app_dir(arg: str) -> tuple[str, Path]:
+    app_id, path = _app(arg)
     if not (path / "tailored.yaml").exists():
         sys.exit(f"no tailored.yaml in {path}")
-    return path
+    return app_id, path
 
 
 def _print_report(report: factcheck.Report) -> None:
@@ -87,7 +100,7 @@ def cmd_baseline(args) -> int:
 
 def cmd_new(args) -> int:
     app_id = STORE.create_app(args.company, args.role, f"# {args.role} — {args.company}\n\n")
-    print(APPS / app_id)
+    print(f"{app_id}  →  {STORE.app_path(app_id)}")
     return 0
 
 
@@ -117,23 +130,23 @@ def _check(app: Path):
 
 
 def cmd_check(args) -> int:
-    _, _, report = _check(_app_dir(args.app))
+    _, _, report = _check(_app_dir(args.app)[1])
     return 0 if report.ok else 1
 
 
 def cmd_build(args) -> int:
-    app = _app_dir(args.app)
+    app_id, app = _app_dir(args.app)
     profile, tailored, report = _check(app)
     if not report.ok:
         print("build blocked: fix the fact-check errors first")
         return 1
     analysis = load_yaml(app / "analysis.yaml") if (app / "analysis.yaml").exists() else {}
     if not (app / "meta.json").exists():
-        STORE.save_meta(app.name, {"company": analysis.get("company") or app.name.split("_")[1],
+        STORE.save_meta(app_id, {"company": analysis.get("company") or app_id.split("~")[0],
                                    "role": analysis.get("role", ""), "status": "draft"})
-    STORE.clear_outputs(app.name)  # never leave an older .docx/.pdf around
-    built_hash = STORE.tailored_hash(app.name)
-    docx = render(profile, tailored, app / f"{STORE.output_stem(app.name)}.docx")
+    STORE.clear_outputs(app_id)  # never leave an older .docx/.pdf around
+    built_hash = STORE.tailored_hash(app_id)
+    docx = render(profile, tailored, app / f"{STORE.output_stem(app_id)}.docx")
     print(f"docx: {docx}")
     pages = None
     if not args.no_pdf:
@@ -144,8 +157,8 @@ def cmd_build(args) -> int:
         if pages > args.max_pages:
             print(f"TOO LONG: {pages} pages > {args.max_pages} — trim lowest-relevance content and rebuild")
             return 2
-    STORE.update_meta(app.name, built_hash=built_hash, pages=pages)
-    STORE.advance_status(app.name, "built")
+    STORE.update_meta(app_id, built_hash=built_hash, pages=pages)
+    STORE.advance_status(app_id, "built")
     return 0
 
 
@@ -199,6 +212,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-browser", action="store_true", help="don't open the web UI in the default browser")
     p.set_defaults(fn=cmd_serve)
     args = parser.parse_args(argv)
+    if args.cmd != "serve":  # serve migrates when the API starts
+        for old, new in STORE.migrate_layout().items():
+            print(f"moved application {old} → {new.replace('~', '/')}")
     return args.fn(args)
 
 

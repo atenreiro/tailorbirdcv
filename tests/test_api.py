@@ -63,7 +63,7 @@ def test_full_flow(env):
 
     app_id = client.post("/api/applications", json={"jd": JD}).json()["id"]
     data = client.post(f"/api/applications/{app_id}/analyze").json()
-    assert data["id"].endswith("_example-capital_detection-lead")  # folder renamed once company is known
+    assert data["id"].startswith("example-capital~") and data["id"].endswith("_detection-lead")  # moved once the company is known
     app_id = data["id"]
     assert data["meta"]["company"] == "Example Capital"
     assert data["meta"]["status"] == "analyzed"
