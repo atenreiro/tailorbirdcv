@@ -30,6 +30,7 @@ Tailors the user's resume to a job description without inventing anything. Senio
 - AI Trim never saves: `/trim` returns a fact-checked `trim_proposal` that the UI loads into Review as unsaved edits.
 - Marking an application **applied** freezes a read-only copy of exactly what was sent (`sent/<timestamp>/`); stale or missing PDFs → "Build & freeze". Never edit `sent/`.
 - Every save of `profile.yaml`/`knowledge.yaml` keeps the previous version in `private/history/` (content changes only; kept forever); restore is itself undoable and merges `retired_ids`.
+- PDFs come from Microsoft Word driven by `osascript` (`pdf.py`): launched hidden in the background, never activated, only our document is opened/closed, and Word is quit only if AutoCV started it. Conversions run in the fixed folder `private/word/`, so Word's sandbox "Grant File Access" prompt appears at most once.
 - Compose fits the draft to the base resume's length (estimated lines) with automatic trim rounds; Word's page count is the final check.
 
 ## Commands
