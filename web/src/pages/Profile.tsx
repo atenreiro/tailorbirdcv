@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Evidence, type LeadItem, type Profile as P, type Track } from '../api'
-import { AnswersPanel, PreferencesPanel, useKnowledge } from './Memory'
+import { AnswersPanel, PreferencesPanel } from './Memory'
+import { useKnowledge } from './useKnowledge'
 import { HistoryPanel } from './History'
 import { setUnsaved } from '../unsaved'
-import { cx, ErrorNote, SaveDock, Spinner, useTitle } from '../ui'
+import { cx, useTitle } from '../lib'
+import { ErrorNote, SaveDock, Spinner } from '../ui'
 
 type Tab = 'experience' | 'summary' | 'skills' | 'headlines' | 'projects' | 'synonyms' | 'answers' | 'prefs' | 'history' | 'yaml'
 const SECTIONS: [string, [Tab, string][]][] = [
@@ -119,7 +121,7 @@ export default function Profile() {
   useEffect(() => {
     // Reload on entering the tab, unless there are YAML edits pending from an earlier visit.
     if (tab === 'yaml' && !yamlDirty) api.profileYaml().then((r) => { setYaml(r.yaml); setSavedYaml(r.yaml); setVersion(r.version) }).catch((e) => setError(e.message))
-  }, [tab])
+  }, [tab, yamlDirty])
   const profileDirty = !!p && JSON.stringify(p) !== JSON.stringify(saved)
   useEffect(() => { setUnsaved('profile', profileDirty || yamlDirty) }, [profileDirty, yamlDirty])
   useEffect(() => () => setUnsaved('profile', false), [])

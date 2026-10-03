@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
-import { cx, ErrorNote, Spinner, useTitle } from '../ui'
+import { cx, useTitle } from '../lib'
+import { ErrorNote, Spinner } from '../ui'
 
 type Stage = 'built' | 'applied' | 'interview' | 'offer'
 type Range = '30' | '90' | 'all'

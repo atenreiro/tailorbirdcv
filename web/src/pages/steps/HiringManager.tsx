@@ -1,5 +1,6 @@
 import type { Critique, CritiqueIssue, ScoreKey } from '../../api'
-import { cx } from '../../ui'
+import { openIssues } from './critique'
+import { cx } from '../../lib'
 
 const KIND_LABEL: Record<string, string> = {
   buried_must_have: 'Buried must-have', weak_opening: 'Weak opening', duty_not_outcome: 'Duty, not outcome',
@@ -51,10 +52,6 @@ export function ReviewIssue({ issue, actions, compact = false }: { issue: Critiq
       </div>
     </div>
   )
-}
-
-export function openIssues(c: Critique | null): CritiqueIssue[] {
-  return c ? c.latest.issues.filter((i) => !c.decisions[i.id]) : []
 }
 
 export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll, actions, isInline }: {

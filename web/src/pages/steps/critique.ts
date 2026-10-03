@@ -1,6 +1,6 @@
 // Mirrors autocv/critique.py apply_issue: targets are found by their ORIGINAL text, so
 // accepting one fix never misapplies another after indices shift.
-import type { Claim, CritiqueIssue, Tailored } from '../../api'
+import type { Claim, Critique, CritiqueIssue, Tailored } from '../../api'
 
 const norm = (s: string) => s.split(/\s+/).join(' ').trim()
 const same = (c: Claim | null | undefined, original?: Claim) => !!c && !!original && norm(c.text) === norm(original.text)
@@ -47,4 +47,9 @@ export function applyIssue(t: Tailored, issue: CritiqueIssue): void {
 /** Is this issue about this exact claim (as it currently reads)? */
 export function issueTargets(issue: CritiqueIssue, claim: Claim): boolean {
   return issue.action !== undefined && same(claim, issue.original)
+}
+
+/** Review suggestions the user hasn't accepted or rejected yet. */
+export function openIssues(c: Critique | null): CritiqueIssue[] {
+  return c ? c.latest.issues.filter((i) => !c.decisions[i.id]) : []
 }

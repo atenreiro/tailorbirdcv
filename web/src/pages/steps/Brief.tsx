@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
-import { cx } from '../../ui'
+import { cx } from '../../lib'
 import type { StepProps } from '../Workspace'
 import Cite from './Cite'
 import { btn, btnPrimary, label, semi, sheetCard } from './v3'

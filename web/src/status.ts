@@ -2,7 +2,7 @@
 // if the PDF is missing or out of date, offer "Build & freeze" instead.
 import { api, ApiError, type Application, type Meta } from './api'
 
-export type StatusResult = { meta: Meta } | { app: Application } | null
+type StatusResult = { meta: Meta } | { app: Application } | null
 
 export async function changeStatus(id: string, status: string, onBuilding?: (on: boolean) => void): Promise<StatusResult> {
   try {

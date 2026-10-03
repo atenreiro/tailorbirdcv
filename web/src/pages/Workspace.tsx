@@ -3,12 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
 import { changeStatus } from '../status'
-import { cx, ErrorNote, fmtDate, Spinner, statusStyle, useTitle } from '../ui'
+import { cx, fmtDate, statusStyle, useTitle } from '../lib'
+import { ErrorNote, Spinner } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
 import Review from './steps/Review'
-import { openIssues } from './steps/HiringManager'
+import { openIssues } from './steps/critique'
 import { gapQuestions, openGaps, type Draft } from './steps/gapState'
 
 export type { Draft }
@@ -19,11 +20,11 @@ const STEPS = [
   { key: 'review', label: 'Review' },
   { key: 'export', label: 'Export' },
 ] as const
-export type Step = (typeof STEPS)[number]['key']
+type Step = (typeof STEPS)[number]['key']
 const isStep = (s: string | null): s is Step => STEPS.some((x) => x.key === s)
 
 /** Work in progress that must survive switching steps (each step unmounts when hidden). */
-export interface StepMemo {
+interface StepMemo {
   review: { draft: Tailored; rev: number } | null  // unsaved Review edits
   gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
   gapFocus: string | null  // the gap question open in Gaps (Brief and Review can point at one)

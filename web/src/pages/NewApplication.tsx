@@ -1,7 +1,8 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
-import { cx, ErrorNote, Spinner, StatusPill, useTitle } from '../ui'
+import { cx, useTitle } from '../lib'
+import { ErrorNote, Spinner, StatusPill } from '../ui'
 
 const STOP = new Set(['and', 'the', 'of', 'for', 'in', 'a', 'an', 'to', 'with', 'senior', 'lead', 'head', 'manager', 'vp', 'director', 'engineer'])
 const words = (t: string) => new Set(t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)))

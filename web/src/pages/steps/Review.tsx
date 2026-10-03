@@ -1,10 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type Profile, type Tailored } from '../../api'
-import { cx, ErrorNote, SaveDock, Spinner, Stamp } from '../../ui'
+import { cx } from '../../lib'
+import { ErrorNote, SaveDock, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
-import { applyIssue, findsTarget, issueTargets } from './critique'
+import { applyIssue, findsTarget, issueTargets, openIssues } from './critique'
 import { btn, btnPrimary, label, sheetCard } from './v3'
-import { HiringManagerCard, openIssues, ReviewIssue, type ReviewActions } from './HiringManager'
+import { HiringManagerCard, ReviewIssue, type ReviewActions } from './HiringManager'
 
 const clone = <T,>(x: T): T => structuredClone(x)
 function move<T>(list: T[], i: number, d: number): T[] {

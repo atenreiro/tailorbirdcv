@@ -6,7 +6,7 @@ export type Question = { id: string; requirement: string; question: string; pref
 export type GapState = 'open' | 'draft' | 'pending' | 'approved' | 'no_experience'
 
 export const REOPENED = 'kg-' // question ids for known gaps the user asked to revisit
-export const FROM_REVIEW = 'hm-' // questions raised by the hiring-manager review
+const FROM_REVIEW = 'hm-' // questions raised by the hiring-manager review
 
 /** Analysis questions + known gaps the user reopened + hiring-manager questions (persisted in answers.yaml). */
 export function gapQuestions(analysis: Analysis | null, answers: Record<string, AppAnswer>): Question[] {

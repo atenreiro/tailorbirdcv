@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Application, type Preference } from '../../api'
-import { cx, ErrorNote, Spinner } from '../../ui'
+import { cx } from '../../lib'
+import { ErrorNote, Spinner } from '../../ui'
 
 /** Turns this application's Review edits + guidance into proposed style preferences. */
 export default function StyleCoach({ app }: { app: Application }) {

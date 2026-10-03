@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api, type HistoryDiff, type HistoryEntry, type HistoryKind } from '../api'
-import { cx, ErrorNote, Spinner } from '../ui'
+import { cx } from '../lib'
+import { ErrorNote, Spinner } from '../ui'
 
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -8,17 +9,19 @@ const fmt = (iso: string) =>
 /** Previous versions of the master profile / knowledge base, with diff and restore. */
 export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: HistoryKind) => void; hasUnsaved: boolean }) {
   const [kind, setKind] = useState<HistoryKind>('profile')
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
+  // Entries are tagged with the kind they belong to, so switching kinds shows "Loading…" without
+  // resetting state inside an effect.
+  const [listed, setListed] = useState<{ kind: HistoryKind; entries: HistoryEntry[] } | null>(null)
+  const entries = listed?.kind === kind ? listed.entries : null
   const [open, setOpen] = useState<HistoryDiff | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
 
-  const load = (k: HistoryKind) => {
-    setEntries(null); setOpen(null)
-    api.history(k).then(setEntries).catch((e) => setError(e.message))
-  }
-  useEffect(() => { load(kind) }, [kind])
+  const load = (k: HistoryKind) =>
+    api.history(k).then((list) => setListed({ kind: k, entries: list })).catch((e) => setError(e.message))
+  useEffect(() => { void load(kind) }, [kind])
+  const switchKind = (k: HistoryKind) => { setKind(k); setOpen(null) }
 
   async function toggle(id: string) {
     if (open?.id === id) { setOpen(null); return }
@@ -35,7 +38,8 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
       await api.restore(kind, e.id)
       setFlash(`Restored the version from ${fmt(e.time)}`); setTimeout(() => setFlash(null), 3000)
       onRestored(kind)
-      load(kind)
+      setOpen(null)
+      void load(kind)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -55,7 +59,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
         </p>
         <div className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]" role="tablist">
           {(['profile', 'knowledge'] as const).map((k) => (
-            <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
+            <button key={k} role="tab" aria-selected={kind === k} onClick={() => switchKind(k)}
               className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors', kind === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
               {k === 'profile' ? 'Master profile' : 'Answers & preferences'}
             </button>

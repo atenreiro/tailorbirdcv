@@ -1,4 +1,4 @@
-import { cx } from '../../ui'
+import { cx } from '../../lib'
 
 /** Citation chip: evidence id, with the evidence text revealed on hover/focus. */
 export default function Cite({ id, text, onRemove, n }: { id: string; text?: string; onRemove?: () => void; n?: number }) {

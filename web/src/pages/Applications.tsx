@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppSummary, type ScoreKey } from '../api'
-import { cx, ErrorNote, Spinner, StatusPill, useTitle } from '../ui'
+import { cx, useTitle } from '../lib'
+import { ErrorNote, Spinner, StatusPill } from '../ui'
 import { changeStatus } from '../status'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
@@ -125,9 +126,9 @@ export default function Applications() {
   const [needs, setNeeds] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const [detail, setDetail] = useState<Application | null>(null)
+  const [fetched, setFetched] = useState<Application | null>(null)
   const [busy, setBusy] = useState<{ id: string; kind: Kind } | null>(null)
-  const [notes, setNotes] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ id: string; text: string } | null>(null)  // unsaved notes
   const [drag, setDrag] = useState<string | null>(null)
   const [over, setOver] = useState<Stage | null>(null)
   const [expanded, setExpanded] = useState<Partial<Record<Stage, boolean>>>({})
@@ -152,14 +153,16 @@ export default function Applications() {
   }), [list, view, expanded])
   const a = (apps ?? []).find((x) => x.id === sel) ?? null
 
-  // Full details (scores, keyword coverage) for the open application.
+  // Full details (scores, keyword coverage) for the open application. State is tagged with the
+  // application it belongs to, so switching cards never shows another card's details or notes.
   useEffect(() => {
-    setDetail(null); setNotes(null)
     if (!sel) return
     let live = true
-    api.get(sel).then((d) => { if (live) setDetail(d) }).catch(() => {})
+    api.get(sel).then((d) => { if (live) setFetched(d) }).catch(() => {})
     return () => { live = false }
   }, [sel, apps])
+  const detail = fetched?.id === sel ? fetched : null
+  const notes = draft?.id === sel ? draft.text : null
 
   useEffect(() => { if (open) closeBtn.current?.focus({ preventScroll: true }) }, [open])
 
@@ -389,7 +392,7 @@ export default function Applications() {
           open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
         {a && (
           <Sheet a={a} detail={detail} busy={busy} notes={notes ?? a.notes ?? ''} closeRef={closeBtn}
-            onClose={close} onNotes={setNotes} onNotesBlur={() => saveNotes(a)}
+            onClose={close} onNotes={(text) => setDraft({ id: a.id, text })} onNotesBlur={() => saveNotes(a)}
             onStatus={(s) => void setStatus(a, s)} onAct={(n) => act(a, n)} />
         )}
       </aside>

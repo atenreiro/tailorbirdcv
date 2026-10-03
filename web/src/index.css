@@ -70,7 +70,6 @@
     text-transform: uppercase;
     color: var(--color-accent);
   }
-  .rule-b { border-bottom: 1px solid var(--color-line); }
   .field {
     width: 100%;
     background: var(--color-sheet);

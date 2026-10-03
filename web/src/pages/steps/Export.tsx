@@ -1,5 +1,6 @@
 import { api, ApiError, type Profile, type Tailored } from '../../api'
-import { cx, fmtDate, Stamp } from '../../ui'
+import { cx, fmtDate } from '../../lib'
+import { Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
 import { btn, btnPrimary, chip, label } from './v3'

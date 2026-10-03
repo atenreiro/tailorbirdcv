@@ -1,9 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, type EngineStatus } from './api'
-
-export function cx(...parts: (string | false | null | undefined)[]) {
-  return parts.filter(Boolean).join(' ')
-}
+import { cx, statusStyle } from './lib'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
@@ -11,30 +8,6 @@ export function Spinner({ className = '' }: { className?: string }) {
       className={cx('inline-block size-3.5 rounded-full border-2 border-current border-r-transparent animate-spin', className)}
       aria-hidden
     />
-  )
-}
-
-/** Full-width "the AI is working" panel with elapsed time — engine calls take a minute or two. */
-export function Working({ title, lines, ai = true }: { title: string; lines: string[]; ai?: boolean }) {
-  const [secs, setSecs] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setSecs((s) => s + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-  const line = lines[Math.min(Math.floor(secs / 12), lines.length - 1)]
-  return (
-    <div className="sheet animate-rise px-8 py-10 text-center" role="status" aria-live="polite">
-      <div className="mx-auto mb-5 flex w-40 gap-1" aria-hidden>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <span key={i} className="h-1 flex-1 rounded-full bg-accent/80 animate-pulse" style={{ animationDelay: `${i * 120}ms` }} />
-        ))}
-      </div>
-      <p className="font-display text-[28px] leading-none text-ink">{title}</p>
-      <p className="mt-2 text-muted">{line}</p>
-      <p className="mt-4 font-mono text-xs text-faint">
-        {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')} elapsed{ai && ' · runs on your Claude subscription'}
-      </p>
-    </div>
   )
 }
 
@@ -49,21 +22,9 @@ export function ErrorNote({ error, onDismiss }: { error: string | null; onDismis
   )
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  draft: 'bg-[#e6e9ef] text-muted',
-  analyzed: 'bg-[#e6e9ef] text-ink',
-  composed: 'bg-[#f6ead2] text-warn',
-  built: 'bg-[#dfe5fb] text-accent',
-  applied: 'bg-ink text-white',
-  interview: 'bg-[#dcefe5] text-ok',
-  offer: 'bg-ok text-white',
-  rejected: 'bg-bad-soft text-bad',
-  withdrawn: 'bg-[#e6e9ef] text-faint line-through',
-}
-
 export function StatusPill({ status, className }: { status: string; className?: string }) {
   return (
-    <span className={cx('inline-block rounded px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em]', STATUS_STYLE[status] ?? STATUS_STYLE.draft, className)}>
+    <span className={cx('inline-block rounded px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em]', statusStyle(status), className)}>
       {status}
     </span>
   )
@@ -114,38 +75,6 @@ export function EngineBadge() {
   )
 }
 
-export function Section({ eyebrow, title, children, aside }: { eyebrow?: string; title?: string; children: ReactNode; aside?: ReactNode }) {
-  return (
-    <section className="animate-rise">
-      {(eyebrow || title || aside) && (
-        <div className="rule-b mb-4 flex items-end justify-between gap-4 pb-2">
-          <div>
-            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-            {title && <h2 className="font-display text-2xl text-ink">{title}</h2>}
-          </div>
-          {aside}
-        </div>
-      )}
-      {children}
-    </section>
-  )
-}
-
-/** Sets the browser tab title to "<parts> · AutoCV" while the page is mounted. */
-export function useTitle(parts: (string | undefined)[]) {
-  const title = [...parts.filter((p): p is string => !!p?.trim()), 'AutoCV'].join(' · ')
-  useEffect(() => {
-    const previous = document.title
-    document.title = title
-    return () => { document.title = previous }
-  }, [title])
-}
-
-export function fmtDate(iso?: string) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
 /** Floating "unsaved changes" dock, bottom-centre; turns into a brief "✓ Saved" toast. */
 export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabel = 'Save' }: {
   dirty: boolean; text: string; busy: boolean; flash: string | null
@@ -166,9 +95,4 @@ export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabe
       </button>
     </div>
   )
-}
-
-/** Tailwind classes of the status pill, for custom pills (e.g. one with a ▾ for a select). */
-export function statusStyle(status: string) {
-  return STATUS_STYLE[status] ?? STATUS_STYLE.draft
 }

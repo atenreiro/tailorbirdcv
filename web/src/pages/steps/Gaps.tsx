@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AppAnswer, type Knowledge } from '../../api'
-import { cx, ErrorNote } from '../../ui'
+import { cx } from '../../lib'
+import { ErrorNote } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
 import { gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
