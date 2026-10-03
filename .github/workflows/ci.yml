@@ -44,7 +44,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
       - name: Install LibreOffice (Windows)
         if: runner.os == 'Windows'
-        run: choco install libreoffice-fresh -y --no-progress
+        shell: pwsh
+        run: |
+          # LibreOffice's download server is sometimes unreachable: retry before failing.
+          foreach ($i in 1..3) {
+            choco install libreoffice-fresh -y --no-progress
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Start-Sleep -Seconds 60
+          }
+          exit 1
       - run: uv sync --locked
       - run: uv run pytest -q tests/test_pdf_real.py tests/test_pdf.py tests/test_oscompat.py -rs
         env:

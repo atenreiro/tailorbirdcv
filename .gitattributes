@@ -1,0 +1,2 @@
+# Byte-exact fixtures: never convert line endings on checkout (Windows would add CR).
+tests/fixtures/golden_*.xml -text
