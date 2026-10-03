@@ -2,9 +2,9 @@ import { api, ApiError, type Profile, type Tailored } from '../../api'
 import { cx, fmtDate, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
+import { btn, btnPrimary, chip, label } from './v3'
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
-const card = 'rounded-lg border border-rule bg-sheet'
+const card = 'rounded-xl border border-rule bg-sheet'
 const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
 
 export default function Export({ app, profile, setApp, go, run, memo }: StepProps) {
@@ -48,16 +48,16 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         <section className="animate-rise flex flex-col gap-3.5">
           <div className="border-b border-rule pb-2">
             <p className={label}>Export</p>
-            <h2 className="font-display text-[26px] text-ink">{docx && !stale ? 'Ready to send' : 'Build the files'}</h2>
+            <h2 className="font-display text-2xl text-ink">{docx && !stale ? 'Ready to send' : 'Build the files'}</h2>
           </div>
-          {unsaved && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
+          {unsaved && <p className="rounded-lg bg-[#f6ead2] px-3 py-2 text-[13px] text-warn">You have unsaved Review edits. Save them in Review before building.</p>}
           {!ok && <p className="text-[13px] text-bad">The fact-check isn’t passing. Fix the issues in Review first.</p>}
           {ok && !docx && <p className="text-[13px] text-muted">Renders your resume in its original design, then converts it to PDF with Microsoft Word. The first run may ask macOS for permission to control Word.</p>}
           {ok && !docx && overBudget && (
             <p className="text-[13px] text-warn">Heads-up: this draft looks longer than 2 pages (~{app.length!.lines} vs ~{app.length!.budget} lines).</p>
           )}
           {docx && stale && (
-            <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+            <p className="rounded-lg bg-[#f6ead2] px-3 py-2 text-[13px] text-warn">
               These files are out of date: the resume changed after they were built. Rebuild before sending.
             </p>
           )}
@@ -88,9 +88,10 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
             </>
           )}
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-primary" disabled={!ok || unsaved} onClick={build}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
-            {(tooLong || (overBudget && !docx)) && <button className="btn" disabled={!ok || unsaved} onClick={trim}>Trim with AI</button>}
-            <button className="btn" onClick={() => go('review')}>Back to review</button>
+            <button className={btnPrimary} disabled={!ok || unsaved} onClick={build}
+              title={unsaved ? 'Save your Review edits first' : !ok ? 'Fix the fact-check issues in Review first' : 'Render the .docx and convert it to PDF with Microsoft Word'}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
+            {(tooLong || (overBudget && !docx)) && <button className={btn} disabled={!ok || unsaved} onClick={trim}>Trim with AI</button>}
+            <button className={btn} onClick={() => go('review')}>Back to review</button>
           </div>
         </section>
 
@@ -110,9 +111,10 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
                 <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} page${c.pages > 1 ? 's' : ''}` : ''}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
-                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className="chip hover:bg-accent-soft hover:text-accent">↓ {f.split('.').pop()}</a>
+                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className={`${chip} hover:bg-accent-soft hover:text-accent`}>↓ {f.split('.').pop()}</a>
                   ))}
-                  <button className="chip cursor-pointer hover:bg-accent-soft hover:text-accent" onClick={() => api.reveal(app.id, c.id).catch(() => {})}>Show in Finder</button>
+                  <button className={`${chip} cursor-pointer hover:bg-accent-soft hover:text-accent`} onClick={() => api.reveal(app.id, c.id).catch(() => {})}
+                    title="Opens this sent copy's folder, read-only">Show in Finder</button>
                 </div>
               </div>
             ))
@@ -122,7 +124,7 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         {docx && <StyleCoach app={app} />}
 
         {docx && (
-          <div className="animate-rise flex flex-col gap-1 rounded-lg border border-rule bg-wash/60 px-4 py-3.5 text-[13px] text-muted">
+          <div className="animate-rise flex flex-col gap-1 rounded-lg border border-rule bg-[#eef1f5] px-4 py-3.5 text-[13px] text-muted">
             <p className="font-medium text-ink">Before you send it</p>
             <p>Read it once, end to end. The fact-check guarantees numbers and names, but only you can confirm the emphasis sounds like you.</p>
           </div>
@@ -135,13 +137,13 @@ export default function Export({ app, profile, setApp, go, run, memo }: StepProp
         ) : (
           <p className="text-[13px] text-muted">{app.tailored ? 'An approximate preview. Build to see the exact PDF.' : ''}</p>
         )}
-        <div className="flex justify-center rounded-lg border border-rule bg-wash p-3 sm:p-7">
+        <div className="flex justify-center rounded-lg border border-rule bg-lane p-3 sm:p-7">
           {pdf ? (
             <iframe
               key={app.meta.updated}
               title="PDF preview"
               src={api.fileUrl(app.id, pdf)}
-              className={cx('aspect-[1/1.414] w-full max-w-[760px] bg-white shadow-[0_8px_24px_-12px_rgb(60_40_20/0.4)] transition-opacity', stale && 'opacity-55')}
+              className={cx('aspect-[1/1.414] w-full max-w-[760px] bg-white shadow-[0_8px_24px_-12px_rgb(14_20_34/0.35)] transition-opacity', stale && 'opacity-55')}
             />
           ) : app.tailored ? (
             <PagePreview t={app.tailored} p={profile.profile} />
@@ -169,8 +171,8 @@ function PagePreview({ t, p }: { t: Tailored; p: Profile }) {
       return x && <p key={id} className="flex gap-1.5 text-[11px] leading-[1.4] text-body"><span className="text-faint">•</span><span><span className="font-semibold">{x.label}</span> {text ?? x.text}</span></p>
     })
   return (
-    <div className="flex w-full max-w-[640px] flex-col gap-3 bg-white px-5 py-7 shadow-[0_8px_24px_-12px_rgb(60_40_20/0.4)] sm:px-12 sm:py-11"
-      style={{ fontFamily: "Calibri, Carlito, 'IBM Plex Sans', sans-serif" }} aria-label="Approximate resume preview">
+    <div className="flex w-full max-w-[640px] flex-col gap-3 bg-white px-5 py-7 shadow-[0_8px_24px_-12px_rgb(14_20_34/0.35)] sm:px-12 sm:py-11"
+      style={{ fontFamily: "Calibri, Carlito, sans-serif" }} aria-label="Approximate resume preview">
       <div className="flex flex-col gap-0.5 text-center">
         <p className="text-lg font-semibold uppercase tracking-[0.04em] text-ink">{p.contact.name}</p>
         <p className="text-[10px] text-muted">{[p.contact.location, p.contact.phone, p.contact.email, ...p.contact.links.map((l) => l.text)].filter(Boolean).join(' · ')}</p>

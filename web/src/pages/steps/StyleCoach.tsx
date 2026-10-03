@@ -37,8 +37,8 @@ export default function StyleCoach({ app }: { app: Application }) {
   }
 
   return (
-    <section className="animate-rise flex flex-col gap-2.5 rounded-lg border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Teach AutoCV your style</p>
+    <section className="animate-rise flex flex-col gap-2.5 rounded-xl border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
+      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Teach AutoCV your style</p>
       <p className="text-muted">
         You changed {app.edits} claim{app.edits === 1 ? '' : 's'} from the AI draft{guidance ? ' and gave guidance' : ''}.
         AutoCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
@@ -61,7 +61,7 @@ function ProposalRow({ p, onDecide }: { p: Preference; onDecide: (p: Preference,
   const [text, setText] = useState(p.text)
   const active = p.status === 'active'
   return (
-    <li className={cx('flex flex-col gap-1.5 rounded-lg border p-2.5', active ? 'border-ok/40 bg-ok-soft/40' : 'border-rule bg-sheet')}>
+    <li className={cx('flex flex-col gap-1.5 rounded-lg border p-2.5', active ? 'border-ok/35 bg-[#eef7f2]' : 'border-rule bg-sheet')}>
       {active ? (
         <p className="text-ink">{text}</p>
       ) : (
@@ -74,7 +74,7 @@ function ProposalRow({ p, onDecide }: { p: Preference; onDecide: (p: Preference,
         <p className="text-xs text-ok">✓ Active. Applied to future drafts.</p>
       ) : (
         <div className="flex gap-1.5">
-          <button className="btn btn-primary px-2.5 py-[3px] text-xs" disabled={!text.trim()} onClick={() => onDecide(p, 'active', text.trim())}>Approve</button>
+          <button className="btn btn-primary px-2.5 py-[3px] text-xs font-medium" disabled={!text.trim()} onClick={() => onDecide(p, 'active', text.trim())}>Approve</button>
           <button className="btn px-2.5 py-[3px] text-xs" onClick={() => onDecide(p, 'dismissed')}>Dismiss</button>
         </div>
       )}

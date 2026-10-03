@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AppAnswer, type Knowledge } from '../../api'
 import { cx, ErrorNote } from '../../ui'
 import type { StepProps } from '../Workspace'
+import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
 import { gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
 const card = 'rounded-lg border border-rule bg-sheet'
 const CHIP: Record<GapState, [string, string]> = {
   open: ['open', 'bg-bad-soft text-bad'],
-  draft: ['draft', 'bg-warn-soft text-warn'],
+  draft: ['draft', 'bg-[#f6ead2] text-warn'],
   pending: ['to approve', 'bg-accent-soft text-accent'],
-  approved: ['evidence', 'bg-ok-soft text-ok'],
-  no_experience: ['no exp.', 'bg-wash text-muted'],
+  approved: ['evidence', 'bg-[#dcefe5] text-ok'],
+  no_experience: ['no exp.', 'bg-paper text-muted'],
 }
 
 function fmt(date?: string) {
@@ -203,12 +203,12 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             const [chip, chipCls] = CHIP[stateOf(q)]
             return (
               <button key={q.id} onClick={() => select(q.id)} aria-current={q.id === sel?.id ? 'true' : undefined}
-                className={cx('flex w-full cursor-pointer flex-col gap-1.5 border-b border-rule px-4 py-3.5 text-left transition-colors last:border-b-0 hover:bg-wash', q.id === sel?.id && 'bg-wash')}>
+                className={cx('flex w-full cursor-pointer flex-col gap-1.5 border-b border-rule px-4 py-3.5 text-left transition-colors last:border-b-0 hover:bg-paper', q.id === sel?.id && 'bg-paper')}>
                 <span className="flex items-center justify-between gap-2">
                   <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">{q.requirement}</span>
                   <span className={cx('flex-none rounded-full px-2 py-px text-[10px] font-semibold uppercase tracking-[0.06em]', chipCls)}>{chip}</span>
                 </span>
-                <span className="text-[15px] font-medium leading-[1.3] text-ink">{q.question}</span>
+                <span className={`text-base leading-[1.3] text-ink ${semi}`}>{q.question}</span>
               </button>
             )
           })}
@@ -253,15 +253,15 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
         <ErrorNote error={error} onDismiss={() => setError(null)} />
 
         {sel ? (
-          <section key={sel.id} className="sheet animate-rise flex flex-col gap-3.5 rounded-lg p-5 sm:p-6">
+          <section key={sel.id} className={`${sheetCard} animate-rise flex flex-col gap-3.5 p-5 sm:p-6`}>
             <p className={label}>{sel.requirement}</p>
-            <p className="text-xl font-semibold leading-[1.3] text-pretty text-ink">{sel.question}</p>
+            <p className={`text-2xl leading-[1.3] text-pretty text-ink ${semi}`}>{sel.question}</p>
             {prefill && st !== 'approved' && (
               <p className="text-xs text-muted">↺ Pre-filled from your answer{prefill.company ? ` for ${prefill.company}` : ''} on {fmt(prefill.date)}. Confirm or update it.</p>
             )}
 
             {st === 'no_experience' && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-wash px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-paper px-3.5 py-3">
                 <p className="min-w-0 flex-1 text-[13px] text-body">Marked as no real experience. Future analyses won’t ask about this again.</p>
                 <button className="cursor-pointer text-[13px] text-accent hover:text-accent-strong" onClick={() => update(sel, { status: 'draft' }, true)}>Undo</button>
               </div>
@@ -284,18 +284,18 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
               <>
                 <textarea
                   aria-label={`Answer: ${sel.question}`}
-                  className="field min-h-[120px] resize-y leading-normal"
+                  className="field min-h-[120px] resize-y rounded-xl leading-normal"
                   rows={5}
                   placeholder="Describe what you actually did: where, scale, outcome. Plain words are fine."
                   value={ans?.answer ?? ''}
                   onChange={(e) => update(sel, { answer: e.target.value, status: 'draft', evidence_id: null })}
                 />
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary" disabled={!draftable(sel)} onClick={() => draftEvidence([sel])}
+                  <button className={btnPrimary} disabled={!draftable(sel)} onClick={() => draftEvidence([sel])}
                     title={draftable(sel) ? 'The AI drafts a profile entry from your answer. Nothing is saved until you approve it.' : 'Write your answer first'}>
                     Turn into evidence
                   </button>
-                  <button className="btn" onClick={() => update(sel, { status: 'no_experience' }, true)}>I don’t have this experience</button>
+                  <button className={btn} onClick={() => update(sel, { status: 'no_experience' }, true)}>I don’t have this experience</button>
                 </div>
               </>
             )}
@@ -310,10 +310,10 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             )}
           </section>
         ) : (
-          <section className="sheet animate-rise flex flex-col gap-2 rounded-lg p-6">
+          <section className={`${sheetCard} animate-rise flex flex-col gap-2 p-6`}>
             <p className={label}>Gaps</p>
-            <p className="font-display text-[26px] text-ink">No new gaps to ask about</p>
-            <p className="text-muted">Your profile and past answers cover every must-have. You can go straight to composing.</p>
+            <p className="font-display text-[32px] leading-tight text-ink">No new gaps to ask about</p>
+            <p className="text-body">Your profile and past answers cover every must-have. You can go straight to composing.</p>
             {/* proposals can't exist without questions, but never hide one that blocks composing */}
             {shown.map(({ d, i }) => (
               <ProposalBox key={i} d={d} roles={roles} categories={categories}
@@ -338,8 +338,8 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
               </span>
             )}
             <div className="flex flex-wrap gap-2">
-              {app.tailored && <button className="btn btn-ghost" onClick={() => go('review')}>Back to the current draft</button>}
-              <button className="btn btn-primary" onClick={compose} disabled={pending > 0}>
+              {app.tailored && <button className={`${btn} btn-ghost`} onClick={() => go('review')}>Back to the current draft</button>}
+              <button className={btnPrimary} onClick={compose} disabled={pending > 0}>
                 {app.tailored ? 'Re-compose resume →' : 'Compose resume →'}
               </button>
             </div>
@@ -359,12 +359,12 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
   const approved = d.state === 'approved'
   const target = d.target === 'general' ? 'General' : roles.find((r) => r.id === d.target)?.employer ?? d.target
   return (
-    <div className={cx('flex flex-col gap-2 rounded-lg border px-4 py-3.5', approved ? 'border-ok/40 bg-ok-soft/50' : 'border-rule bg-paper')}>
+    <div className={cx('flex flex-col gap-2 rounded-lg border px-4 py-3.5', approved ? 'border-ok/35 bg-[#eef7f2]' : 'border-rule bg-wash')}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+        <p className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
           Proposed evidence ·
           {live ? (
-            <select aria-label="Belongs to" className="cursor-pointer rounded-lg border border-rule bg-sheet px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink"
+            <select aria-label="Belongs to" className="cursor-pointer rounded-md border border-rule bg-sheet px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink"
               value={d.target} onChange={(e) => onPatch({ target: e.target.value })}>
               {roles.map((r) => <option key={r.id} value={r.id}>{r.employer}</option>)}
               <option value="general">General (not role-specific)</option>
@@ -375,15 +375,15 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
       </div>
       {question && <p className="text-xs text-muted">For: {question.question}</p>}
       {live ? (
-        <textarea aria-label="Proposed evidence wording" className="field min-h-[104px] resize-y text-[15px] leading-[1.45]"
+        <textarea aria-label="Proposed evidence wording" className={`field min-h-[104px] resize-y text-base leading-[1.4] ${semi}`}
           value={d.text} onChange={(e) => onPatch({ text: e.target.value })} />
       ) : (
-        <p className="text-[15px] leading-[1.45] text-ink">{d.text}</p>
+        <p className={`text-base leading-[1.4] text-ink ${semi}`}>{d.text}</p>
       )}
       {d.skills.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {d.skills.map((s, j) => (
-            <span key={j} className="inline-flex items-center gap-1 rounded-[3px] bg-wash px-1.5 py-px font-mono text-[11px] text-muted">
+            <span key={j} className="inline-flex items-center gap-1 rounded-[5px] bg-paper px-1.5 py-px font-mono text-[11px] text-muted">
               +
               {live ? (
                 <select aria-label={`Skill group for ${s.item}`} className="cursor-pointer bg-transparent text-faint" value={s.category}
@@ -404,8 +404,8 @@ function ProposalBox({ d, roles, categories, question, onPatch, onApprove, onRej
         <>
           <p className="text-xs text-muted">Edit the wording until it’s exactly true, then approve. Only approved items are saved, tagged as coming from you.</p>
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-primary px-3 py-[5px] text-[13px]" disabled={!d.text.trim()} onClick={onApprove}>Approve into profile</button>
-            <button className="btn px-3 py-[5px] text-[13px]" onClick={onReject}>Reject</button>
+            <button className={btnSmPrimary} disabled={!d.text.trim()} onClick={onApprove}>Approve into profile</button>
+            <button className={btnSm} onClick={onReject}>Reject</button>
           </div>
         </>
       )}

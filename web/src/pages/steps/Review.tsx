@@ -3,6 +3,7 @@ import { api, type AppAnswer, type Claim, type CritiqueIssue, type Issue, type P
 import { cx, ErrorNote, SaveDock, Spinner, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import { applyIssue, findsTarget, issueTargets } from './critique'
+import { btn, btnPrimary, label, sheetCard } from './v3'
 import { HiringManagerCard, openIssues, ReviewIssue, type ReviewActions } from './HiringManager'
 
 const clone = <T,>(x: T): T => structuredClone(x)
@@ -14,10 +15,9 @@ function move<T>(list: T[], i: number, d: number): T[] {
   return out
 }
 
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
-const card = 'rounded-lg border border-rule bg-sheet'
+const card = 'rounded-xl border border-rule bg-sheet'
 // The sheet reads like the real resume (Calibri), not like the app chrome.
-const SHEET_FONT: CSSProperties = { fontFamily: "Calibri, Carlito, 'IBM Plex Sans', sans-serif" }
+const SHEET_FONT: CSSProperties = { fontFamily: "Calibri, Carlito, sans-serif" }
 
 /** Textarea that grows with its content (and re-fits when the window resizes). */
 function AutoText({ value, onChange, onFocus, onBlur, className, ariaLabel }: {
@@ -123,7 +123,7 @@ function LineEditor({ line, evidence, roleIds, issues, review, actions, onChange
   return (
     <div className="flex flex-col gap-2.5">
       <AutoText ariaLabel={`Edit ${line.where}`} value={claim.text} onChange={(text) => onChange({ ...claim, text })}
-        className={cx('field min-h-[76px] text-sm leading-[1.45]', line.italic && 'italic')} />
+        className={cx('field min-h-[76px] px-2.5 text-sm leading-[1.45]', line.italic && 'italic')} />
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">Cites</p>
       {claim.sources.map((s) => (
         <div key={s} className="grid grid-cols-[minmax(0,100px)_minmax(0,1fr)_14px] items-start gap-2.5 text-xs">
@@ -175,7 +175,7 @@ function ItemsField({ items, onCommit, ariaLabel }: { items: string[]; onCommit:
     <AutoText
       ariaLabel={ariaLabel}
       value={value}
-      className="-mx-1 rounded-[3px] border border-transparent bg-transparent px-1 leading-[1.45] hover:border-rule focus:border-accent focus:bg-sheet focus:outline-none"
+      className="-mx-1 rounded-[5px] border border-transparent bg-transparent px-1 leading-[1.45] hover:border-rule focus:border-accent focus:bg-sheet focus:outline-none"
       onFocus={() => { setText(joined); setEditing(true) }}
       onChange={setText}
       onBlur={() => {
@@ -327,15 +327,15 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
         <div id={lineDomId(path)} role="button" tabIndex={0} aria-pressed={on}
           onClick={() => setFocus(path)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocus(path) } }}
-          className={cx('-mx-1.5 flex cursor-pointer gap-2 rounded-[3px] px-1.5 py-[3px] leading-[1.45] text-body transition-colors',
-            on ? 'bg-accent-soft ring-1 ring-inset ring-accent/30' : errs.length ? 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30 hover:bg-bad-soft' : 'hover:bg-paper')}>
+          className={cx('-mx-1.5 flex cursor-pointer gap-2 rounded-[5px] px-1.5 py-[3px] leading-[1.45] text-body transition-colors',
+            on ? 'bg-accent-soft ring-1 ring-inset ring-accent/30' : errs.length ? 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30 hover:bg-bad-soft' : 'hover:bg-wash')}>
           {bullet && <span className="flex-none text-faint">•</span>}
           <span className={cx('min-w-0 flex-1 break-words', l.italic && 'italic text-muted')}>{l.claim.text || <span className="italic text-faint">(empty line)</span>}</span>
           {(changed(path) || errs.length > 0 || hm > 0) && (
             <span className="flex flex-none items-center gap-1 self-start pt-[5px]">
               {changed(path) && <span title="Unsaved edit" className="size-1.5 rounded-full bg-warn" />}
-              {errs.length > 0 && <span title={errs.map((e) => e.message).join('\n')} className="rounded-[3px] bg-bad-soft px-[5px] font-mono text-[10px] leading-4 text-bad">FIX</span>}
-              {hm > 0 && <span title="Hiring-manager suggestion" className="rounded-[3px] border border-accent/30 bg-accent-soft px-[5px] font-mono text-[10px] leading-4 text-accent">HM</span>}
+              {errs.length > 0 && <span title={errs.map((e) => e.message).join('\n')} className="rounded-[5px] bg-bad-soft px-[5px] font-mono text-[10px] leading-4 text-bad">FIX</span>}
+              {hm > 0 && <span title="Hiring-manager suggestion" className="rounded-[5px] border border-accent/30 bg-accent-soft px-[5px] font-mono text-[10px] leading-4 text-accent">HM</span>}
             </span>
           )}
         </div>
@@ -345,13 +345,13 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
   }
 
   const stamp = dirty
-    ? <span className="animate-stamp inline-block rounded-sm border-2 border-warn px-3 py-1 font-mono text-xs font-medium uppercase tracking-[0.2em] text-warn">Unsaved</span>
+    ? <span className="animate-stamp inline-block rounded border-2 border-warn px-3 py-1 font-mono text-xs font-medium uppercase tracking-[0.2em] text-warn">Unsaved</span>
     : report && <Stamp ok={report.ok}>{report.ok ? 'Verified' : `${report.errors.length} issue${report.errors.length > 1 ? 's' : ''}`}</Stamp>
 
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
       {/* ---------------------------------------------------------------- the sheet */}
-      <article className="sheet animate-rise flex min-w-0 flex-col gap-[18px] rounded-lg px-4 py-7 text-[14px] sm:px-12 sm:py-10" style={SHEET_FONT}>
+      <article className={`${sheetCard} animate-rise flex min-w-0 flex-col gap-[18px] px-4 py-7 text-[14px] sm:px-12 sm:py-10`} style={SHEET_FONT}>
         {app.sent.length > 0 && (
           <p className="rounded-lg bg-ok-soft px-3 py-2 font-sans text-xs text-ok">
             You sent a frozen copy on {new Date(app.sent[0].created).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}.
@@ -366,7 +366,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
           </p>
           <select
             aria-label="Headline"
-            className="mt-1.5 w-auto min-w-0 max-w-full cursor-pointer rounded-[3px] border border-transparent bg-transparent px-1 text-center text-[14px] font-semibold text-accent [text-align-last:center] hover:border-rule"
+            className="mt-1.5 w-auto min-w-0 max-w-full cursor-pointer rounded-[5px] border border-transparent bg-transparent px-1 text-center text-[14px] font-semibold text-accent [text-align-last:center] hover:border-rule"
             value={draft.headline}
             onChange={(e) => update((d) => { d.headline = e.target.value })}
           >
@@ -397,14 +397,14 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
           {draft.competencies.map((g, i) => {
             const issues = g.items.flatMap((_, j) => issuesAt(`competencies[${i}].items[${j}]`))
             return (
-              <div key={i} className={cx('group/claim -mx-1.5 rounded-[3px] px-1.5', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30')}>
+              <div key={i} className={cx('group/claim -mx-1.5 rounded-[5px] px-1.5', issues.length > 0 && 'bg-bad-soft/60 ring-1 ring-inset ring-bad/30')}>
                 <div className="flex flex-wrap items-baseline gap-x-1 sm:flex-nowrap">
                   <span className="flex shrink-0 items-baseline font-semibold text-ink">
                     {/* the invisible copy sizes the input to its text */}
                     <span className="inline-grid">
                       <span className="invisible col-start-1 row-start-1 whitespace-pre border border-transparent px-px" aria-hidden>{g.label || 'Group'}</span>
                       <input aria-label={`Competency group ${i + 1}`} size={1}
-                        className="col-start-1 row-start-1 w-full min-w-0 rounded-[3px] border border-transparent bg-transparent px-px hover:border-rule focus:border-accent focus:outline-none"
+                        className="col-start-1 row-start-1 w-full min-w-0 rounded-[5px] border border-transparent bg-transparent px-px hover:border-rule focus:border-accent focus:outline-none"
                         value={g.label} onChange={(e) => update((d) => { d.competencies[i].label = e.target.value })} />
                     </span>
                     :
@@ -558,7 +558,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
                   key={kw.term}
                   title={{ in_resume: 'In the resume', unused: 'You have evidence but it isn’t used. Consider surfacing it.', gap: 'No evidence in your profile' }[kw.status]}
                   className={cx('rounded-full border px-[9px] py-0.5 text-xs', {
-                    in_resume: 'border-transparent bg-ok-soft text-ok',
+                    in_resume: 'border-transparent bg-[#dcefe5] text-ok',
                     unused: 'border-warn bg-sheet text-warn',
                     gap: 'border-rule bg-sheet text-faint',
                   }[kw.status])}
@@ -574,11 +574,11 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
         <div className="flex flex-wrap justify-end gap-2">
           {dirty ? (
             <>
-              <button className="btn" onClick={discard} disabled={saving}>Discard</button>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? <><Spinner /> Checking…</> : 'Save & fact-check'}</button>
+              <button className={btn} onClick={discard} disabled={saving}>Discard</button>
+              <button className={btnPrimary} onClick={save} disabled={saving}>{saving ? <><Spinner /> Checking…</> : 'Save & fact-check'}</button>
             </>
           ) : (
-            <button className="btn btn-primary" disabled={!report?.ok} onClick={() => go('export')}
+            <button className={btnPrimary} disabled={!report?.ok} onClick={() => go('export')}
               title={report?.ok ? undefined : 'Fix the fact-check issues first'}>Continue to export →</button>
           )}
         </div>

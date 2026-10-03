@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, STATUSES, type Application, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { confirmLeave, setUnsaved } from '../unsaved'
 import { changeStatus } from '../status'
-import { cx, ErrorNote, fmtDate, Spinner, statusStyle, Working } from '../ui'
+import { cx, ErrorNote, fmtDate, Spinner, statusStyle } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
@@ -175,16 +175,16 @@ export default function Workspace() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="animate-rise flex flex-wrap items-end justify-between gap-5">
-        <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="flex min-w-0 flex-col gap-2">
           <Link to="/" onClick={(e) => { if (!confirmLeave()) e.preventDefault() }} className="self-start text-[13px] text-muted hover:text-accent">← Applications</Link>
-          <h1 className="break-words font-display text-[40px] leading-[0.95] text-ink sm:text-[56px]">{app.meta.company}</h1>
-          <p className="text-[17px] text-muted">{app.meta.role}</p>
+          <h1 className="font-display text-[44px] leading-[0.92] tracking-[-0.02em] text-ink [overflow-wrap:anywhere] sm:text-[56px]">{app.meta.company}</h1>
+          <p className="text-[17px] text-body">{app.meta.role}</p>
         </div>
-        <div className="flex items-center gap-3 text-[13px] text-muted">
-          <span>{fmtDate(app.meta.created)}</span>
-          <label className={cx('relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-[3px] text-[11px] font-semibold uppercase tracking-[0.06em]', statusStyle(app.meta.status))}>
-            <span>{app.meta.status}</span><span className="text-[9px]" aria-hidden>▾</span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs text-muted">Created {fmtDate(app.meta.created)}</span>
+          <label className={cx('relative inline-flex cursor-pointer items-center gap-1.5 rounded-[5px] px-[9px] py-[5px] font-mono text-[11px] font-medium uppercase tracking-[0.08em]', statusStyle(app.meta.status))}>
+            <span>{app.meta.status}</span><span className="text-[9px] no-underline" aria-hidden>▼</span>
             <select aria-label="Status" className="absolute inset-0 cursor-pointer opacity-0" value={app.meta.status} disabled={!!working}
               onChange={(e) => setStatus(e.target.value)}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
@@ -193,32 +193,28 @@ export default function Workspace() {
         </div>
       </div>
 
-      <ol className="animate-rise grid grid-cols-4 border-y border-rule" style={{ animationDelay: '60ms' }}>
+      <ol className="animate-rise grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr))] lg:[grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]" style={{ animationDelay: '60ms' }}>
         {STEPS.map((s, i) => {
           const on = step === s.key
           const [note, tone] = notes[s.key]
           return (
-            <li key={s.key} className="flex min-w-0 flex-col">
+            <li key={s.key} className="flex min-w-0">
               <button
                 disabled={!enabled[s.key] || !!working}
                 onClick={() => setStep(s.key)}
                 aria-current={on ? 'step' : undefined}
-                className="group flex min-w-0 flex-1 cursor-pointer items-baseline gap-1.5 px-1 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 sm:gap-3 sm:px-2"
+                className={cx('flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 rounded-xl px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                  on ? 'bg-sheet shadow-[inset_0_0_0_2px_var(--color-accent)]' : 'bg-lane enabled:hover:bg-sheet')}
               >
-                <span className={cx('font-mono text-base font-medium sm:text-lg', on ? 'text-accent' : 'text-faint')}>{i + 1}</span>
-                <span className="flex min-w-0 flex-col gap-px">
-                  <span className={cx('flex items-center gap-1.5 font-medium', on ? 'text-ink' : 'text-muted group-hover:text-ink')}>
-                    {s.label}
-                    <span className={cx('size-1.5 shrink-0 rounded-full sm:hidden', DOT[tone])} aria-hidden />
-                  </span>
-                  <span className="hidden min-w-0 items-center gap-1.5 text-xs text-muted sm:flex">
+                <span className={cx('font-mono text-[13px] font-medium', on ? 'text-accent' : 'text-faint')}>{String(i + 1).padStart(2, '0')}</span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className={cx('font-display text-lg leading-tight', on ? 'text-ink' : 'text-body')}>{s.label}</span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
                     <span className={cx('size-1.5 shrink-0 rounded-full', DOT[tone])} aria-hidden />
                     <span className="truncate">{note}</span>
                   </span>
-                  <span className="sr-only sm:hidden">{note}</span>
                 </span>
               </button>
-              <span className={cx('h-0.5 transition-colors', on ? 'bg-accent' : 'bg-transparent')} />
             </li>
           )
         })}
@@ -227,7 +223,7 @@ export default function Workspace() {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
       {working ? (
-        <Working title={working.title} lines={working.lines} ai={working.ai} />
+        <WorkingPanel title={working.title} lines={working.lines} ai={working.ai} />
       ) : (
         <div key={step}>
           {step === 'brief' && <Brief {...props} />}
@@ -236,6 +232,30 @@ export default function Workspace() {
           {step === 'export' && <Export {...props} />}
         </div>
       )}
+    </div>
+  )
+}
+
+/** "The AI is working" panel with elapsed time (engine calls take a minute or two). */
+function WorkingPanel({ title, lines, ai }: { title: string; lines: string[]; ai: boolean }) {
+  const [secs, setSecs] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setSecs((x) => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const line = lines[Math.min(Math.floor(secs / 12), lines.length - 1)]
+  return (
+    <div className="animate-rise flex flex-col items-center gap-2.5 rounded-[14px] border border-rule bg-sheet px-6 py-14 text-center sm:px-8" role="status" aria-live="polite">
+      <div className="mb-3 flex w-[180px] gap-1" aria-hidden>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <span key={i} className="h-[5px] flex-1 animate-pulse rounded-[5px] bg-accent" style={{ animationDelay: `${i * 120}ms` }} />
+        ))}
+      </div>
+      <p className="font-display text-[32px] leading-tight tracking-[-0.01em] text-ink">{title}</p>
+      <p className="text-[15px] text-body">{line}</p>
+      <p className="mt-1.5 font-mono text-xs text-faint">
+        {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')} elapsed{ai && ' · runs on your Claude subscription'}
+      </p>
     </div>
   )
 }

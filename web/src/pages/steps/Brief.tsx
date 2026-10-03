@@ -4,11 +4,11 @@ import { api } from '../../api'
 import { cx } from '../../ui'
 import type { StepProps } from '../Workspace'
 import Cite from './Cite'
+import { btn, btnPrimary, label, semi, sheetCard } from './v3'
 import { gapQuestions, gapState, openGaps, questionFor } from './gapState'
 
 const STATUS_DOT = { strong: 'bg-ok', partial: 'bg-warn', gap: 'bg-bad' }
 const STATUS_LABEL = { strong: 'Strong', partial: 'Partial', gap: 'Gap' }
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
 
 export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
   const nav = useNavigate()
@@ -36,7 +36,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
         </button>
       </div>
       {showJd && (
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-lg border border-rule bg-sheet px-[18px] py-4 font-sans text-[15px] leading-[1.55] text-body">{app.jd}</pre>
+        <pre className={`max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl border border-rule bg-sheet px-[18px] py-4 font-sans text-[15px] leading-[1.55] text-body ${semi}`}>{app.jd}</pre>
       )}
     </section>
   )
@@ -44,10 +44,10 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
   if (!a) {
     return (
       <div className="flex flex-col gap-7">
-        <div className="sheet animate-rise rounded-lg px-6 py-10 text-center sm:px-8">
-          <p className="font-display text-[26px] text-ink">Not analyzed yet.</p>
-          <p className="mx-auto mt-1 max-w-xl text-muted">AutoCV will work out the industry, the IC vs manager track, and how your evidence stacks up against each requirement.</p>
-          <button className="btn btn-primary mt-5" onClick={analyze}>Analyze the role</button>
+        <div className={`${sheetCard} animate-rise px-6 py-12 text-center sm:px-8`}>
+          <p className="font-display text-[32px] leading-tight text-ink">Not analyzed yet.</p>
+          <p className="mx-auto mt-1 max-w-xl text-body">AutoCV will work out the industry, the IC vs manager track, and how your evidence stacks up against each requirement.</p>
+          <button className={`${btnPrimary} mt-5`} onClick={analyze}>Analyze the role</button>
         </div>
         {jd}
       </div>
@@ -65,14 +65,14 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
       <div className="flex min-w-0 flex-[1_1_600px] flex-col gap-7">
         <section className="animate-rise flex flex-col gap-2">
           <p className={label}>The brief</p>
-          <p className="text-xl font-medium leading-[1.4] text-pretty text-ink">{a.summary}</p>
+          <p className={`text-2xl leading-[1.35] text-pretty text-ink ${semi}`}>{a.summary}</p>
         </section>
 
         <section className="animate-rise flex flex-col" style={{ animationDelay: '60ms' }}>
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-rule pb-2">
             <div>
               <p className={label}>Requirements</p>
-              <h2 className="font-display text-[26px] text-ink">How your evidence stacks up</h2>
+              <h2 className="font-display text-2xl text-ink">How your evidence stacks up</h2>
             </div>
             <div className="flex gap-3.5 text-xs text-muted">
               {(['strong', 'partial', 'gap'] as const).map((s) => (
@@ -87,7 +87,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
             const q = r.status !== 'strong' ? questionFor(r.text, questions) : undefined
             const settled = q && ['approved', 'no_experience'].includes(gapState(answers[q.id], drafts, q.id))
             return (
-              <div key={i} className="grid items-start gap-x-3.5 gap-y-1.5 border-b border-rule/70 py-3 md:grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1fr)]">
+              <div key={i} className="grid items-start gap-x-3.5 gap-y-1.5 border-b border-[#eef0f4] py-3 md:grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1fr)]">
                 <span className="flex items-center gap-2 pt-0.5 text-xs font-medium text-ink">
                   <span className={cx('size-2 rounded-full', STATUS_DOT[r.status])} />
                   {STATUS_LABEL[r.status]}
@@ -141,8 +141,8 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
       </aside>
 
       <div className="flex basis-full flex-wrap justify-between gap-3 border-t border-rule pt-5">
-        <button className="btn" onClick={analyze}>Re-analyze</button>
-        <button className="btn btn-primary" onClick={() => go('gaps')}>
+        <button className={btn} onClick={analyze}>Re-analyze</button>
+        <button className={btnPrimary} onClick={() => go('gaps')}>
           {open ? `Answer ${open} gap question${open > 1 ? 's' : ''} →` : 'Continue →'}
         </button>
       </div>

@@ -7,7 +7,7 @@ const KIND_LABEL: Record<string, string> = {
   unclear: 'Unclear', seniority_signal: 'Seniority signal', ordering: 'Ordering',
 }
 const ACTION_LABEL: Record<string, string> = { remove: 'Remove this line', move_to_top: 'Move this line to the top' }
-const SEV = { high: 'bg-bad-soft text-bad', medium: 'bg-warn-soft text-warn', low: 'bg-wash text-muted' }
+const SEV = { high: 'bg-bad-soft text-bad', medium: 'bg-[#f6ead2] text-warn', low: 'bg-paper text-muted' }
 const VERDICT = {
   interview: { label: 'Would interview', cls: 'border-ok text-ok' },
   borderline: { label: 'Borderline', cls: 'border-warn text-warn' },
@@ -24,9 +24,9 @@ export interface ReviewActions {
 export function ReviewIssue({ issue, actions, compact = false }: { issue: CritiqueIssue; actions: ReviewActions; compact?: boolean }) {
   const editable = issue.action !== 'advice'
   return (
-    <div className={cx('rounded-lg border border-accent/25 bg-accent-soft/40 p-3 text-xs', !compact && 'mt-2')}>
+    <div className={cx('rounded-lg border border-accent/25 bg-[#f3f5fe] p-3 text-xs', !compact && 'mt-2')}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold uppercase tracking-wider text-accent">Hiring manager</span>
+        <span className="font-semibold uppercase tracking-[0.08em] text-accent">Hiring manager</span>
         <span className={cx('rounded-full px-2 py-0.5 text-[10px] font-semibold', SEV[issue.severity])}>{KIND_LABEL[issue.kind] ?? issue.kind}</span>
         {issue.note_for && <span className="chip">note for {issue.note_for === 'cover_letter' ? 'cover letter' : 'interview'}</span>}
       </div>
@@ -34,7 +34,7 @@ export function ReviewIssue({ issue, actions, compact = false }: { issue: Critiq
       {issue.action === 'rewrite' && issue.rewrite && (
         <div className="mt-2 rounded-lg bg-sheet p-2">
           <p className="text-[10px] uppercase tracking-wider text-faint">Suggested · fact-checked</p>
-          <p className="mt-0.5 text-[14px] leading-snug text-ink">{issue.rewrite.text}</p>
+          <p className="mt-0.5 text-[14px] leading-[1.35] text-ink [font-stretch:87.5%]">{issue.rewrite.text}</p>
         </div>
       )}
       {(issue.action === 'remove' || issue.action === 'move_to_top') && (
@@ -45,7 +45,7 @@ export function ReviewIssue({ issue, actions, compact = false }: { issue: Critiq
         <p className="mt-2 text-ink">Needs your input: <span className="italic">{issue.question}</span></p>
       )}
       <div className="mt-2 flex flex-wrap gap-2">
-        {editable && <button className="btn btn-primary px-3 py-1 text-xs" onClick={() => actions.decide(issue, 'accepted')}>Accept</button>}
+        {editable && <button className="btn btn-primary px-3 py-1 text-xs font-medium" onClick={() => actions.decide(issue, 'accepted')}>Accept</button>}
         {issue.question && <button className="btn px-3 py-1 text-xs" onClick={() => actions.answer(issue)}>Answer in Gaps</button>}
         <button className="btn px-3 py-1 text-xs" onClick={() => actions.decide(issue, 'rejected')}>{editable ? 'Reject' : 'Dismiss'}</button>
       </div>
@@ -67,15 +67,15 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
   const acceptable = open.filter((i) => i.action !== 'advice').length
   const r = critique?.latest
   return (
-    <section className="rounded-lg border border-rule bg-sheet px-[18px] py-4">
+    <section className="rounded-xl border border-rule bg-sheet px-[18px] py-4">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Hiring-manager review</p>
-        {r && <span className={cx('rounded-sm border-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em]', VERDICT[r.verdict.decision].cls)}>{VERDICT[r.verdict.decision].label}</span>}
+        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Hiring-manager review</p>
+        {r && <span className={cx('rounded border-2 px-2 py-px font-mono text-[10px] uppercase tracking-[0.15em]', VERDICT[r.verdict.decision].cls)}>{VERDICT[r.verdict.decision].label}</span>}
       </div>
       {!r && <p className="mt-2 text-[13px] text-muted">Read this draft as the role’s hiring manager and a recruiter skimming the top third would. Takes about 1–1.5 minutes. Every suggested fix is fact-checked before you see it.</p>}
       {r && (
         <>
-          {critique!.stale && <p className="mt-2 rounded-lg bg-warn-soft px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
+          {critique!.stale && <p className="mt-2 rounded-[5px] bg-[#f6ead2] px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
           <p className="mt-2 text-[13px] text-body">{r.verdict.reason}</p>
           <dl className="mt-3 space-y-1.5">
             {(Object.keys(SCORE_LABEL) as ScoreKey[]).map((k) => {
@@ -90,7 +90,7 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
                       {delta !== 0 && <span className={delta > 0 ? 'ml-1 text-ok' : 'ml-1 text-bad'}>{delta > 0 ? `+${delta}` : delta}</span>}
                     </dd>
                   </div>
-                  <div className="mt-[3px] h-1 overflow-hidden rounded-full bg-wash">
+                  <div className="mt-[3px] h-1 overflow-hidden rounded-full bg-paper">
                     <div className="h-full rounded-full bg-accent" style={{ width: `${r.scores[k].score * 10}%` }} />
                   </div>
                 </div>
@@ -98,14 +98,14 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
             })}
           </dl>
           <div className="mt-4 border-t border-rule pt-3 text-xs">
-            <p className="font-semibold uppercase tracking-wider text-muted">Recruiter’s 6-second skim</p>
+            <p className="font-semibold uppercase tracking-[0.06em] text-muted">Recruiter’s 6-second skim</p>
             <p className="mt-1 text-body">{r.skim.takeaway}</p>
             {r.skim.lands.map((x, i) => <p key={`l${i}`} className="text-ok">+ {x}</p>)}
             {r.skim.misses.map((x, i) => <p key={`m${i}`} className="text-bad">− {x}</p>)}
           </div>
           {r.strengths.length > 0 && (
             <div className="mt-3 border-t border-rule pt-3 text-xs">
-              <p className="font-semibold uppercase tracking-wider text-muted">Keep</p>
+              <p className="font-semibold uppercase tracking-[0.06em] text-muted">Keep</p>
               {r.strengths.map((s, i) => <p key={i} className="text-body">✓ {s.why}</p>)}
             </div>
           )}
