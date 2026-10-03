@@ -43,20 +43,20 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
     }
   }
 
-  const row = 'grid items-center gap-x-4 gap-y-2 border-b border-rule/70 px-[18px] py-3 sm:grid-cols-[150px_minmax(0,1fr)_auto]'
-  const small = 'btn px-3 py-1 text-[13px]'
+  const row = 'grid items-center gap-x-4 gap-y-2 border-b border-[#eef0f4] px-5 py-3 sm:grid-cols-[170px_minmax(0,1fr)_auto]'
+  const small = 'btn h-8 px-3 py-0 text-[13px]'
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <p className="max-w-[720px] text-[13px] text-muted text-pretty">
+        <p className="max-w-[720px] text-sm leading-[1.5] text-muted text-pretty">
           Every save keeps a snapshot of the version <em>before</em> it. Restoring one replaces the current file; your current
           version is snapshotted first, so a restore can be undone. Deleted evidence ids stay retired either way.
         </p>
-        <div className="flex gap-1 rounded-lg border border-rule bg-wash p-1 text-[13px]" role="tablist">
+        <div className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]" role="tablist">
           {(['profile', 'knowledge'] as const).map((k) => (
             <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
-              className={cx('cursor-pointer rounded-lg px-3 py-1 transition', kind === k ? 'bg-sheet text-ink shadow-sm' : 'text-muted hover:text-ink')}>
+              className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors', kind === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
               {k === 'profile' ? 'Master profile' : 'Answers & preferences'}
             </button>
           ))}
@@ -67,35 +67,35 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
       {entries === null ? (
         <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-rule bg-sheet">
-          <div className={row}>
-            <span className="font-mono text-xs text-muted">now</span>
+        <div className="overflow-hidden rounded-[14px] border border-rule bg-sheet">
+          <div className={cx(row, 'bg-wash py-3.5')}>
+            <span className="font-mono text-xs text-accent">now</span>
             <div>
-              <p className="text-ink">Current version</p>
-              <p className="text-xs text-faint">{kind === 'profile' ? 'private/profile.yaml' : 'private/knowledge.yaml'}</p>
+              <p className="font-semibold text-ink">Current version</p>
+              <p className="font-mono text-[11px] text-faint">{kind === 'profile' ? 'private/profile.yaml' : 'private/knowledge.yaml'}</p>
             </div>
             <span className="justify-self-start px-3 text-[13px] text-faint sm:justify-self-end">Current</span>
           </div>
           {entries.length === 0 && <p className="px-[18px] py-6 text-center text-sm text-muted">No earlier versions yet. They appear after your first change.</p>}
           {entries.map((e) => (
             <Fragment key={e.id}>
-              <div className={cx(row, open?.id === e.id && 'bg-wash/60')}>
+              <div className={cx(row, open?.id === e.id && 'bg-wash')}>
                 <span className="font-mono text-xs text-muted">{fmt(e.time)}</span>
                 <p className="min-w-0 text-ink">Before: {e.cause}</p>
                 <div className="flex gap-2">
                   <button className={small} aria-expanded={open?.id === e.id} onClick={() => toggle(e.id)}>{open?.id === e.id ? 'Hide changes' : 'What changed'}</button>
-                  <button className={small} disabled={!!busy} onClick={() => restore(e)}>{busy === e.id ? <><Spinner /> Restoring…</> : 'Restore'}</button>
+                  <button className={cx(small, 'text-accent hover:border-accent')} disabled={!!busy} onClick={() => restore(e)}>{busy === e.id ? <><Spinner /> Restoring…</> : 'Restore'}</button>
                 </div>
               </div>
               {open?.id === e.id && (
-                <div className="animate-rise border-b border-rule/70 bg-paper/60 px-[18px] py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Changed since this version</p>
+                <div className="animate-rise border-b border-[#eef0f4] bg-wash px-5 pb-[18px] pt-3.5">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-accent">Changed since this version</p>
                   <ul className="mt-2 space-y-1 text-sm text-body">{open.summary.map((l, i) => <li key={i}>• {l}</li>)}</ul>
                   <details className="mt-3">
-                    <summary className="cursor-pointer text-sm text-muted hover:text-ink">Line-by-line diff</summary>
-                    <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-rule bg-sheet p-3 font-mono text-[12px] leading-relaxed">
+                    <summary className="cursor-pointer text-[13px] text-muted hover:text-ink">Line-by-line diff</summary>
+                    <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-line bg-sheet p-3 font-mono text-[12px] leading-[1.6]">
                       {open.diff.split('\n').map((line, i) => (
-                        <div key={i} className={line.startsWith('+') && !line.startsWith('+++') ? 'text-ok' : line.startsWith('-') && !line.startsWith('---') ? 'text-bad' : 'text-muted'}>{line || ' '}</div>
+                        <div key={i} className={line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#eef7f2] text-ok' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#fbe9e7] text-bad' : 'text-muted'}>{line || ' '}</div>
                       ))}
                     </pre>
                   </details>

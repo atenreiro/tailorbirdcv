@@ -17,10 +17,14 @@ const SEARCHABLE: Tab[] = ['experience', 'summary']
 const KNOWLEDGE_TABS: Tab[] = ['answers', 'prefs']
 const TRACKS: Track[] = ['manager', 'ic', 'hybrid']
 
-const card = 'rounded-lg border border-rule bg-sheet'
-const label = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-accent'
+const card = 'rounded-[14px] border border-rule bg-sheet'
+const label = 'font-mono text-[11px] uppercase tracking-[0.08em] text-muted'
+const cardTitle = 'font-display text-[22px] text-ink'
+// Soft grey input that turns white on focus.
+const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(31_63_209/0.15)]'
 // Looks like plain text until hovered or focused (fields that are rarely edited).
-const quiet = 'field border-transparent bg-transparent hover:border-rule focus:border-accent'
+const quiet = 'rounded-lg border border-transparent bg-transparent outline-none transition-colors hover:border-rule focus:border-accent focus:bg-sheet'
+const addBtn = 'h-8 cursor-pointer self-start rounded-lg px-2.5 font-medium text-accent hover:bg-[#eef1fd]'
 
 function Grow({ value, onChange, className, label }: { value: string; onChange: (v: string) => void; className?: string; label: string }) {
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -32,7 +36,7 @@ function Grow({ value, onChange, className, label }: { value: string; onChange: 
     window.addEventListener('resize', fit)  // re-wrap when the window narrows or widens
     return () => window.removeEventListener('resize', fit)
   }, [value])
-  return <textarea ref={ref} rows={1} aria-label={label} className={cx('field resize-none overflow-hidden py-[7px] text-sm leading-[1.45]', className)} value={value} onChange={(e) => onChange(e.target.value)} />
+  return <textarea ref={ref} rows={1} aria-label={label} className={cx(soft, 'min-h-[38px] resize-none overflow-hidden px-3 py-2 text-sm leading-[1.45]', className)} value={value} onChange={(e) => onChange(e.target.value)} />
 }
 
 function nextId(prefix: string, taken: Set<string>) {
@@ -55,7 +59,7 @@ function allIds(p: P) {
 function RawListField({ parse, format, label }: { parse: (t: string) => void; format: () => string; label: string }) {
   const [text, setText] = useState<string | null>(null)
   return (
-    <textarea className="field min-h-[220px] resize-y font-mono text-[13px] leading-[1.6]" aria-label={label}
+    <textarea className={cx(soft, 'min-h-[240px] resize-y px-3 py-2.5 font-mono text-[13px] leading-[1.6]')} aria-label={label}
       value={text ?? format()} onFocus={() => setText(format())} onChange={(e) => setText(e.target.value)}
       onBlur={() => { if (text !== null) parse(text); setText(null) }} />
   )
@@ -66,23 +70,24 @@ function EvidenceRow({ e, scope, idCol, onChange, onDelete }: {
 }) {
   const source = e.source ?? 'resume'
   return (
-    <div className={cx('grid items-start gap-3 border-b border-rule/60 py-2', idCol)}>
-      <div className="flex min-w-0 flex-col gap-0.5 pt-1.5">
+    <div className={cx('grid items-start gap-3 border-b border-[#eef0f4] py-2 xl:gap-3.5', idCol)}>
+      <div className="col-span-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-[3px] sm:col-span-1 sm:flex-col sm:flex-nowrap sm:items-start sm:pt-2">
         <span className="break-all font-mono text-[11px] text-accent">{e.id}</span>
-        <span className={cx('text-[10px] uppercase tracking-[0.06em]', source === 'resume' ? 'text-faint' : 'text-warn')}>
+        <span className={cx('font-mono text-[10px] uppercase tracking-[0.06em]', source === 'resume' ? 'text-faint' : 'text-[#7a4700]')}>
           {scope && 'scope · '}{source}{e.in_base_resume === false && ' · not in base'}
         </span>
       </div>
       <Grow label={e.id} value={e.text} className={scope ? 'italic' : undefined} onChange={(text) => onChange({ ...e, text })} />
-      <button className="cursor-pointer pt-2 text-faint hover:text-bad" onClick={onDelete} aria-label={`Delete ${e.id}`}
+      <button className="h-[38px] cursor-pointer text-faint hover:text-bad" onClick={onDelete} aria-label={`Delete ${e.id}`}
         title="Delete. Tailored resumes that cite it will fail the fact-check.">✕</button>
     </div>
   )
 }
 
 // wide enough for real ids like first-harbor-bank.scope on one line
-const ROLE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[150px_minmax(0,1fr)_28px]'
-const SIDE_ROW = 'grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[110px_minmax(0,1fr)_24px]'
+// Phones: id on its own line above the text; wider screens: id column on the left.
+const ROLE_ROW = 'grid-cols-[minmax(0,1fr)_24px] sm:grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[150px_minmax(0,1fr)_28px]'
+const SIDE_ROW = 'grid-cols-[minmax(0,1fr)_24px] sm:grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[110px_minmax(0,1fr)_24px]'
 
 function initialTab(param: string | null): Tab {
   return TABS.includes(param as Tab) ? (param as Tab) : 'experience'
@@ -191,36 +196,35 @@ export default function Profile() {
 
   return (
     <div className="flex flex-col gap-7">
-      <div className="animate-rise flex flex-wrap items-end justify-between gap-5">
-        <div className="flex max-w-[720px] flex-col gap-1.5">
-          <p className={label}>Master profile</p>
-          <h1 className="font-display text-[44px] leading-[0.95] sm:text-[56px] text-ink">The source of truth.</h1>
-          <p className="text-muted text-pretty">
+      <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+        <div className="flex max-w-[760px] flex-col gap-2.5">
+          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Master profile</h1>
+          <p className="text-base leading-[1.5] text-body text-pretty">
             Every tailored resume can only use what’s written here. Keep each entry exactly true. Evidence ids are what claims cite, so
             deleting one will break resumes that use it.
           </p>
         </div>
-        <input type="search" className="field w-full text-sm sm:w-[260px]" placeholder="Find evidence by id or text" aria-label="Find evidence"
+        <input type="search" className="field h-10 w-full text-sm disabled:opacity-50 sm:w-[280px]" placeholder="Find evidence by id or text" aria-label="Find evidence"
           value={query} disabled={yamlDirty} title={yamlDirty ? 'Save or discard your YAML edits first' : undefined}
           onChange={(e) => setQuery(e.target.value)} />
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-8">
         <nav aria-label="Profile sections"
-          className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:sticky md:top-[84px] md:mx-0 md:w-[200px] md:flex-none md:flex-col md:gap-[18px] md:overflow-visible md:p-0">
+          className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:sticky md:top-[84px] md:mx-0 md:w-[224px] md:flex-none md:flex-col md:gap-5 md:overflow-visible md:p-0">
           {SECTIONS.map(([title, items]) => (
             <div key={title} className="flex gap-1 md:flex-col md:gap-0.5">
-              <p className="hidden px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint md:block">{title}</p>
+              <p className="hidden px-3 pb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-faint md:block">{title}</p>
               {items.map(([key, name]) => {
                 const on = view === key
                 const count = String(counts[key])
                 return (
                   <button key={key} aria-current={on ? 'page' : undefined} disabled={blocked(key)} onClick={() => setTab(key)}
                     title={blocked(key) ? (yamlDirty ? 'Save or discard your YAML edits first' : 'Save or discard your edits first') : undefined}
-                    className={cx('flex shrink-0 cursor-pointer items-baseline justify-between gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-wash disabled:cursor-not-allowed disabled:opacity-40',
-                      on ? 'bg-wash text-ink' : 'text-muted')}>
+                    className={cx('flex h-9 shrink-0 cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 text-left transition-colors hover:bg-sheet disabled:cursor-not-allowed disabled:opacity-40',
+                      on ? 'bg-sheet font-semibold text-ink shadow-[inset_3px_0_0_var(--color-accent),0_1px_2px_rgb(14_20_34/0.06)]' : 'text-body')}>
                     <span>{name}</span>
-                    <span className={cx('font-mono text-[11px]', on ? 'text-accent' : count.includes('new') ? 'text-warn' : 'text-faint')}>{count}</span>
+                    <span className={cx('font-mono text-[11px]', on ? 'text-accent' : count.includes('new') ? 'text-[#7a4700]' : 'text-faint')}>{count}</span>
                   </button>
                 )
               })}
@@ -228,7 +232,7 @@ export default function Profile() {
           ))}
         </nav>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
           <ErrorNote error={error} onDismiss={() => setError(null)} />
           <ErrorNote error={kn.error} onDismiss={() => kn.setError(null)} />
           {conflict && (
@@ -239,25 +243,31 @@ export default function Profile() {
           )}
           {noMatches && (
             <div className={cx(card, 'px-5 py-12 text-center')}>
-              <p className="font-display text-[22px] text-ink">Nothing here.</p>
+              <p className="font-display text-[28px] text-ink">Nothing here.</p>
               <p className="mt-1 text-muted">No evidence matches “{query.trim()}”.</p>
             </div>
           )}
 
           {view === 'experience' && roles.map(({ r, ri, scope, achievements, subRoles, count }, i) => (
-            <section key={r.id} className="sheet animate-rise flex flex-col gap-3.5 rounded-lg px-4 py-5 sm:px-6" style={{ animationDelay: `${i * 50}ms` }}>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
-                {([['employer', 'Employer'], ['location', 'Location'], ['dates', 'Dates']] as const).map(([key, name]) => (
-                  <label key={key} className="flex flex-col gap-1 text-xs text-muted">{name}
-                    <input className="field py-[7px] text-sm text-ink" value={r[key]} onChange={(e) => edit((d) => { d.roles[ri][key] = e.target.value })} />
-                  </label>
-                ))}
+            <section key={r.id} className={cx(card, 'animate-rise overflow-hidden')} style={{ animationDelay: `${i * 50}ms` }}>
+              <div className="flex flex-col gap-3 border-b border-line px-4 pb-[18px] pt-5 sm:px-6">
+                <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
+                  <input aria-label="Employer" className={cx(quiet, '-ml-2.5 h-11 min-w-0 flex-[1_1_260px] px-2.5 font-display text-[30px] tracking-[-0.01em] text-ink')}
+                    value={r.employer} onChange={(e) => edit((d) => { d.roles[ri].employer = e.target.value })} />
+                  <input aria-label="Location" className={cx(quiet, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 text-sm text-muted focus:text-ink')}
+                    style={{ width: `calc(${Math.max(8, r.location.length)}ch + 22px)` }}
+                    value={r.location} onChange={(e) => edit((d) => { d.roles[ri].location = e.target.value })} />
+                  <input aria-label="Dates" className={cx(quiet, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 font-mono text-[13px] text-muted focus:text-ink')}
+                    style={{ width: `calc(${Math.max(12, r.dates.length + 1)}ch + 22px)` }}
+                    value={r.dates} onChange={(e) => edit((d) => { d.roles[ri].dates = e.target.value })} />
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">Title (locked on every resume, so it must match your real title)</span>
+                  <input className={cx(soft, 'h-10 border-rule px-3 text-[15px] font-semibold text-accent')} value={r.title} onChange={(e) => edit((d) => { d.roles[ri].title = e.target.value })} />
+                </label>
               </div>
-              <label className="flex flex-col gap-1 text-xs text-muted">Title (locked on every resume, so it must match your real title)
-                <input className="field py-[7px] text-sm font-semibold text-accent" value={r.title} onChange={(e) => edit((d) => { d.roles[ri].title = e.target.value })} />
-              </label>
-              <div className="flex flex-col">
-                <p className={cx(label, 'pb-1')}>Evidence · {count}</p>
+              <div className="flex flex-col px-4 pb-[18px] pt-3.5 sm:px-6">
+                <p className={cx(label, 'pb-1.5')}>Evidence · {count}</p>
                 {scope && (
                   <EvidenceRow e={scope} scope idCol={ROLE_ROW}
                     onChange={(e) => edit((d) => { d.roles[ri].scope = { ...d.roles[ri].scope!, ...e } })}
@@ -269,36 +279,36 @@ export default function Profile() {
                     onDelete={() => edit((d) => { d.roles[ri].achievements.splice(ai, 1) })} />
                 ))}
                 {!q && (
-                  <button className="btn btn-ghost mt-2 self-start px-2 py-1.5 text-[13px] text-accent"
+                  <button className={cx(addBtn, 'mt-2.5')}
                     onClick={() => edit((d) => { d.roles[ri].achievements.push({ id: nextId(`${r.id}.a`, ids), text: '', source: 'interview', in_base_resume: false }) })}>
                     + Add achievement
                   </button>
                 )}
-              </div>
               {subRoles.length > 0 && (
                 <div className="flex flex-col gap-1">
-                  <p className={cx(label, 'pb-1')}>Earlier roles here</p>
+                  <p className={cx(label, 'pb-1.5 pt-[18px]')}>Earlier roles here</p>
                   {subRoles.map(({ s, si }) => (
-                    <div key={s.id} className="grid gap-3 py-1 md:grid-cols-[220px_minmax(0,1fr)]">
-                      <input className="field py-[7px] text-sm font-semibold" aria-label={`${s.id} label`} value={s.label} onChange={(e) => edit((d) => { d.roles[ri].sub_roles[si].label = e.target.value })} />
+                    <div key={s.id} className="grid gap-3 py-1 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+                      <input className={cx(soft, 'h-[38px] px-3 text-sm font-semibold')} aria-label={`${s.id} label`} value={s.label} onChange={(e) => edit((d) => { d.roles[ri].sub_roles[si].label = e.target.value })} />
                       <Grow label={`${s.id} text`} value={s.text} onChange={(v) => edit((d) => { d.roles[ri].sub_roles[si].text = v })} />
                     </div>
                   ))}
                 </div>
               )}
+              </div>
             </section>
           ))}
 
           {view === 'summary' && !noMatches && (
-            <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))]">
+            <div className="grid items-start gap-[18px] [grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr))]">
               {(['summary_facts', 'highlights'] as const).map((key) => (
-                <section key={key} className={cx(card, 'flex flex-col px-5 py-[18px]')}>
-                  <p className={cx(label, 'pb-1.5')}>{key === 'summary_facts' ? 'Summary & general facts' : 'Career highlights'}</p>
+                <section key={key} className={cx(card, 'flex flex-col px-[22px] py-[18px]')}>
+                  <p className={cx(cardTitle, 'pb-2')}>{key === 'summary_facts' ? 'Summary & general facts' : 'Career highlights'}</p>
                   {p[key].map((e, i) => ({ e, i })).filter(({ e }) => match(e)).map(({ e, i }) => (
                     <EvidenceRow key={e.id} e={e} idCol={SIDE_ROW} onChange={(v) => edit((d) => { d[key][i] = v })} onDelete={() => edit((d) => { d[key].splice(i, 1) })} />
                   ))}
                   {!q && (
-                    <button className="btn btn-ghost mt-2 self-start px-2 py-1.5 text-[13px] text-accent"
+                    <button className={cx(addBtn, 'mt-2.5')}
                       onClick={() => edit((d) => { d[key].push({ id: nextId(key === 'summary_facts' ? 'summary.s' : 'highlight.h', ids), text: '', source: 'interview', in_base_resume: false }) })}>
                       + Add {key === 'summary_facts' ? 'fact' : 'highlight'}
                     </button>
@@ -310,20 +320,20 @@ export default function Profile() {
 
           {view === 'skills' && (
             <>
-              <p className="text-[13px] text-muted">Only skills you’ve used hands-on. Tailored competencies may reorder these, use approved synonyms or a sub-phrase, but never add new ones.</p>
+              <p className="text-sm text-muted text-pretty">Only skills you’ve used hands-on. Tailored competencies may reorder these, use approved synonyms or a sub-phrase, but never add new ones.</p>
               {p.skills.map((g, gi) => (
-                <section key={gi} className={cx(card, 'grid items-start gap-4 px-[18px] py-4 md:grid-cols-[200px_minmax(0,1fr)]')}>
-                  <input className={cx(quiet, '-mx-2.5 px-2.5 py-1 font-semibold text-ink')} aria-label="Category" value={g.category} onChange={(e) => edit((d) => { d.skills[gi].category = e.target.value })} />
-                  <div className="flex flex-col gap-2">
+                <section key={gi} className={cx(card, 'grid items-start gap-x-5 gap-y-3 px-5 py-4 md:grid-cols-[220px_minmax(0,1fr)]')}>
+                  <input className={cx(quiet, '-ml-2.5 h-9 px-2.5 font-display text-xl text-ink')} aria-label="Category" value={g.category} onChange={(e) => edit((d) => { d.skills[gi].category = e.target.value })} />
+                  <div className="flex min-w-0 flex-col gap-2.5">
                     <div className="flex flex-wrap gap-1.5">
                       {g.items.map((item, ii) => (
-                        <span key={ii} className="inline-flex items-center gap-1.5 rounded-[3px] bg-wash px-2 py-0.5 font-mono text-xs text-body">
+                        <span key={ii} className="inline-flex h-7 items-center gap-2 rounded-md bg-[#e6e9ef] pl-2.5 pr-1.5 font-mono text-xs text-ink">
                           {item}
-                          <button onClick={() => edit((d) => { d.skills[gi].items.splice(ii, 1) })} aria-label={`Remove ${item}`} className="cursor-pointer text-faint hover:text-bad">×</button>
+                          <button onClick={() => edit((d) => { d.skills[gi].items.splice(ii, 1) })} aria-label={`Remove ${item}`} className="size-[18px] cursor-pointer rounded text-faint hover:bg-sheet hover:text-bad">×</button>
                         </span>
                       ))}
                     </div>
-                    <input className="field py-1.5 text-[13px]" placeholder="Add a skill and press Enter" aria-label={`Add a skill to ${g.category}`}
+                    <input className={cx(soft, 'h-9 px-3 text-[13px]')} placeholder="Add a skill and press Enter" aria-label={`Add a skill to ${g.category}`}
                       onKeyDown={(e) => {
                         const v = e.currentTarget.value.trim()
                         if (e.key === 'Enter' && v) { edit((d) => { d.skills[gi].items.push(v) }); e.currentTarget.value = '' }
@@ -331,59 +341,59 @@ export default function Profile() {
                   </div>
                 </section>
               ))}
-              <button className="btn btn-ghost self-start px-2 py-1.5 text-[13px] text-accent" onClick={() => edit((d) => { d.skills.push({ category: 'New group', items: [] }) })}>+ Add skill group</button>
+              <button className={cx(addBtn, 'hover:bg-sheet')} onClick={() => edit((d) => { d.skills.push({ category: 'New group', items: [] }) })}>+ Add skill group</button>
             </>
           )}
 
           {view === 'headlines' && (
             <>
-              <p className="text-[13px] text-muted">The AI picks a headline from this approved list, based on the role’s track.</p>
+              <p className="text-sm text-muted">The AI picks a headline from this approved list, based on the role’s track.</p>
               {p.headlines.map((h, hi) => (
-                <section key={h.id} className={cx(card, 'grid items-center gap-3 px-[18px] py-3.5 md:grid-cols-[minmax(0,1fr)_auto_auto] md:gap-4')}>
-                  <input className="field py-[7px] text-sm font-semibold text-accent" aria-label={`Headline ${h.id}`} value={h.text} onChange={(e) => edit((d) => { d.headlines[hi].text = e.target.value })} />
-                  <div className="flex gap-1.5" role="group" aria-label="Tracks">
+                <section key={h.id} className={cx(card, 'flex flex-wrap items-center gap-x-4 gap-y-3 px-[18px] py-3.5')}>
+                  <input className={cx(soft, 'h-10 min-w-0 flex-[1_1_360px] px-3 text-[15px] font-semibold text-accent')} aria-label={`Headline ${h.id}`} value={h.text} onChange={(e) => edit((d) => { d.headlines[hi].text = e.target.value })} />
+                  <div className="inline-flex gap-0.5 rounded-lg bg-paper p-[3px]" role="group" aria-label="Tracks">
                     {TRACKS.map((t) => {
                       const on = h.tracks.includes(t)
                       return (
                         <button key={t} aria-pressed={on}
-                          className={cx('cursor-pointer rounded-full border px-2.5 py-[3px] text-xs transition-colors', on ? 'border-accent/40 bg-accent-soft text-accent' : 'border-rule bg-sheet text-muted hover:text-ink')}
+                          className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors', on ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}
                           onClick={() => edit((d) => { const tr = d.headlines[hi].tracks; d.headlines[hi].tracks = on ? tr.filter((x) => x !== t) : [...tr, t] })}>
                           {t}
                         </button>
                       )
                     })}
                   </div>
-                  <button className="cursor-pointer justify-self-start text-faint hover:text-bad disabled:cursor-not-allowed disabled:opacity-30" disabled={p.headlines.length < 2}
+                  <button className="h-9 w-7 cursor-pointer text-faint hover:text-bad disabled:cursor-not-allowed disabled:opacity-30" disabled={p.headlines.length < 2}
                     onClick={() => edit((d) => { d.headlines.splice(hi, 1) })} aria-label={`Delete headline ${h.id}`}>✕</button>
                 </section>
               ))}
-              <button className="btn btn-ghost self-start px-2 py-1.5 text-[13px] text-accent" onClick={() => edit((d) => { d.headlines.push({ id: nextId('h.custom', ids), text: '', tracks: ['ic'] }) })}>+ Add headline</button>
+              <button className={cx(addBtn, 'hover:bg-sheet')} onClick={() => edit((d) => { d.headlines.push({ id: nextId('h.custom', ids), text: '', tracks: ['ic'] }) })}>+ Add headline</button>
             </>
           )}
 
           {view === 'projects' && (['projects', 'education', 'extras'] as const).map((key) => (
-            <section key={key} className={cx(card, 'flex flex-col gap-1.5 px-5 py-[18px]')}>
-              <p className={label}>{{ projects: 'Projects & community', education: 'Education & certifications', extras: 'Awards & languages' }[key]}</p>
+            <section key={key} className={cx(card, 'flex flex-col gap-1 px-[22px] py-[18px]')}>
+              <p className={cx(cardTitle, 'pb-1.5')}>{{ projects: 'Projects & community', education: 'Education & certifications', extras: 'Awards & languages' }[key]}</p>
               {p[key].map((item: LeadItem, i) => (
-                <div key={item.id} className="grid items-start gap-x-3 gap-y-1 py-1 md:grid-cols-[100px_220px_minmax(0,1fr)]">
-                  <span className="pt-2 font-mono text-[11px] text-accent">{item.id}</span>
-                  <input className={cx(quiet, 'py-1.5 text-sm font-semibold text-ink')} aria-label={`${item.id} label`} value={item.label} onChange={(e) => edit((d) => { d[key][i].label = e.target.value })} />
-                  <Grow label={`${item.id} text`} className={cx(quiet, 'py-1.5')} value={item.text} onChange={(v) => edit((d) => { d[key][i].text = v })} />
+                <div key={item.id} className="grid items-start gap-x-3 gap-y-1 py-[3px] md:grid-cols-[100px_minmax(0,220px)_minmax(0,1fr)]">
+                  <span className="break-all pt-2.5 font-mono text-[11px] text-accent">{item.id}</span>
+                  <input className={cx(quiet, 'h-9 px-2.5 text-sm font-semibold text-ink')} aria-label={`${item.id} label`} value={item.label} onChange={(e) => edit((d) => { d[key][i].label = e.target.value })} />
+                  <Grow label={`${item.id} text`} className={cx(quiet, 'min-h-9 px-2.5 py-[7px]')} value={item.text} onChange={(v) => edit((d) => { d[key][i].text = v })} />
                 </div>
               ))}
             </section>
           ))}
 
           {view === 'synonyms' && (
-            <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))]">
-              <section className={cx(card, 'flex flex-col gap-2 px-5 py-[18px]')}>
-                <p className={label}>Synonym groups</p>
+            <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr))]">
+              <section className={cx(card, 'flex flex-col gap-2 px-[22px] py-[18px]')}>
+                <p className={cardTitle}>Synonym groups</p>
                 <p className="text-[13px] text-muted">Interchangeable terms, one group per line, comma-separated. Example: <span className="font-mono text-xs">WAF, Web Application Firewall</span></p>
                 <RawListField label="Synonym groups" format={() => p.synonyms.map((g) => g.join(', ')).join('\n')}
                   parse={(t) => edit((d) => { d.synonyms = t.split('\n').map((l) => l.split(',').map((x) => x.trim()).filter(Boolean)).filter((g) => g.length) })} />
               </section>
-              <section className={cx(card, 'flex flex-col gap-2 px-5 py-[18px]')}>
-                <p className={label}>Approved vocabulary</p>
+              <section className={cx(card, 'flex flex-col gap-2 px-[22px] py-[18px]')}>
+                <p className={cardTitle}>Approved vocabulary</p>
                 <p className="text-[13px] text-muted">Proper nouns allowed in any claim (e.g. Singapore, APAC), one per line. Keep this short.</p>
                 <RawListField label="Vocabulary" format={() => p.vocabulary.join('\n')}
                   parse={(t) => edit((d) => { d.vocabulary = t.split('\n').map((x) => x.trim()).filter(Boolean) })} />
@@ -403,8 +413,8 @@ export default function Profile() {
 
           {view === 'yaml' && (
             <>
-              <p className="text-[13px] text-muted">The raw file (<span className="font-mono text-xs">private/profile.yaml</span>). It’s validated on save, and duplicate ids or a bad structure are rejected.</p>
-              <textarea className="field min-h-[640px] resize-y px-4 py-3.5 font-mono text-[13px] leading-[1.6]" aria-label="Profile YAML" spellCheck={false} value={yaml} onChange={(e) => setYaml(e.target.value)} />
+              <p className="text-sm text-muted">The raw file (<span className="font-mono text-xs">private/profile.yaml</span>). It’s validated on save, and duplicate ids or a bad structure are rejected.</p>
+              <textarea className="min-h-[640px] resize-y rounded-[14px] border border-ink bg-ink px-5 py-[18px] font-mono text-[13px] leading-[1.65] text-[#dfe5fb] outline-none focus:shadow-[0_0_0_3px_rgb(77_107_255/0.45)]" aria-label="Profile YAML" spellCheck={false} value={yaml} onChange={(e) => setYaml(e.target.value)} />
             </>
           )}
         </div>
