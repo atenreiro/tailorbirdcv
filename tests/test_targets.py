@@ -105,3 +105,12 @@ def test_the_page_limit_sets_the_budget_and_too_long(env):
                                         ("王小明", "王小明"), ("   ", "Resume")])
 def test_output_file_names_keep_the_letters_of_any_name(name, stem):
     assert file_safe_name(name) == stem
+
+
+def test_analysis_entities_the_jd_does_not_contain_are_unescaped():
+    from autocv.ai import _unescape_entities
+    jd = "Head of Detection & Response. Write &lt;b&gt; tags."
+    out = _unescape_entities({"role": "Head of Detection &amp; Response", "keywords": [{"term": "R&amp;D"}],
+                              "note": "&lt;b&gt; as written", "n": 3}, jd)
+    assert out == {"role": "Head of Detection & Response", "keywords": [{"term": "R&D"}],
+                   "note": "&lt;b&gt; as written", "n": 3}

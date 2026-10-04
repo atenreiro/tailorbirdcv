@@ -9,6 +9,7 @@ every id the model can cite to ids that exist in the profile.
 from __future__ import annotations
 
 import copy
+import html
 import json
 import re
 import tempfile
@@ -197,6 +198,7 @@ JOB DESCRIPTION:
 {jd}
 """
     result = await engine.complete(system_prompt(), prompt, analysis_schema(ids, kids))
+    result = _unescape_entities(result, jd)
     known, known_k = set(ids), set(kids)
     for req in result.get("requirements", []):
         req["evidence"] = [e for e in req.get("evidence", []) if e in known]
@@ -206,6 +208,22 @@ JOB DESCRIPTION:
             q["prefill_from"] = ""
     result["known_gaps"] = [g for g in result.get("known_gaps", []) if g.get("knowledge_id") in known_k]
     return result
+
+
+_ENTITY = re.compile(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);")
+
+
+def _unescape_entities(value, jd: str):
+    """The model sometimes writes "&amp;" for a plain "&" (seen in role titles). Turn an HTML entity back
+    into its character unless the job description itself contains that entity, so titles, folder names
+    and the JD's exact keywords stay right."""
+    if isinstance(value, str):
+        return _ENTITY.sub(lambda m: m.group(0) if m.group(0) in jd else html.unescape(m.group(0)), value)
+    if isinstance(value, list):
+        return [_unescape_entities(v, jd) for v in value]
+    if isinstance(value, dict):
+        return {k: _unescape_entities(v, jd) for k, v in value.items()}
+    return value
 
 
 def _number_questions(questions: list[dict]) -> None:
