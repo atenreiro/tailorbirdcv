@@ -17,9 +17,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import difflib
+import logging
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from . import ats, factcheck
@@ -211,6 +214,40 @@ def _open_when_ready(url: str, port: int, timeout: float = 20.0) -> None:
             time.sleep(0.2)
 
 
+SHUTDOWN_GRACE = 3  # seconds a request still running gets to finish after Ctrl+C
+
+
+class _QuietShutdown(logging.Filter):
+    """Ctrl+C cancels whatever is still running. That's expected, so no tracebacks or alarming errors."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        exc = record.exc_info[1] if record.exc_info else None
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+            return False
+        msg = record.getMessage()
+        if msg.startswith("Traceback") and msg.rstrip().endswith(("CancelledError", "KeyboardInterrupt")):
+            return False  # the app's shutdown step, cut short by a forced quit (logged as text)
+        return not ("graceful shutdown exceeded" in msg or msg.startswith("Waiting for"))
+
+
+def _server_class(uvicorn):
+    class Server(uvicorn.Server):
+        """A single Ctrl+C often arrives twice (from the terminal and again via `uv run`), which uvicorn
+        treats as "force quit" and skips the clean shutdown. Ignore a repeat within a second; a deliberate
+        second press later still forces it."""
+        first_exit = 0.0
+
+        def handle_exit(self, sig, frame) -> None:
+            now = time.monotonic()
+            if self.should_exit and now - self.first_exit < 1:
+                return
+            if not self.should_exit:
+                self.first_exit = now
+                print(f"\nStopping AutoCV (anything still running gets {SHUTDOWN_GRACE} s to finish)…", flush=True)
+            super().handle_exit(sig, frame)
+    return Server
+
+
 def cmd_serve(args) -> int:
     import threading
 
@@ -226,7 +263,14 @@ def cmd_serve(args) -> int:
     print(f"AutoCV → {url}", flush=True)
     if built and not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
-    uvicorn.run(create_app(), host="127.0.0.1", port=args.port)
+    config = uvicorn.Config(create_app(), host="127.0.0.1", port=args.port,
+                            timeout_graceful_shutdown=SHUTDOWN_GRACE)
+    logging.getLogger("uvicorn.error").addFilter(_QuietShutdown())
+    try:
+        _server_class(uvicorn)(config).run()
+    except KeyboardInterrupt:  # uvicorn re-raises the Ctrl+C once it has shut down
+        pass
+    print("AutoCV stopped.", flush=True)
     return 0
 
 
