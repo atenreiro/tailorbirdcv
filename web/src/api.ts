@@ -169,12 +169,13 @@ export interface ThemeInfo { id: string; name: string; description: string; font
 export interface Settings {
   pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
+  text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
   openrouter_model: string | null; openrouter_zdr: boolean
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
-export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: EngineId; api_model?: string | null
+export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
   openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]

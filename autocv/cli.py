@@ -345,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     from . import ai
     from .render import use_design
     ai.use_context(ai.Context.from_settings(settings["targets"], PRIVATE))
-    use_design(settings["theme"], settings["paper"])
+    use_design(settings["theme"], settings["paper"], settings["text_size"])
     if args.cmd not in ("serve", "doctor", "install-browser"):  # serve migrates when the API starts
         try:
             for old, new in STORE.migrate_layout().items():

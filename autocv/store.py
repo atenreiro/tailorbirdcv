@@ -224,6 +224,7 @@ class Store:
         "pdf_engine": None,          # None = automatic (Word when installed, else LibreOffice)
         "targets": TARGETS,          # who the resume is for: steers the AI prompts and the page limit
         "theme": "classic",          # resume design (themes.py)
+        "text_size": "comfortable",  # themes.TEXT_SIZES: "standard" (as designed) | "comfortable" (+1 pt)
         "paper": None,               # "letter" | "a4"; None = the theme's default
         "ai_engine": "claude-cli",   # engine.ENGINES: claude-cli | codex-cli (subscriptions) | anthropic-api |
                                      # openai-api | openrouter-api (API keys in the OS keychain)
@@ -256,6 +257,8 @@ class Store:
         from .engine import ENGINES
         if out["ai_engine"] not in ENGINES:  # a hand-edited or newer engine name: back to the default
             out["ai_engine"] = self.SETTINGS["ai_engine"]
+        if out["text_size"] not in ("standard", "comfortable"):
+            out["text_size"] = self.SETTINGS["text_size"]
         if out["targets"]["pages"] not in (1, 2, 3):
             out["targets"]["pages"] = self.TARGETS["pages"]
         return out

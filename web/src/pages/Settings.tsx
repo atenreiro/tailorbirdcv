@@ -229,6 +229,14 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
           <Segmented label="Paper size" options={[['letter', 'US Letter'], ['a4', 'A4']]} value={paper}
             onChange={(v) => { if (!busy) void save({ paper: v as 'letter' | 'a4' }) }} />
         </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Text size</span>
+          <Segmented label="Text size" options={[['comfortable', 'Comfortable'], ['standard', 'Standard']]} value={settings.text_size ?? 'comfortable'}
+            onChange={(v) => { if (!busy) void save({ text_size: v as 'standard' | 'comfortable' }) }} />
+          <span className="max-w-[260px] text-xs text-faint">{(settings.text_size ?? 'comfortable') === 'comfortable'
+            ? 'Body text 1 pt larger (10.5 pt in Classic and Modern): easier to read, a little less per page.'
+            : 'Each design as drawn (9.5 pt body in Classic and Modern): fits the most per page.'}</span>
+        </div>
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       <div role="radiogroup" aria-labelledby="design-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-3">

@@ -436,9 +436,9 @@ def measure_pdf(profile: MasterProfile, tailored: TailoredResume, pdf: Path, loc
 
 
 def design_key() -> str:
-    """The active theme and paper, e.g. "classic/a4" (what a measured fill belongs to)."""
+    """The active theme, text size and paper, e.g. "classic+comfortable/a4" (what a measured fill belongs to)."""
     theme, paper = active_design()
-    return f"{theme.id}/{paper or theme.paper}"
+    return fit.design_key(theme, paper)
 
 
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,

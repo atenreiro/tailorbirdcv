@@ -84,6 +84,7 @@ class SettingsPatch(BaseModel):
     targets: TargetsPatch | None = None
     theme: Literal[tuple(themes.THEMES)] | None = None  # type: ignore[valid-type]
     paper: Literal["letter", "a4"] | None = None  # None = the theme's default
+    text_size: Literal[tuple(themes.TEXT_SIZES)] | None = None  # type: ignore[valid-type]
     ai_engine: Literal[tuple(ENGINES)] | None = None  # type: ignore[valid-type]
     api_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)  # "" / None = default
     openai_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
@@ -277,7 +278,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             # The candidate's targets (Settings) steer every AI prompt made while handling this request.
             settings = store.settings()
             ai.use_context(ai.Context.from_settings(settings["targets"], store.private))
-            use_design(settings["theme"], settings["paper"])  # every render in this request uses the chosen design
+            use_design(settings["theme"], settings["paper"], settings["text_size"])  # every render uses the chosen design
         response = await call_next(request)
         # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
         # (the Export step previews the PDF in an iframe).

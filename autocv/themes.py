@@ -8,7 +8,7 @@ Georgia → Gelasio, both shipped in data/fonts), so page breaks stay the same o
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # Paper sizes (twips): width, height.
 PAPER = {"letter": (12240, 15840), "a4": (11906, 16838)}
@@ -62,6 +62,7 @@ class Theme:
     paper: str = "letter"
     bullet: str = "•  "
     separator: str = " · "
+    text_size: str = "standard"  # see TEXT_SIZES / sized()
     titles: dict[str, str] = field(default_factory=lambda: dict(TITLES))
 
     def page(self, paper: str | None = None) -> tuple[int, int]:
@@ -102,5 +103,21 @@ COMPACT = Theme(
 THEMES = {t.id: t for t in (CLASSIC, MODERN, COMPACT)}
 
 
-def get(theme_id: str | None) -> Theme:
-    return THEMES.get(theme_id or "classic", CLASSIC)
+# Text size (Settings → Resume design), applied on top of any theme. "standard" is each theme as designed
+# (Classic byte-for-byte); "comfortable" makes the body 1 pt larger (9.5 → 10.5 pt in Classic and Modern) and
+# dates, section titles and company names 1 pt larger too — easier to read, a little less per page.
+TEXT_SIZES = ("standard", "comfortable")
+DEFAULT_TEXT_SIZE = "comfortable"
+
+
+def sized(theme: Theme, text_size: str | None) -> Theme:
+    if text_size != "comfortable" or theme.text_size == "comfortable":
+        return theme
+    # The contact line keeps its size: it's one line of links that would otherwise wrap onto a second line.
+    return replace(theme, text_size="comfortable", body_size=theme.body_size + 2, company_size=theme.company_size + 2,
+                   section_size=theme.section_size + 2, date_size=theme.date_size + 2,
+                   headline_size=theme.headline_size + 1)
+
+
+def get(theme_id: str | None, text_size: str | None = None) -> Theme:
+    return sized(THEMES.get(theme_id or "classic", CLASSIC), text_size)

@@ -147,8 +147,9 @@ def _set(el, **attrs) -> None:
 _DESIGN: ContextVar[tuple[Theme | None, str | None]] = ContextVar("autocv_design", default=(None, None))
 
 
-def use_design(theme: str | None, paper: str | None):
-    return _DESIGN.set((themes.get(theme), paper if paper in themes.PAPER else None))
+def use_design(theme: str | None, paper: str | None, text_size: str | None = None):
+    """Set the design for renders in this request/task. `text_size` None = each theme as designed ("standard")."""
+    return _DESIGN.set((themes.get(theme, text_size), paper if paper in themes.PAPER else None))
 
 
 def active_design() -> tuple[Theme, str]:

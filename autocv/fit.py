@@ -58,7 +58,7 @@ def _load(private: Path | None) -> dict | None:
 
 def lines_factor(private: Path | None, theme: Theme, paper: str | None) -> float:
     """Measured lines-per-page ÷ the theme's nominal figure for this design (1.0 until a PDF was measured)."""
-    entry = (_load(private) or {}).get(f"{theme.id}/{paper or theme.paper}", {})
+    entry = (_load(private) or {}).get(design_key(theme, paper), {})
     factor = entry.get("factor") if isinstance(entry, dict) else None
     return float(factor) if isinstance(factor, (int, float)) else 1.0
 
@@ -73,12 +73,18 @@ def record(private: Path, theme: Theme, paper: str | None, est_lines: int, fills
     data = _load(private)
     if data is None:
         return
-    key = f"{theme.id}/{paper or theme.paper}"
+    key = design_key(theme, paper)
     old = data.get(key) if isinstance(data.get(key), dict) else {}
     factor = sample if "factor" not in old else (1 - _WEIGHT) * float(old["factor"]) + _WEIGHT * sample
     data[key] = {"factor": round(factor, 4), "builds": int(old.get("builds", 0)) + 1}
     from .store import _write_json_atomic  # callers hold store.lock
     _write_json_atomic(_path(private), data)
+
+
+def design_key(theme: Theme, paper: str | None) -> str:
+    """Theme, text size and paper, e.g. "classic/a4" or "modern+comfortable/letter" (each fits differently)."""
+    size = "" if theme.text_size == "standard" else f"+{theme.text_size}"
+    return f"{theme.id}{size}/{paper or theme.paper}"
 
 
 def room_lines(fills: list[float], lines_per_page: float) -> int:

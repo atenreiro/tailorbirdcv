@@ -201,7 +201,7 @@ def test_fill_needs_a_build_in_the_current_design_and_within_the_limit(env):
     client, store, _, depth = env
     app_id = composed(client)
     client.post(f"/api/applications/{app_id}/build")
-    assert client.get(f"/api/applications/{app_id}").json()["meta"]["fill"]["design"] == "classic/a4"
+    assert client.get(f"/api/applications/{app_id}").json()["meta"]["fill"]["design"] == "classic+comfortable/a4"
     store.save_settings({"paper": "letter"})  # measured on A4: no longer meaningful
     assert client.get(f"/api/applications/{app_id}").json()["meta"]["fill"] is None
     assert client.post(f"/api/applications/{app_id}/fill").status_code == 409

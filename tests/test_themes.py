@@ -91,3 +91,26 @@ def test_a_role_without_bullets_does_not_glue_itself_to_the_next_role(tmp_path):
     keep = lambda needle: next("<w:keepNext/>" in p for p in paras if needle in p)  # noqa: E731
     assert keep("Acme Bank") and keep("Vice President | Detection Lead")  # company → title → scope stay together
     assert not keep("Led a team of 5 engineers protecting 20M+ customers.")  # …but the scope doesn't pull Telco
+
+
+def test_comfortable_text_is_one_point_larger_and_standard_is_untouched(tmp_path):
+    comfy = themes.get("classic", "comfortable")
+    assert (comfy.body_size, comfy.date_size) == (21, 19)  # 10.5 pt body, 9.5 pt dates
+    assert comfy.contact_size == themes.CLASSIC.contact_size  # the contact line stays on one line
+    assert themes.get("classic", "standard") is themes.CLASSIC and themes.get("classic") is themes.CLASSIC
+    assert comfy.lines_per_page("a4") < themes.CLASSIC.lines_per_page("a4")  # estimates follow the size
+    use_design("classic", "a4", "comfortable")
+    try:
+        doc = xml(render(PROFILE, TAILORED, tmp_path / "c.docx"))
+    finally:
+        use_design(None, None)
+    bullet = re.search(r'<w:sz w:val="(\d+)"/></w:rPr><w:t xml:space="preserve">•  Rebuilt Splunk', doc)
+    assert bullet and bullet.group(1) == "21"  # bullets at 10.5 pt
+
+
+def test_text_size_is_a_setting_with_comfortable_as_default(tmp_path):
+    store = Store(tmp_path)
+    client = client_for(create_app(store, FakeEngine({})))
+    assert client.get("/api/settings").json()["text_size"] == "comfortable"
+    assert client.put("/api/settings", json={"text_size": "standard"}).json()["text_size"] == "standard"
+    assert client.put("/api/settings", json={"text_size": "huge"}).status_code == 422
