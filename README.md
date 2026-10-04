@@ -1,87 +1,76 @@
 # AutoCV
 
-Tailors a master resume to a job description, **without inventing anything**. A local web UI (FastAPI + React) handles the workflow. The AI work runs on Claude: either your own Claude Code login (your Claude subscription, no extra cost) or an Anthropic API key (pay per use). Deterministic Python handles the fact-check gate, renders your exact Word design, measures ATS keyword coverage, and converts to PDF through Microsoft Word or LibreOffice. Runs on macOS, Windows and Linux.
+AutoCV tailors your resume to a specific job, **without inventing anything**.
 
-## How it works
-```
-JD ─► Analyze ─► Gap questions ─► (you approve new evidence) ─► Compose ─► Fact-check ⟲ repair ─► Review ─► Build
-                                                                     │
-                       private/profile.yaml (source of truth) ◄── every claim cites it
-```
-- **Master profile** (`private/profile.yaml`): every achievement, skill and locked field (employer, title, dates, education…), each with an id.
-- **Tailored resume**: reorders and rephrases, but every claim cites profile ids. The fact-check rejects any number, tool or name that isn't in the cited evidence. Locked fields are pulled from the profile, so they can't drift.
-- **AI engine**: `claude -p` fully isolated (no tools, MCP servers, plugins, hooks, skills or saved sessions), run from an empty folder, with output constrained to a JSON schema whose citable ids are limited to ids in your profile. Fact-check failures are fed back to the model automatically, for up to 3 repair rounds.
-- **Memory** (`private/knowledge.yaml`): every finalized gap answer is remembered. Known gaps aren't asked again, and similar questions are pre-filled. Style preferences are learned from your Review edits and guidance, and applied only once you approve them. Manage both under Master profile → "Answers & gaps" / "Style preferences". Memory steers questions and style; it is never resume evidence.
-- **Hiring-manager review**: on demand in Review, the AI reads the draft as the role's hiring manager and a recruiter skimming the top third would. You get a verdict, scores, and specific fixes pinned to lines. Every suggested rewrite is fact-checked before you see it, and you accept or reject each one.
-- **Sent copies and history**: marking an application *applied* freezes a read-only copy of exactly what you sent. Every change to your profile and answers is kept in Master profile → History, with a diff and one-click (undoable) restore.
-- **Rendering**: reproduces the original resume's formatting exactly (verified pixel-identical via `autocv baseline`).
+You give it your CV once. It turns it into a *master profile*: every role, achievement and skill you have. For each job you apply to, paste the job posting's link (or its text). AutoCV then:
+- works out what the role cares about;
+- asks you about anything the job wants that your profile doesn't cover;
+- writes a tailored resume that reorders and rephrases your real experience to fit;
+- builds a Word document and a PDF, ready to send.
 
-## Install
-You need:
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (or [pipx](https://pipx.pypa.io/)).
-- Claude, either way (choose in Settings → AI engine):
-  - [Claude Code](https://claude.com/claude-code), logged in with your Claude subscription (run `claude`, then `/login`). On Windows, use the native installer (`claude.exe`).
-  - or an [Anthropic API key](https://console.anthropic.com/) (billed per use). AutoCV stores it in your OS keychain, never in its files; `ANTHROPIC_API_KEY` also works.
-- A PDF engine, chosen in Settings (Word is the default when both are installed):
+Every line in a tailored resume must point back to something in your profile. A built-in fact-check blocks any number, tool, employer or claim that isn't there. Your name, employers, job titles, dates and education are always copied exactly as they appear in your profile.
 
-| | macOS | Windows | Linux |
-|---|---|---|---|
-| Microsoft Word | ✓ (hidden, via AppleScript) | ✓ (hidden, via COM) | — |
-| LibreOffice (free) | ✓ | ✓ | ✓ (`libreoffice-writer` package) |
+AutoCV is a small web app that runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by Claude, through your Claude subscription or an Anthropic API key.
 
-  Without Microsoft's fonts (typically Linux), LibreOffice uses free look-alikes with identical letter widths (Carlito, and Gelasio which ships with AutoCV), so page breaks still match Word's.
+## What you need
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, a Python tool installer.
+- **Claude**, one of:
+  - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.
+  - **An [Anthropic API key](https://console.anthropic.com/)**, billed per use. It's stored in your system's keychain, never in AutoCV's files.
+- **Something to make PDFs**: Microsoft Word (macOS, Windows) or the free [LibreOffice](https://www.libreoffice.org/) (all systems). Without either, you still get the Word document.
 
+## Run it
+From a copy of this repository (you'll also need [Node.js](https://nodejs.org/) to build the interface once):
 ```bash
-uv tool install autocv-app     # or: pipx install autocv-app   (or try it once: uvx autocv-app serve)
-autocv serve                   # opens http://127.0.0.1:8000 in your browser
-autocv doctor                  # optional: checks the AI engine, PDF engine, fonts and browser
-autocv install-browser         # optional: headless browser for job pages that need JavaScript (~100 MB)
+uv sync
+npm --prefix web install && npm --prefix web run build
+uv run autocv serve
 ```
-Update with `uv tool upgrade autocv-app` (or `pipx upgrade autocv-app`).
+Your browser opens at http://127.0.0.1:8000. Press **Ctrl+C** in the terminal to stop AutoCV.
+
+Once AutoCV is published, installing will be a single command, with no Node.js needed:
+```bash
+uv tool install autocv-app
+autocv serve
+```
+
+To check that everything AutoCV needs is in place (Claude, PDF engine, fonts):
+```bash
+uv run autocv doctor
+```
 
 ## First run: the setup wizard
-The first time you open AutoCV, a short wizard (about 5 minutes) gets you ready:
-1. **Connect Claude**: your Claude Code login, or an Anthropic API key. The page notices on its own when you've logged in.
-2. **Upload your CV** (.docx, PDF or text, any layout). The AI copies it into your master profile word-for-word; it doesn't rewrite anything.
-3. **Review**: every line is shown. Anything that doesn't match your file word-for-word is highlighted, and you fix, remove or confirm it before *Save my profile* (AutoCV checks again when saving). Or start with a blank profile.
-4. **Your targets**, suggested from your CV: field, seniority, the roles you're aiming for, region, US/UK spelling, page limit, domain pack. They steer what the AI emphasises; they never add facts.
+The first time you open AutoCV, a short wizard (about 5 minutes) sets everything up:
+1. **Connect Claude**: choose Claude Code or an API key. The page notices on its own once you've logged in.
+2. **Upload your CV** as .docx, PDF or plain text. Claude copies it into your master profile word for word; it doesn't rewrite anything.
+3. **Review**: check every line. Anything that doesn't match your file exactly is highlighted: fix it, remove it, or confirm it's correct. Then click *Save my profile*. You can also start from a blank profile.
+4. **Your targets**, pre-filled from your CV: your field, seniority, the roles you want, region, US or UK spelling, and page limit. These guide what gets emphasised; they never add facts.
 5. **Design**: Classic, Modern or Compact, on A4 or US Letter.
-6. **Final checks**: PDF engine, fonts, and an optional headless browser you can install from there.
+6. **Final checks**: the PDF engine, fonts, and an optional helper for job sites that need a full browser.
 
-Then paste a job description in **New tailoring**. Everything can be changed later under Settings, where you can also run the wizard again.
+You can change any of this later in **Settings**, and run the wizard again from there.
+
+## Everyday use
+1. Open **New tailoring** and paste the job posting's URL (or its text).
+2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
+3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
+4. Build the Word document and PDF.
+5. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent.
 
 ## Your data stays on your computer
-AutoCV runs only on `127.0.0.1`; there's no account, server or telemetry. Your profile, applications and settings live in:
+AutoCV only runs locally. There's no account, no server and no tracking. Your profile, applications and settings are kept in:
 - macOS: `~/Library/Application Support/AutoCV`
 - Windows: `%LOCALAPPDATA%\AutoCV`
 - Linux: `~/.local/share/AutoCV`
 
-Set `AUTOCV_PRIVATE` to use another folder. The only data that leaves your computer is what the AI engine sends to Claude to analyze and write your resume.
+In a copy of this repository that has a `private/` folder, AutoCV uses that folder instead (it's never committed). To use any other folder, set `AUTOCV_PRIVATE` to its path.
 
-## Development
+The only thing that leaves your computer is what Claude needs to read your CV and the job, and to write the resume.
+
+## For developers
 ```bash
-git clone https://github.com/atenreiro/autocv && cd autocv
-uv sync
-npm --prefix web install && npm --prefix web run build
-uv run autocv serve            # a source checkout keeps its data in ./private if that folder exists
-uv run pytest
+uv run pytest                                        # tests
+npm --prefix web run dev                             # interface with live reload (port 5173)
+AUTOCV_ENGINE=fake uv run autocv serve --port 8001   # demo mode, no AI calls
 ```
-Releases: bump `version` in `pyproject.toml`, add a CHANGELOG entry, then push a tag `vX.Y.Z`; `.github/workflows/release.yml` builds the UI and publishes `autocv-app` to PyPI.
-
-### Command-line import (AutoCV's own resume layout)
-```bash
-cp "<your resume>.docx" "<data folder>/source/base_resume.docx"
-uv run autocv ingest && uv run autocv baseline
-```
-To customise the emphasis heuristics for yourself, copy `autocv/data/config/industries.yaml` or `tracks.yaml` to `<data folder>/config/` and edit it.
-
-## Options
-- Frontend development: `npm --prefix web run dev` (port 5173, proxies `/api` to 8000).
-- Demo without AI calls: `AUTOCV_ENGINE=fake uv run autocv serve --port 8001` (PowerShell: `$env:AUTOCV_ENGINE="fake"; uv run autocv serve --port 8001`).
-- LibreOffice in an unusual location: set `AUTOCV_SOFFICE` to its `soffice` (Windows: `soffice.com`) path.
-- Job URLs: Lever/Greenhouse/Ashby APIs → embedded JobPosting data → page text → headless Chromium fallback (`AUTOCV_BROWSER_FALLBACK=0` disables it). Every request, browser ones included, is limited to public addresses.
-- `AUTOCV_MODEL` picks the Claude Code model (e.g. `opus`; default: the CLI's own). The API engine's model is set in Settings → AI engine.
-
-The Claude Code skills `/tailor` and `/profile` still work and share the same data.
-
-In a source checkout, `private/` is gitignored. Tests use a fictional profile in `tests/fixtures/`.
+The rules AutoCV follows and how the code is laid out are described in [CLAUDE.md](CLAUDE.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
