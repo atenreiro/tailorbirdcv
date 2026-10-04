@@ -69,10 +69,12 @@ class _Builder:
         rpr = _rpr(color, size, font=font or self.t.body_font, **kw)
         return f'<w:r>{rpr}<w:t xml:space="preserve">{escape(clean_text(text))}</w:t></w:r>'
 
-    def _para(self, runs: str, *, before=0, after=None, rule=False, hang=False, tab=False) -> str:
+    def _para(self, runs: str, *, before=0, after=None, rule=False, hang=False, tab=False, keep_next=False) -> str:
+        # keep_next: headings stay on the same page as the text under them (never stranded at a page bottom)
         after = self.t.after if after is None else after
         spacing = _SPACING.format(before=before, after=after).replace(' w:before="0"', "")
-        ppr = "<w:keepLines/>" + (self._tab if tab else "") + (self._rule if rule else "") + spacing
+        ppr = ("<w:keepNext/>" if keep_next else "") + "<w:keepLines/>" + (self._tab if tab else "") \
+            + (self._rule if rule else "") + spacing
         ppr += self._hang if hang else ""
         return f"<w:p {W_NS} {R_NS}><w:pPr>{ppr}</w:pPr>{runs}</w:p>"
 
@@ -103,7 +105,7 @@ class _Builder:
     def section(self, title):
         t = self.t
         self.add(self._para(self._run(title, t.accent, t.section_size, bold=True), before=t.section_before,
-                            after=t.section_after, rule=True))
+                            after=t.section_after, rule=True, keep_next=True))
 
     def summary(self, text):
         # The original summary shares the heading's bottom rule (Word draws one rule
@@ -125,15 +127,15 @@ class _Builder:
         t = self.t
         runs = self._run(left, t.ink, t.company_size, bold=True) + "<w:r><w:tab/></w:r>" + \
             self._run(dates, t.date, t.date_size)
-        self.add(self._para(runs, before=t.company_before, after=t.company_after, tab=True))
+        self.add(self._para(runs, before=t.company_before, after=t.company_after, tab=True, keep_next=True))
 
     def title(self, text):
-        self.add(self._para(self._run(text, self.t.accent, self.t.body_size, bold=True)))
+        self.add(self._para(self._run(text, self.t.accent, self.t.body_size, bold=True), keep_next=True))
 
     def scope(self, text, italic=True):
         t = self.t
         self.add(self._para(self._run(text, t.scope if italic else t.body, t.body_size, italic=italic),
-                            after=t.scope_after))
+                            after=t.scope_after, keep_next=True))
 
 
 def _set(el, **attrs) -> None:

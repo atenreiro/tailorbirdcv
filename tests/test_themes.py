@@ -69,3 +69,15 @@ def test_theme_and_paper_are_settings(tmp_path):
     assert Store(private).settings()["theme"] == "modern"
     assert client.put("/api/settings", json={"theme": "fancy"}).status_code == 422
     assert client.put("/api/settings", json={"paper": "legal"}).status_code == 422
+
+
+@pytest.mark.parametrize("theme", sorted(themes.THEMES))
+def test_headings_stay_with_the_text_under_them(tmp_path, theme):
+    """Section titles, company lines, job titles and scope lines are kept on the page of what follows,
+    so a heading is never stranded at the bottom of a page. Bullets aren't (pages can break between them)."""
+    doc = xml(render(PROFILE, TAILORED, tmp_path / "r.docx", theme=theme))
+    paras = re.findall(r"<w:p\b[^>]*>(.*?)</w:p>", doc)
+    keep = lambda needle: next("<w:keepNext/>" in p for p in paras if needle in p)  # noqa: E731
+    assert keep("PROFESSIONAL EXPERIENCE") and keep("Acme Bank") and keep("Vice President | Detection Lead")
+    assert keep("Led a team of 5 engineers protecting 20M+ customers.")
+    assert not keep("Rebuilt Splunk detection logic")
