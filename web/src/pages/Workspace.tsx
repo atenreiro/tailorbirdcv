@@ -181,6 +181,10 @@ export default function Workspace() {
   }
 
   const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run, memo, setMemo }
+  // The posting the description came from (only http/https links are shown).
+  const postingUrl = /^https?:\/\//i.test(app.meta.url ?? '') ? app.meta.url! : null
+  const postingHost = postingUrl ? (() => { try { return new URL(postingUrl).host.replace(/^www\./, '') } catch { return '' } })() : ''
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -188,7 +192,15 @@ export default function Workspace() {
         <div className="flex min-w-0 flex-col gap-2">
           <Link to="/" className="self-start text-[13px] text-muted hover:text-accent">← Applications</Link>
           <h1 className="font-display text-[44px] leading-[0.92] tracking-[-0.02em] text-ink [overflow-wrap:anywhere] sm:text-[56px]">{app.meta.company}</h1>
-          <p className="text-[17px] text-body">{app.meta.role}</p>
+          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[17px] text-body">
+            <span>{app.meta.role}</span>
+            {postingUrl && (
+              <a href={postingUrl} target="_blank" rel="noopener noreferrer" title={`Open the original job posting: ${postingUrl}`}
+                className="inline-flex items-baseline gap-1 text-sm text-accent hover:text-accent-strong hover:underline">
+                Job posting <span className="font-mono text-xs text-muted">{postingHost}</span> <span aria-hidden>↗</span>
+              </a>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs text-muted">Created {fmtDate(app.meta.created)}</span>
