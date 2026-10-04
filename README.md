@@ -12,6 +12,8 @@ Every line in a tailored resume must point back to something in your profile. A 
 
 AutoCV is a small web app that runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by Claude, through your Claude subscription or an Anthropic API key.
 
+![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
+
 ## What you need
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, a Python tool installer.
 - **Claude**, one of:
@@ -50,12 +52,20 @@ The first time you open AutoCV, a short wizard (about 5 minutes) sets everything
 
 You can change any of this later in **Settings**, and run the wizard again from there.
 
+![The setup wizard's review step: the CV as AutoCV read it, checked line by line against the file](docs/screenshots/setup.png)
+
 ## Everyday use
 1. Open **New tailoring** and paste the job posting's URL (or its text).
 2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
 3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
 4. Build the Word document and PDF.
 5. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent.
+
+![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
+
+![Gap questions: AutoCV asks about what the job wants and your profile doesn't show](docs/screenshots/gaps.png)
+
+The screenshots use a fictional profile and job posting.
 
 ## Your data stays on your computer
 AutoCV only runs locally. There's no account, no server and no tracking. Your profile, applications and settings are kept in:
