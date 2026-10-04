@@ -294,9 +294,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.get("/engine/installed")
     def engines_installed():
         """Which subscription CLIs are on this computer (the setup wizard picks Codex when Claude Code isn't)."""
-        import shutil
-        return {"claude-cli": bool(os.environ.get("AUTOCV_CLAUDE_BIN") or shutil.which("claude")),
-                "codex-cli": bool(os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex"))}
+        from .engine import find_cli
+        return {"claude-cli": bool(os.environ.get("AUTOCV_CLAUDE_BIN") or find_cli("claude")),
+                "codex-cli": bool(os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex"))}
 
     def settings_payload():
         settings, engines = store.settings(), pdfmod.detect()
@@ -310,14 +310,41 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                             "accent": t.accent, "ink": t.ink, "rule": t.rule, "name_font": t.name_font,
                             "paper": t.paper} for t in themes.THEMES.values()],
                 "api_key": api_key_info(), "api_default_model": DEFAULT_API_MODEL,
-                "api_keys": {p: api_key_info(p) for p in PROVIDERS},
+                "api_keys": {p: api_key_info(p) for p in PROVIDERS}, "keychain": keychain_status(),
                 "engines": [{"id": i, "label": e.label, "kind": e.kind, "model_setting": e.model_setting,
                              "default_model": e.default_model, "provider": e.provider} for i, e in ENGINES.items()]}
 
     @api.get("/doctor")
-    async def get_doctor():
+    async def get_doctor(phase: Literal["all", "setup"] = "all"):
         from . import doctor
-        return await doctor.run_checks(engine, store.private, store.settings()["pdf_engine"])
+        return await doctor.run_checks(engine, store.private, store.settings()["pdf_engine"], phase=phase)
+
+    @api.post("/engine/test")
+    async def engine_test():
+        """One tiny real call to the chosen AI engine (a few tokens), so "connected" means "works"."""
+        import time
+        schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+        start = time.monotonic()
+        try:
+            out = await asyncio.wait_for(engine.complete("Answer in JSON.", "TASK: test\nReply with ok set to true.",
+                                                         schema), 120)
+            ok = isinstance(out, dict) and out.get("ok") is True
+            detail = "The AI answered." if ok else "The AI answered, but not as expected. Try again."
+        except asyncio.TimeoutError:
+            ok, detail = False, "No answer within 2 minutes. Check your connection, or try another engine."
+        except EngineError as e:
+            ok, detail = False, str(e)
+        return {"ok": ok, "detail": detail, "seconds": round(time.monotonic() - start, 1),
+                "engine": getattr(engine, "name", "")}
+
+    @api.post("/pdf/test")
+    async def pdf_test():
+        """Convert a one-page sample with the chosen PDF engine (surfaces Word permission prompts now)."""
+        return await asyncio.to_thread(pdfmod.test_conversion, store.settings()["pdf_engine"])
+
+    def keychain_status() -> dict:
+        from . import apikey
+        return apikey.backend_status()
 
     def api_key_info(provider: str = "anthropic") -> dict:
         from . import apikey

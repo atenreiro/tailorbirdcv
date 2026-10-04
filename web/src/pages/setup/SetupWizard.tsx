@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type EngineStatus, type SetupState, type SetupStep, type Settings, type Targets } from '../../api'
+import { api, type EngineStatus, type SetupState, type SetupStep, type Settings, type Targets, type TestResult } from '../../api'
 import { cx, useTitle } from '../../lib'
 import { cacheSettings, loadSettings } from '../../settings'
 import { markSetupDone } from '../../setup'
 import { ErrorNote, Spinner } from '../../ui'
-import { AIEngine, ResumeDesign, SystemCheck, YourTargets } from '../Settings'
+import { AIEngine, ResumeDesign, YourTargets } from '../Settings'
+import SystemCheck from '../SystemCheck'
 import ReviewProfile from './ReviewProfile'
 import UploadCv from './UploadCv'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
-const STEPS: [SetupStep, string][] = [['welcome', 'Welcome'], ['connect', 'Connect your AI'], ['upload', 'Your CV'],
+const STEPS: [SetupStep, string][] = [['welcome', 'Welcome'], ['computer', 'Your computer'], ['connect', 'Connect your AI'], ['upload', 'Your CV'],
   ['review', 'Review'], ['targets', 'Your targets'], ['design', 'Design'], ['checks', 'Final checks']]
 const PROFILE_STEPS: SetupStep[] = ['upload', 'review']
 
@@ -51,6 +52,15 @@ function ConnectAI({ settings, onSettings, onNext, onBlank }: {
     }).catch(() => {})
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps -- once, on arrival
   const ready = !!status?.ready
+  // A test result belongs to the engine it tested: switching engines hides it.
+  const [tested, setTested] = useState<{ engine: string; result: TestResult | 'running' } | null>(null)
+  const trial = tested?.engine === settings.ai_engine ? tested.result : null
+  const runTrial = () => {
+    const engine = settings.ai_engine
+    setTested({ engine, result: 'running' })
+    api.engineTest().then((result) => setTested({ engine, result }))
+      .catch((e) => setTested({ engine, result: { ok: false, detail: (e as Error).message, seconds: 0 } }))
+  }
   const cli = settings.ai_engine === 'claude-cli'
   const codex = settings.ai_engine === 'codex-cli'
   const step = 'rounded bg-wash px-1.5 font-mono text-[13px]'
@@ -63,8 +73,17 @@ function ConnectAI({ settings, onSettings, onNext, onBlank }: {
       </>}>
       <div role="status" className={cx('flex items-start gap-3 rounded-xl px-4 py-3 text-[14px]', ready ? 'bg-ok-soft text-ok' : 'bg-wash text-body')}>
         {status === null ? <Spinner className="mt-1" /> : <span aria-hidden className={cx('mt-[7px] size-2 flex-none rounded-full', ready ? 'bg-ok' : 'bg-[#d08a1c]')} />}
-        <span>{status === null ? 'Checking…' : ready ? `Connected — ${status.detail}.` : status.detail}</span>
+        <span className="flex-1">{status === null ? 'Checking…' : ready ? `Connected — ${status.detail}.` : status.detail}</span>
+        {ready && (
+          <button className="btn py-1 text-[13px]" onClick={runTrial} disabled={trial === 'running'}
+            title="Sends one tiny request (a few tokens) to make sure answers really come back">
+            {trial === 'running' && <Spinner />}{trial === 'running' ? 'Testing…' : 'Test with a real request'}</button>
+        )}
       </div>
+      {trial && trial !== 'running' && (
+        <p role="status" className={cx('-mt-2 text-[13px]', trial.ok ? 'text-ok' : 'text-bad')}>
+          {trial.ok ? `✓ ${trial.detail} (${trial.seconds} s)` : `✗ ${trial.detail}`}</p>
+      )}
       {cli && !ready && status && (
         <ol className="flex max-w-[760px] list-decimal flex-col gap-1.5 pl-5 text-[14px] text-body">
           <li><a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong">Install Claude Code</a> (it needs a Claude Pro or Max subscription).</li>
@@ -119,30 +138,28 @@ function StartBlank({ onCreated, onBack }: { onCreated: () => void; onBack: () =
   )
 }
 
-/** Step 6: what's still missing on this computer, with the optional headless browser installable here. */
+/** Last step: a summary of the same checks as "Your computer" (nothing new should appear here). */
 function FinalChecks({ onFinish, busy }: { onFinish: () => void; busy: boolean }) {
-  const [browser, setBrowser] = useState<{ state: string; detail: string } | null>(null)
-  useEffect(() => {
-    let live = true
-    const poll = () => api.browserStatus().then((b) => { if (live) setBrowser(b) }).catch(() => {})
-    void poll()
-    const t = setInterval(() => { if (browser?.state === 'running') void poll() }, 3000)
-    return () => { live = false; clearInterval(t) }
-  }, [browser?.state])
   return (
     <Panel eyebrow="Final checks" title="Almost done"
-      intro="AutoCV checked what it needs on this computer. Anything marked “needs attention” has a fix next to it; you can also come back to this under Settings."
+      intro="A last look at this computer. Anything still to sort out has its fix next to it; you can also come back to this under Settings."
       footer={<button className="btn btn-primary" onClick={onFinish} disabled={busy}>{busy && <Spinner />}Finish setup</button>}>
-      <SystemCheck key={browser?.state === 'done' ? 'browser-installed' : 'checks'} bare />
-      {browser && browser.state !== 'done' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-wash px-4 py-3 text-[13px] text-body">
-          <span className="flex-1">Optional: a headless browser lets AutoCV read job pages that only load with JavaScript (about 100 MB).
-            {browser.state === 'failed' && <span className="block text-bad">Install failed: {browser.detail}</span>}</span>
-          <button className="btn" disabled={browser.state === 'running'}
-            onClick={() => api.installBrowser().then(setBrowser).catch((e) => setBrowser({ state: 'failed', detail: (e as Error).message }))}>
-            {browser.state === 'running' && <Spinner />}{browser.state === 'running' ? 'Installing…' : 'Install'}</button>
-        </div>
-      )}
+      <SystemCheck bare />
+    </Panel>
+  )
+}
+
+/** Step 2: what this computer has and what to install, before any work is done. */
+function YourComputer({ onNext }: { onNext: () => void }) {
+  const [dataOk, setDataOk] = useState(true)
+  return (
+    <Panel eyebrow="Your computer" title="What you have, what you need"
+      intro="AutoCV checked this computer. Required items must be in place; recommended ones make it work best; optional ones add extras. Install anything missing, and the list updates by itself."
+      footer={<>
+        <button className="btn btn-primary" onClick={onNext} disabled={!dataOk}>Continue</button>
+        {!dataOk && <span className="text-[13px] text-bad">AutoCV needs a data folder it can write to first.</span>}
+      </>}>
+      <SystemCheck bare phase="setup" poll onChecks={(c) => setDataOk(c.find((x) => x.id === 'data')?.status !== 'error')} />
     </Panel>
   )
 }
@@ -209,7 +226,7 @@ export default function SetupWizard() {
     body = (
       <Panel eyebrow="Welcome" title="Let’s set up AutoCV"
         intro={<>AutoCV tailors your resume to each job you apply for, <strong>without inventing anything</strong>: every line it writes comes from your own CV.</>}
-        footer={<><button className="btn btn-primary" onClick={() => go('connect')}>Get started</button><span className="text-[13px] text-muted">About 5 minutes</span></>}>
+        footer={<><button className="btn btn-primary" onClick={() => go('computer')}>Get started</button><span className="text-[13px] text-muted">About 5 minutes</span></>}>
         <ol className="grid max-w-[900px] gap-3 sm:grid-cols-3">
           {[['1', 'Your CV becomes a master profile', 'Upload it once; you check what was read.'],
             ['2', 'Paste a job description', 'AutoCV finds the requirements and asks about gaps.'],
@@ -224,6 +241,8 @@ export default function SetupWizard() {
         <p className="max-w-[760px] text-[13px] text-muted">Your profile and applications stay on this computer. Only what the AI needs to read or write your resume is sent to the AI you choose.</p>
       </Panel>
     )
+  } else if (step === 'computer') {
+    body = <YourComputer onNext={() => go('connect')} />
   } else if (step === 'connect') {
     body = <ConnectAI settings={settings} onSettings={onSettings} onNext={() => go(setup.has_profile ? 'targets' : 'upload')} onBlank={() => setBlank(true)} />
   } else if (step === 'upload' || (step === 'review' && !setup.draft)) {

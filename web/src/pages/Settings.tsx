@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type DoctorCheck, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
+import { api, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { setUnsaved } from '../unsaved'
 import { ErrorNote, Spinner } from '../ui'
+import SystemCheck from './SystemCheck'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
 
@@ -367,7 +368,12 @@ function EngineOptions({ engine, settings, busy, apply }: {
   const fallback = engine.default_model ?? (engine.id === 'codex-cli' ? 'Codex’s own default' : 'the provider’s default')
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
-      {provider && k && (
+      {provider && k && settings.keychain?.available === false && !k.configured && (
+        <p className="text-[13px] text-warn text-pretty">This computer has no system keychain, so AutoCV can’t save the key.
+          Start AutoCV with it in an environment variable instead: <code className="font-mono text-[12.5px]">{k.env}=… autocv serve</code>
+          {settings.platform === 'linux' && ' (or install GNOME Keyring / KWallet and log in again)'}.</p>
+      )}
+      {provider && k && settings.keychain?.available !== false && (
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold text-ink">{engine.label} key</span>
           {k.configured && (
@@ -412,59 +418,6 @@ function EngineOptions({ engine, settings, busy, apply }: {
         </div>
       )}
     </div>
-  )
-}
-
-const TONE: Record<DoctorCheck['status'], [string, string]> = {
-  ok: ['bg-ok', 'text-ok'], warn: ['bg-[#d08a1c]', 'text-warn'], error: ['bg-bad', 'text-bad'],
-}
-
-export function SystemCheck({ bare }: { bare?: boolean }) {
-  const [checks, setChecks] = useState<DoctorCheck[] | null>(null)
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const load = useCallback(() => api.doctor().then(setChecks).catch((e) => setError(e.message)).finally(() => setBusy(false)), [])
-  useEffect(() => {
-    void load()
-    const again = () => { void load() }
-    window.addEventListener('autocv:settings', again)  // engine, key or PDF choice changed
-    return () => window.removeEventListener('autocv:settings', again)
-  }, [load])
-  const run = () => {
-    setBusy(true)
-    setError(null)
-    void load()
-  }
-  const problems = checks?.filter((c) => c.status !== 'ok').length ?? 0
-  return (
-    <section aria-labelledby="doctor-title" className={bare ? 'flex min-w-0 flex-col gap-4' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="flex max-w-[640px] flex-col gap-1.5">
-          <p className={cx(label, 'text-accent', bare && 'sr-only')}>System check</p>
-          <h2 id="doctor-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">
-            {checks ? (problems ? `${problems} thing${problems > 1 ? 's' : ''} to look at` : 'Everything’s ready') : 'Checking…'}
-          </h2>
-          <p className="text-sm leading-[1.5] text-muted text-pretty">What AutoCV needs on this computer. Same as running <code className="font-mono text-[13px]">autocv doctor</code>.</p>
-        </div>
-        <button className="btn" onClick={run} disabled={busy}>{busy && <Spinner />}Check again</button>
-      </div>
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
-      {checks && (
-        <ul className="flex flex-col divide-y divide-line">
-          {checks.map((c) => (
-            <li key={c.id} className="flex items-start gap-3 py-2.5">
-              <span aria-hidden className={cx('mt-[7px] size-2 flex-none rounded-full', TONE[c.status][0])} />
-              <span className="flex min-w-0 flex-col gap-0.5 text-[13px]">
-                <span className="text-ink"><span className="font-semibold">{c.label}</span>
-                  <span className={cx('ml-2 font-mono text-[11px] uppercase tracking-[0.06em]', TONE[c.status][1])}>{c.status === 'ok' ? 'ok' : c.status === 'warn' ? (c.id === 'profile' ? 'to do' : 'optional') : 'needs attention'}</span></span>
-                <span className="break-words text-muted">{c.detail}</span>
-                {c.fix && c.status !== 'ok' && <span className="text-body">→ {c.fix}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }
 

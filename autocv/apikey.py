@@ -79,5 +79,24 @@ def delete(provider: str = "anthropic") -> None:
         pass
 
 
+def backend_status() -> dict:
+    """Whether a usable system keychain exists for storing keys: {available, backend}."""
+    try:
+        keyring, _ = _keyring()
+        from keyring.backends import chainer, fail
+        kr = keyring.get_keyring()
+    except Exception:  # noqa: BLE001 — keyring missing or broken
+        return {"available": False, "backend": None}
+    name = type(kr).__name__
+    module = type(kr).__module__
+    if isinstance(kr, fail.Keyring) or (isinstance(kr, chainer.ChainerBackend) and not kr.backends) \
+            or "null" in module.lower():
+        return {"available": False, "backend": None}
+    friendly = {"macOS": "macOS Keychain", "Windows": "Windows Credential Manager",
+                "SecretService": "Secret Service", "kwallet": "KWallet"}
+    label = next((v for k, v in friendly.items() if k.lower() in f"{module}.{name}".lower()), name)
+    return {"available": True, "backend": label}
+
+
 def masked(key: str | None) -> str | None:
     return f"{key[:7]}…{key[-4:]}" if key and len(key) > 12 else None

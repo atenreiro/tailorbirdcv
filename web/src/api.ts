@@ -47,7 +47,7 @@ export interface Profile {
 export interface ProfileResponse { profile: Profile; evidence: Record<string, string>; version: string }
 /** A draft profile read from a resume by the AI: nothing is saved until the user confirms it. */
 export interface ImportDraft { profile: Profile; unverified: string[] }
-export type SetupStep = 'welcome' | 'connect' | 'upload' | 'review' | 'targets' | 'design' | 'checks'
+export type SetupStep = 'welcome' | 'computer' | 'connect' | 'upload' | 'review' | 'targets' | 'design' | 'checks'
 export interface SetupState {
   has_profile: boolean; completed: boolean; step: SetupStep
   draft?: ImportDraft; suggested_targets: (Partial<Targets> & { pack?: string }) | null; pages: number | null
@@ -154,7 +154,15 @@ export type PdfEngine = 'word' | 'libreoffice'
 export interface PdfEngineInfo { id: PdfEngine; name: string; available: boolean; path: string | null; version: string | null }
 /** pdf_engine: the user's choice (null = automatic: Word when installed); pdf_effective: what builds use now. */
 export type Platform = 'macos' | 'windows' | 'linux'
-export interface DoctorCheck { id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string }
+/** One row of the system check. `level` says how much it matters (independent of status); `action` is what the
+ *  UI can offer; `items` are sub-rows (each AI option's state). */
+export interface DoctorCheck {
+  id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string
+  level?: 'required' | 'recommended' | 'optional' | 'info'
+  action?: { kind: 'install-browser' | 'test-pdf' | 'test-ai' | 'settings'; label: string }
+  items?: { id: string; label: string; state: 'ready' | 'missing' | 'needs-login' | 'no-key'; detail: string }[]
+}
+export interface TestResult { ok: boolean; detail: string; seconds: number; engine?: string | null }
 /** Who the resume is for: steers the AI's prompts and sets the page limit (never a source of facts). */
 export interface Targets { field: string; seniority: string; roles: string; region: string; spelling: 'US' | 'UK'; pages: 1 | 2 | 3; pack: string }
 export interface ThemeInfo { id: string; name: string; description: string; fonts: string[]; accent: string; ink: string; rule: string; name_font: string; paper: 'letter' | 'a4' }
@@ -164,6 +172,7 @@ export interface Settings {
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
   openrouter_model: string | null; openrouter_zdr: boolean
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
+  keychain?: { available: boolean; backend: string | null }
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: EngineId; api_model?: string | null
   openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean }
@@ -221,7 +230,9 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
 export const api = {
   engine: () => req<EngineStatus>('GET', '/engine'),
   settings: () => req<Settings>('GET', '/settings'),
-  doctor: () => req<DoctorCheck[]>('GET', '/doctor'),
+  doctor: (phase: 'all' | 'setup' = 'all') => req<DoctorCheck[]>('GET', `/doctor?phase=${phase}`),
+  engineTest: () => req<TestResult>('POST', '/engine/test'),
+  pdfTest: () => req<TestResult>('POST', '/pdf/test'),
   saveSettings: (b: SettingsPatch) => req<Settings>('PUT', '/settings', b),
   enginesInstalled: () => req<Record<'claude-cli' | 'codex-cli', boolean>>('GET', '/engine/installed'),
   saveApiKey: (key: string, provider: KeyProvider = 'anthropic') => req<Settings>('PUT', `/settings/api-key?provider=${provider}`, { key }),

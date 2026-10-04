@@ -278,7 +278,7 @@ class Store:
             return data
 
     # -- first-run setup wizard -------------------------------------------------------
-    SETUP_STEPS = ("welcome", "connect", "upload", "review", "targets", "design", "checks")
+    SETUP_STEPS = ("welcome", "computer", "connect", "upload", "review", "targets", "design", "checks")
 
     def setup_state(self) -> dict:
         """{completed, step}. An install that has a profile but predates the wizard counts as set up."""

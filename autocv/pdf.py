@@ -202,6 +202,8 @@ def soffice() -> Path | None:
     else:
         candidates += [Path("/usr/lib/libreoffice/program/soffice"), Path("/usr/lib64/libreoffice/program/soffice")]
         candidates += sorted(Path("/opt").glob("libreoffice*/program/soffice"), reverse=True)
+        flatpak = "flatpak/exports/bin/org.libreoffice.LibreOffice"  # Flatpak's launcher takes soffice's arguments
+        candidates += [Path("/var/lib") / flatpak, Path.home() / ".local/share" / flatpak]
     for exe in candidates:
         if exe.is_file():
             return exe
@@ -228,6 +230,32 @@ def _version(path: Path | None) -> str | None:
     if IS_WINDOWS and path.name.upper() == "WINWORD.EXE":  # pragma: no cover
         return _winreg_value(r"SOFTWARE\Microsoft\Office\ClickToRun\Configuration", "VersionToReport")
     return None
+
+
+def test_conversion(engine: str | None = None) -> dict:
+    """Convert a one-page document now, so a problem (Word not activated, a permission prompt, LibreOffice
+    failing) shows up during setup rather than at the first real build. Returns {ok, engine, seconds, detail}."""
+    import tempfile
+    import time
+    from docx import Document
+    try:
+        chosen = resolve(engine)
+    except RuntimeError as e:
+        return {"ok": False, "engine": None, "seconds": 0, "detail": str(e)}
+    with tempfile.TemporaryDirectory(prefix="autocv-pdftest-") as tmp:
+        docx = Path(tmp) / "AutoCV test.docx"
+        doc = Document()
+        doc.add_paragraph("AutoCV PDF test — this page can be deleted.")
+        doc.save(str(docx))
+        start = time.monotonic()
+        try:
+            out = to_pdf(docx, engine=chosen, timeout=180)
+            ok = out.is_file() and out.stat().st_size > 0
+            detail = "A test page converted fine." if ok else "No PDF came back."
+        except Exception as e:  # noqa: BLE001 — report any failure as text
+            ok, detail = False, str(e)
+    return {"ok": ok, "engine": NAMES.get(chosen, chosen), "seconds": round(time.monotonic() - start, 1),
+            "detail": detail}
 
 
 def detect() -> list[dict]:
