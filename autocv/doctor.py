@@ -46,9 +46,43 @@ async def _engine(engine: Engine) -> dict:
     if st.get("ready"):
         model = f" · {st['model']}" if st.get("model") else ""
         return _check("ai", "AI engine", "ok", f"{st.get('engine')}{model}: {st.get('detail', 'ready')}")
-    fix = ("Install Claude Code and log in (`claude`, then /login), or add an Anthropic API key in Settings."
-           if st.get("engine") == "claude-cli" else "Add or fix the API key in Settings → AI engine.")
+    fix = {
+        "claude-cli": "Install Claude Code and log in (`claude`, then /login), or choose another engine or an API key in Settings.",
+        "codex-cli": "Install Codex (`npm i -g @openai/codex`) and sign in with ChatGPT (`codex login`), "
+                     "or choose another engine in Settings.",
+    }.get(st.get("engine"), "Add or fix the API key in Settings → AI engine.")
     return _check("ai", "AI engine", "error", st.get("detail") or "Not ready.", fix)
+
+
+def codex_version(binary: str | None = None) -> tuple[int, ...] | None:
+    """Codex CLI's version (e.g. (0, 160, 0)), or None when it isn't installed or doesn't say."""
+    import re
+    import shutil
+    import subprocess
+    exe = binary or os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
+    return tuple(int(x) for x in m.groups() if x is not None) if m else None
+
+
+def _codex(engine_name: str | None) -> dict | None:
+    """Only when Codex is the chosen engine: its flags change between versions."""
+    from .engine import CODEX_MIN_VERSION
+    if engine_name != "codex-cli":
+        return None
+    version = codex_version()
+    if version is None:
+        return None  # the AI engine check already says it's missing
+    shown = ".".join(map(str, version))
+    if version[:2] < CODEX_MIN_VERSION:
+        return _check("codex", "Codex CLI version", "warn", f"Codex {shown} is older than AutoCV was tested with.",
+                      "Update it: `npm i -g @openai/codex` (or your installer's update command).")
+    return _check("codex", "Codex CLI version", "ok", f"Codex {shown}.")
 
 
 def _pdf(preferred: str | None) -> dict:
@@ -114,7 +148,8 @@ async def run_checks(engine: Engine, private: Path, preferred_pdf: str | None) -
     def local() -> list[dict]:  # file system and app detection (mdfind, font folders): off the event loop
         return [_data(private), _profile(private), _pdf(preferred_pdf), _fonts(preferred_pdf), _browser(), _web()]
     ai_check, others = await asyncio.gather(_engine(engine), asyncio.to_thread(local))
-    return [*others[:2], ai_check, *others[2:]]
+    codex = await asyncio.to_thread(_codex, getattr(engine, "name", None))
+    return [*others[:2], ai_check, *([codex] if codex else []), *others[2:]]
 
 
 def render(checks: list[dict]) -> str:

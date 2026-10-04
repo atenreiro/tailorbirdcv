@@ -141,6 +141,15 @@ export interface AppSummary extends Meta {
   reached?: 'built' | 'applied' | 'interview' | 'offer' | null; reached_at?: string | null
 }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
+/** The AI engines (mirrors engine.ENGINES): two subscriptions through a local app, three API keys. */
+export type EngineId = 'claude-cli' | 'codex-cli' | 'anthropic-api' | 'openai-api' | 'openrouter-api'
+export type KeyProvider = 'anthropic' | 'openai' | 'openrouter'
+export interface ApiKeyInfo { configured: boolean; source: 'keychain' | 'environment' | null; masked: string | null; env?: string; prefix?: string }
+export interface EngineInfo {
+  id: EngineId; label: string; kind: 'subscription' | 'api'
+  model_setting: 'api_model' | 'openai_model' | 'codex_model' | 'openrouter_model' | null
+  default_model: string | null; provider: KeyProvider | null
+}
 export type PdfEngine = 'word' | 'libreoffice'
 export interface PdfEngineInfo { id: PdfEngine; name: string; available: boolean; path: string | null; version: string | null }
 /** pdf_engine: the user's choice (null = automatic: Word when installed); pdf_effective: what builds use now. */
@@ -152,10 +161,12 @@ export interface ThemeInfo { id: string; name: string; description: string; font
 export interface Settings {
   pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
-  ai_engine: 'claude-cli' | 'anthropic-api'; api_model: string | null
-  api_key: { configured: boolean; source: 'keychain' | 'environment' | null; masked: string | null }; api_default_model: string
+  ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
+  openrouter_model: string | null; openrouter_zdr: boolean
+  api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
 }
-export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: 'claude-cli' | 'anthropic-api'; api_model?: string | null }
+export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; ai_engine?: EngineId; api_model?: string | null
+  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
@@ -212,8 +223,9 @@ export const api = {
   settings: () => req<Settings>('GET', '/settings'),
   doctor: () => req<DoctorCheck[]>('GET', '/doctor'),
   saveSettings: (b: SettingsPatch) => req<Settings>('PUT', '/settings', b),
-  saveApiKey: (key: string) => req<Settings>('PUT', '/settings/api-key', { key }),
-  deleteApiKey: () => req<Settings>('DELETE', '/settings/api-key'),
+  enginesInstalled: () => req<Record<'claude-cli' | 'codex-cli', boolean>>('GET', '/engine/installed'),
+  saveApiKey: (key: string, provider: KeyProvider = 'anthropic') => req<Settings>('PUT', `/settings/api-key?provider=${provider}`, { key }),
+  deleteApiKey: (provider: KeyProvider = 'anthropic') => req<Settings>('DELETE', `/settings/api-key?provider=${provider}`),
   profile: () => req<ProfileResponse>('GET', '/profile'),
   setup: () => req<SetupState>('GET', '/setup'),
   setupStep: (step: SetupStep) => req<SetupState>('PUT', '/setup', { step }),

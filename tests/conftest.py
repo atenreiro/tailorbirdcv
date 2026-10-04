@@ -26,7 +26,8 @@ class MemoryKeyring(KeyringBackend):
 def memory_keyring(monkeypatch):
     ring = MemoryKeyring()
     keyring.set_keyring(ring)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
     return ring
 
 

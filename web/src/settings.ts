@@ -36,5 +36,16 @@ export const fileManager = (p?: Platform) =>
   p === 'macos' ? 'Finder' : p === 'windows' ? 'File Explorer' : 'your file manager'
 
 /** The page limit from Settings → Your targets (2 until settings load). */
+/** Friendly names for the AI engines, and what a running AI step says about who pays. */
+export const ENGINE_NAMES: Record<string, string> = {
+  'claude-cli': 'Claude Code', 'codex-cli': 'Codex (ChatGPT)', 'anthropic-api': 'Anthropic API',
+  'openai-api': 'OpenAI API', 'openrouter-api': 'OpenRouter', fake: 'Demo engine',
+}
+const ENGINE_RUNS: Record<string, string> = {
+  'claude-cli': 'runs on your Claude subscription', 'codex-cli': 'runs on your ChatGPT subscription',
+  'anthropic-api': 'uses your Anthropic API key', 'openai-api': 'uses your OpenAI API key',
+  'openrouter-api': 'uses your OpenRouter key',
+}
+export const engineRuns = (s: Settings | null) => (s ? ENGINE_RUNS[s.ai_engine] : undefined)
 export const pageLimit = (s: Settings | null) => s?.targets?.pages ?? 2
 export const pagesText = (n: number) => `${n} page${n === 1 ? '' : 's'}`

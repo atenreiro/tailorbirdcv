@@ -12,15 +12,16 @@ You give it your CV once. It turns it into a *master profile*: every role, achie
 
 Every line in a tailored resume must point back to something in your profile. A built-in fact-check blocks any number, tool, employer or claim that isn't there. Your name, employers, job titles, dates and education are always copied exactly as they appear in your profile.
 
-AutoCV is a small web app that runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by Claude, through your Claude subscription or an Anthropic API key.
+AutoCV is a small web app that runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by the AI you choose: Claude or ChatGPT through a subscription you already have, or an API key from Anthropic, OpenAI or OpenRouter.
 
 ![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
 
 ## What you need
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, a Python tool installer.
-- **Claude**, one of:
+- **An AI**, one of:
   - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.
-  - **An [Anthropic API key](https://console.anthropic.com/)**, billed per use. It's stored in your system's keychain, never in AutoCV's files.
+  - **[Codex](https://github.com/openai/codex)**, logged in with your ChatGPT subscription (`npm i -g @openai/codex`, then `codex login`). No extra cost.
+  - **An API key**, billed per use: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) (which uses the same Claude model by default). Keys are stored in your system's keychain, never in AutoCV's files.
 - **Something to make PDFs**: Microsoft Word (macOS, Windows) or the free [LibreOffice](https://www.libreoffice.org/) (all systems). Without either, you still get the Word document.
 
 ## Run it
@@ -38,15 +39,15 @@ uv tool install autocv-app
 autocv serve
 ```
 
-To check that everything AutoCV needs is in place (Claude, PDF engine, fonts):
+To check that everything AutoCV needs is in place (the AI, PDF engine, fonts):
 ```bash
 uv run autocv doctor
 ```
 
 ## First run: the setup wizard
 The first time you open AutoCV, a short wizard (about 5 minutes) sets everything up:
-1. **Connect Claude**: choose Claude Code or an API key. The page notices on its own once you've logged in.
-2. **Upload your CV** as .docx, PDF or plain text. Claude copies it into your master profile word for word; it doesn't rewrite anything.
+1. **Connect your AI**: choose Claude Code, Codex, or an API key. The page notices on its own once you've logged in.
+2. **Upload your CV** as .docx, PDF or plain text. The AI copies it into your master profile word for word; it doesn't rewrite anything.
 3. **Review**: check every line. Anything that doesn't match your file exactly is highlighted: fix it, remove it, or confirm it's correct. Then click *Save my profile*. You can also start from a blank profile.
 4. **Your targets**, pre-filled from your CV: your field, seniority, the roles you want, region, US or UK spelling, and page limit. These guide what gets emphasised; they never add facts.
 5. **Design**: Classic, Modern or Compact, on A4 or US Letter.
@@ -77,7 +78,7 @@ AutoCV only runs locally. There's no account, no server and no tracking. Your pr
 
 In a copy of this repository that has a `private/` folder, AutoCV uses that folder instead (it's never committed). To use any other folder, set `AUTOCV_PRIVATE` to its path.
 
-The only thing that leaves your computer is what Claude needs to read your CV and the job, and to write the resume.
+The only thing that leaves your computer is what the AI needs to read your CV and the job, and to write the resume.
 
 ## For developers
 ```bash

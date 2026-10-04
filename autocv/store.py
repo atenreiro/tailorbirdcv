@@ -220,8 +220,13 @@ class Store:
         "targets": TARGETS,          # who the resume is for: steers the AI prompts and the page limit
         "theme": "classic",          # resume design (themes.py)
         "paper": None,               # "letter" | "a4"; None = the theme's default
-        "ai_engine": "claude-cli",   # "claude-cli" (subscription) | "anthropic-api" (API key in the OS keychain)
-        "api_model": None,           # model for the API engine; None = its default
+        "ai_engine": "claude-cli",   # engine.ENGINES: claude-cli | codex-cli (subscriptions) | anthropic-api |
+                                     # openai-api | openrouter-api (API keys in the OS keychain)
+        "api_model": None,           # Anthropic API model; None = its default
+        "openai_model": None,        # OpenAI API model; None = its default
+        "codex_model": None,         # Codex CLI model; None = Codex's own default
+        "openrouter_model": None,    # OpenRouter model; None = the same Claude model as the Anthropic default
+        "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
     }
 
     @property
@@ -243,6 +248,9 @@ class Store:
             elif default is not None and not _same_type(value, default):
                 value = default  # a hand-edited value of the wrong type: fall back
             out[key] = value
+        from .engine import ENGINES
+        if out["ai_engine"] not in ENGINES:  # a hand-edited or newer engine name: back to the default
+            out["ai_engine"] = self.SETTINGS["ai_engine"]
         if out["targets"]["pages"] not in (1, 2, 3):
             out["targets"]["pages"] = self.TARGETS["pages"]
         return out

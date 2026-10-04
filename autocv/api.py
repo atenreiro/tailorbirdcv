@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import difflib
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -23,7 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from . import ai, ats, critique as hm, factcheck, fit, oscompat, paths, pdf as pdfmod, themes
 from .jobfetch import FetchError, fetch_job
-from .engine import DEFAULT_API_MODEL, Engine, EngineError, default_engine
+from .apikey import PROVIDERS
+from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
 from .render import docx_text, render, use_design
 from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
@@ -69,6 +71,9 @@ class TargetsPatch(BaseModel):
     pack: Literal[tuple(ai.PACKS)] | None = None  # type: ignore[valid-type]
 
 
+MODEL_ID = r"^[A-Za-z0-9._:/\-]*$"  # e.g. claude-sonnet-5-5, gpt-6.1-sol, anthropic/claude-sonnet-5.5
+
+
 class SettingsPatch(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -76,8 +81,12 @@ class SettingsPatch(BaseModel):
     targets: TargetsPatch | None = None
     theme: Literal[tuple(themes.THEMES)] | None = None  # type: ignore[valid-type]
     paper: Literal["letter", "a4"] | None = None  # None = the theme's default
-    ai_engine: Literal["claude-cli", "anthropic-api"] | None = None
-    api_model: str | None = Field(None, max_length=100, pattern=r"^[A-Za-z0-9._:\-]*$")  # "" / None = default
+    ai_engine: Literal[tuple(ENGINES)] | None = None  # type: ignore[valid-type]
+    api_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)  # "" / None = default
+    openai_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
+    codex_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
+    openrouter_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
+    openrouter_zdr: bool | None = None
 
 
 class ApiKey(BaseModel):
@@ -279,6 +288,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def engine_status():
         return await engine.status()
 
+    @api.get("/engine/installed")
+    def engines_installed():
+        """Which subscription CLIs are on this computer (the setup wizard picks Codex when Claude Code isn't)."""
+        import shutil
+        return {"claude-cli": bool(os.environ.get("AUTOCV_CLAUDE_BIN") or shutil.which("claude")),
+                "codex-cli": bool(os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex"))}
+
     def settings_payload():
         settings, engines = store.settings(), pdfmod.detect()
         try:
@@ -290,24 +306,28 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 "themes": [{"id": t.id, "name": t.name, "description": t.description, "fonts": t.fonts(),
                             "accent": t.accent, "ink": t.ink, "rule": t.rule, "name_font": t.name_font,
                             "paper": t.paper} for t in themes.THEMES.values()],
-                "api_key": api_key_info(), "api_default_model": DEFAULT_API_MODEL}
+                "api_key": api_key_info(), "api_default_model": DEFAULT_API_MODEL,
+                "api_keys": {p: api_key_info(p) for p in PROVIDERS},
+                "engines": [{"id": i, "label": e.label, "kind": e.kind, "model_setting": e.model_setting,
+                             "default_model": e.default_model, "provider": e.provider} for i, e in ENGINES.items()]}
 
     @api.get("/doctor")
     async def get_doctor():
         from . import doctor
         return await doctor.run_checks(engine, store.private, store.settings()["pdf_engine"])
 
-    def api_key_info() -> dict:
+    def api_key_info(provider: str = "anthropic") -> dict:
         from . import apikey
-        key, source = apikey.get()
-        return {"configured": bool(key), "source": source, "masked": apikey.masked(key)}
+        key, source = apikey.get(provider)
+        return {"configured": bool(key), "source": source, "masked": apikey.masked(key),
+                "env": PROVIDERS[provider].env, "prefix": PROVIDERS[provider].prefix}
 
     @api.put("/settings/api-key")
-    async def put_api_key(body: ApiKey):
-        """Store the Anthropic API key in the OS keychain (never in the data folder, never sent back)."""
+    async def put_api_key(body: ApiKey, provider: Literal[tuple(PROVIDERS)] = "anthropic"):  # type: ignore[valid-type]
+        """Store an API key in the OS keychain (never in the data folder, never sent back)."""
         from . import apikey
         try:
-            await asyncio.to_thread(apikey.save, body.key)
+            await asyncio.to_thread(apikey.save, body.key, provider)
         except ValueError as e:
             raise HTTPException(422, str(e))
         except apikey.KeychainUnavailable as e:
@@ -315,9 +335,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return await asyncio.to_thread(settings_payload)
 
     @api.delete("/settings/api-key")
-    async def delete_api_key():
+    async def delete_api_key(provider: Literal[tuple(PROVIDERS)] = "anthropic"):  # type: ignore[valid-type]
         from . import apikey
-        await asyncio.to_thread(apikey.delete)
+        await asyncio.to_thread(apikey.delete, provider)
         return await asyncio.to_thread(settings_payload)
 
     @api.get("/settings")
@@ -330,8 +350,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                         for e in await asyncio.to_thread(pdfmod.detect)):
             raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this computer.")
         data = patch.model_dump(include=patch.model_fields_set - {"targets"})
-        if "api_model" in data:
-            data["api_model"] = (data["api_model"] or "").strip() or None
+        for key in ("api_model", "openai_model", "codex_model", "openrouter_model"):
+            if key in data:
+                data[key] = (data[key] or "").strip() or None
         if patch.targets is not None:
             data["targets"] = {k: v.strip() if isinstance(v, str) else v
                                for k, v in patch.targets.model_dump(exclude_unset=True).items() if v is not None}

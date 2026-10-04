@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, STATUSES, type EngineStatus, type Outcome } from './api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, statusStyle } from './lib'
+import { ENGINE_NAMES } from './settings'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
@@ -96,11 +97,14 @@ export function EngineBadge() {
       </button>
       {open && status && (
         <div className="sheet animate-rise absolute right-0 z-20 mt-2 w-80 rounded-lg p-4 text-sm text-ink">
-          <p className="eyebrow mb-2">{status.engine}</p>
+          <p className="eyebrow mb-2">{ENGINE_NAMES[status.engine] ?? status.engine}</p>
           <p className="text-body">{status.detail}</p>
           {status.model && <p className="mt-1 font-mono text-xs text-muted">model: {status.model}</p>}
           {!ready && status.engine === 'claude-cli' && (
             <pre className="mt-3 rounded-lg bg-wash px-3 py-2 font-mono text-xs text-ink">claude{'\n'}/login</pre>
+          )}
+          {!ready && status.engine === 'codex-cli' && (
+            <pre className="mt-3 rounded-lg bg-wash px-3 py-2 font-mono text-xs text-ink">codex login</pre>
           )}
           <Link to="/settings" onClick={() => setOpen(false)} className="mt-3 inline-block text-xs text-accent hover:text-accent-strong">AI engine settings →</Link>
         </div>

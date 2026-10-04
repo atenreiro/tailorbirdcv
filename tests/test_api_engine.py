@@ -152,7 +152,8 @@ def test_settings_switch_the_engine_without_a_restart(client):
 def test_the_api_never_returns_the_key(client):
     r = client.put("/api/settings/api-key", json={"key": KEY})
     assert r.status_code == 200 and KEY not in r.text
-    assert r.json()["api_key"] == {"configured": True, "source": "keychain", "masked": "sk-ant-…xxxx"}
+    assert {k: r.json()["api_key"][k] for k in ("configured", "source", "masked")} == \
+        {"configured": True, "source": "keychain", "masked": "sk-ant-…xxxx"}
     assert KEY not in client.get("/api/settings").text
     assert not any(KEY in p.read_text(encoding="utf-8", errors="ignore") for p in client.store.private.rglob("*") if p.is_file())
     assert client.put("/api/settings/api-key", json={"key": "nope"}).status_code == 422

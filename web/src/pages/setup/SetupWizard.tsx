@@ -10,7 +10,7 @@ import ReviewProfile from './ReviewProfile'
 import UploadCv from './UploadCv'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
-const STEPS: [SetupStep, string][] = [['welcome', 'Welcome'], ['connect', 'Connect Claude'], ['upload', 'Your CV'],
+const STEPS: [SetupStep, string][] = [['welcome', 'Welcome'], ['connect', 'Connect your AI'], ['upload', 'Your CV'],
   ['review', 'Review'], ['targets', 'Your targets'], ['design', 'Design'], ['checks', 'Final checks']]
 const PROFILE_STEPS: SetupStep[] = ['upload', 'review']
 
@@ -31,7 +31,7 @@ function Panel({ eyebrow, title, intro, children, footer }: {
 }
 
 /** Step 1: the AI engine must answer before the CV can be read. Polls while waiting for a login. */
-function ConnectClaude({ settings, onSettings, onNext, onBlank }: {
+function ConnectAI({ settings, onSettings, onNext, onBlank }: {
   settings: Settings; onSettings: (s: Settings) => void; onNext: () => void; onBlank: () => void
 }) {
   const [status, setStatus] = useState<EngineStatus | null>(null)
@@ -40,12 +40,23 @@ function ConnectClaude({ settings, onSettings, onNext, onBlank }: {
     void check()
     const t = setInterval(() => { if (document.visibilityState === 'visible') void check() }, 4000)
     return () => clearInterval(t)
-  }, [check, settings.ai_engine, settings.api_key.configured])
+  }, [check, settings.ai_engine, settings.api_key.configured, settings.api_keys])
+  // Claude Code stays the default when it's installed; otherwise Codex, when that's installed.
+  useEffect(() => {
+    if (settings.ai_engine !== 'claude-cli') return
+    api.enginesInstalled().then((found) => {
+      if (!found['claude-cli'] && found['codex-cli']) {
+        void api.saveSettings({ ai_engine: 'codex-cli' }).then((s) => { cacheSettings(s); onSettings(s) })
+      }
+    }).catch(() => {})
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps -- once, on arrival
   const ready = !!status?.ready
   const cli = settings.ai_engine === 'claude-cli'
+  const codex = settings.ai_engine === 'codex-cli'
+  const step = 'rounded bg-wash px-1.5 font-mono text-[13px]'
   return (
-    <Panel eyebrow="Connect Claude" title="Connect Claude"
-      intro="AutoCV uses Claude to read your CV and to tailor it for each job. Use your Claude subscription through Claude Code, or an Anthropic API key."
+    <Panel eyebrow="Connect your AI" title="Connect your AI"
+      intro="AutoCV uses an AI to read your CV and to tailor it for each job. Use a subscription you already have (Claude or ChatGPT), or an API key from Anthropic, OpenAI or OpenRouter."
       footer={<>
         <button className="btn btn-primary" onClick={onNext} disabled={!ready}>Continue</button>
         <button className="text-[13px] text-muted hover:text-ink" onClick={onBlank}>Set this up later and start with a blank profile</button>
@@ -58,6 +69,13 @@ function ConnectClaude({ settings, onSettings, onNext, onBlank }: {
         <ol className="flex max-w-[760px] list-decimal flex-col gap-1.5 pl-5 text-[14px] text-body">
           <li><a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong">Install Claude Code</a> (it needs a Claude Pro or Max subscription).</li>
           <li>Open a terminal and run <code className="rounded bg-wash px-1.5 font-mono text-[13px]">claude</code>, then type <code className="rounded bg-wash px-1.5 font-mono text-[13px]">/login</code> and finish in your browser.</li>
+          <li>Come back here: this page notices by itself within a few seconds.</li>
+        </ol>
+      )}
+      {codex && !ready && status && (
+        <ol className="flex max-w-[760px] list-decimal flex-col gap-1.5 pl-5 text-[14px] text-body">
+          <li>Install Codex: <code className={step}>npm i -g @openai/codex</code> (it needs a ChatGPT plan that includes Codex).</li>
+          <li>Open a terminal and run <code className={step}>codex login</code>, then sign in with ChatGPT in your browser.</li>
           <li>Come back here: this page notices by itself within a few seconds.</li>
         </ol>
       )}
@@ -203,11 +221,11 @@ export default function SetupWizard() {
             </li>
           ))}
         </ol>
-        <p className="max-w-[760px] text-[13px] text-muted">Your profile and applications stay on this computer. Only what the AI needs to read or write your resume is sent to Claude.</p>
+        <p className="max-w-[760px] text-[13px] text-muted">Your profile and applications stay on this computer. Only what the AI needs to read or write your resume is sent to the AI you choose.</p>
       </Panel>
     )
   } else if (step === 'connect') {
-    body = <ConnectClaude settings={settings} onSettings={onSettings} onNext={() => go(setup.has_profile ? 'targets' : 'upload')} onBlank={() => setBlank(true)} />
+    body = <ConnectAI settings={settings} onSettings={onSettings} onNext={() => go(setup.has_profile ? 'targets' : 'upload')} onBlank={() => setBlank(true)} />
   } else if (step === 'upload' || (step === 'review' && !setup.draft)) {
     body = (
       <Panel eyebrow="Your CV" title="Upload your CV"

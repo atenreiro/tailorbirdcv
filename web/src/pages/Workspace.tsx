@@ -4,6 +4,7 @@ import { api, type Application, type Outcome, type AppAnswer, type ProfileRespon
 import { NO_GUARD, setUnsaved } from '../unsaved'
 import { changeStatus, sentAsApplied } from '../status'
 import { cx, fmtDate, useTitle } from '../lib'
+import { engineRuns, useSettings } from '../settings'
 import { ErrorNote, Spinner, StatusSelect } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
@@ -254,6 +255,7 @@ export default function Workspace() {
 
 /** "The AI is working" panel with elapsed time (engine calls take a minute or two). */
 function WorkingPanel({ title, lines, ai }: { title: string; lines: string[]; ai: boolean }) {
+  const runs = engineRuns(useSettings())
   const [secs, setSecs] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setSecs((x) => x + 1), 1000)
@@ -270,7 +272,7 @@ function WorkingPanel({ title, lines, ai }: { title: string; lines: string[]; ai
       <p className="font-display text-[32px] leading-tight tracking-[-0.01em] text-ink">{title}</p>
       <p className="text-[15px] text-body">{line}</p>
       <p className="mt-1.5 font-mono text-xs text-faint">
-        {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')} elapsed{ai && ' · runs on your Claude subscription'}
+        {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')} elapsed{ai && runs && ` · ${runs}`}
       </p>
     </div>
   )

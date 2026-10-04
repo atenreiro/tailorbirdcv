@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type DoctorCheck, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
+import { api, type DoctorCheck, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { setUnsaved } from '../unsaved'
@@ -254,9 +254,23 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
   )
 }
 
+const code = 'font-mono text-[12.5px]'
+/** What each engine card says (the list of engines and their defaults comes from the server). */
+const ENGINE_COPY: Record<EngineId, { lead: string; detail: ReactNode; keyUrl?: string }> = {
+  'claude-cli': { lead: 'Your Claude subscription. No extra cost.',
+    detail: <>Uses the <code className={code}>claude</code> command on this computer: install Claude Code, run <code className={code}>claude</code>, then <code className={code}>/login</code>.</> },
+  'codex-cli': { lead: 'Your ChatGPT subscription. No extra cost.',
+    detail: <>Uses OpenAI’s <code className={code}>codex</code> command: install it with <code className={code}>npm i -g @openai/codex</code>, then run <code className={code}>codex login</code> and sign in with ChatGPT. Privacy: on ChatGPT plans OpenAI may use what you send to improve its models unless you turn off “Improve the model for everyone” in ChatGPT’s Data controls. API keys aren’t used for training.</> },
+  'anthropic-api': { lead: 'Pay per use on your Anthropic account.', keyUrl: 'console.anthropic.com',
+    detail: 'Claude through your own key, without Claude Code.' },
+  'openai-api': { lead: 'Pay per use on your OpenAI account.', keyUrl: 'platform.openai.com',
+    detail: 'OpenAI’s models through your own key. AutoCV asks OpenAI not to store the requests.' },
+  'openrouter-api': { lead: 'Pay per use. Claude by default.', keyUrl: 'openrouter.ai',
+    detail: 'One key for many models; uses the same Claude model as the Anthropic option unless you choose another.' },
+}
+const GROUPS: [EngineInfo['kind'], string][] = [['subscription', 'Your subscription'], ['api', 'API key · pay per use']]
+
 export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; onSaved: (s: SettingsData) => void; bare?: boolean }) {
-  const [key, setKey] = useState('')
-  const [model, setModel] = useState(settings.api_model ?? '')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<{ ready: boolean; detail: string } | null>(null)
@@ -287,21 +301,15 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
       setBusy(null)
     }
   }
-  const usingApi = settings.ai_engine === 'anthropic-api'
-  const k = settings.api_key
-  const options: { id: SettingsData['ai_engine']; name: string; lead: string; detail: ReactNode }[] = [
-    { id: 'claude-cli', name: 'Claude Code', lead: 'Your Claude subscription. No extra cost.',
-      detail: <>Uses the <code className="font-mono text-[12.5px]">claude</code> command on this computer: install Claude Code, run <code className="font-mono text-[12.5px]">claude</code>, then <code className="font-mono text-[12.5px]">/login</code>.</> },
-    { id: 'anthropic-api', name: 'Anthropic API key', lead: 'Pay per use on your Anthropic account.',
-      detail: 'For people without Claude Code. Create a key at console.anthropic.com; AutoCV keeps it in your system’s secure credential store (Keychain, Credential Manager or Secret Service), never in its files.' },
-  ]
+  const engines = settings.engines ?? []
+  const current = engines.find((e) => e.id === settings.ai_engine)
   return (
     <section aria-labelledby="ai-title" className={bare ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
       <div className={cx('flex flex-wrap items-start justify-between gap-x-6 gap-y-3', bare && 'hidden')}>
         <div className="flex max-w-[640px] flex-col gap-1.5">
           <p className={cx(label, 'text-accent')}>AI engine</p>
-          <h2 id="ai-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which Claude does the writing</h2>
-          <p className="text-sm leading-[1.5] text-muted text-pretty">Either way, the AI only sees what AutoCV sends it for the task at hand, and every claim is fact-checked against your profile.</p>
+          <h2 id="ai-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which AI does the writing</h2>
+          <p className="text-sm leading-[1.5] text-muted text-pretty">Whichever you choose, the AI only sees what AutoCV sends it for the task at hand, and every claim is fact-checked against your profile.</p>
         </div>
         <div className="flex items-center gap-3">
           {status && <span role="status" className={cx('max-w-[260px] text-xs', status.ready ? 'text-ok' : 'text-bad')}>{status.ready ? '✓ ' : '✗ '}{status.detail}</span>}
@@ -309,59 +317,101 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
         </div>
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
-      <div role="radiogroup" aria-labelledby="ai-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-        {options.map((o) => {
-          const chosen = settings.ai_engine === o.id
-          return (
-            <label key={o.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
-              chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
-              <input type="radio" name="ai-engine" className="sr-only" checked={chosen} aria-label={o.name}
-                onChange={() => { if (!busy) void apply('engine', () => api.saveSettings({ ai_engine: o.id })) }} />
-              <span className="flex items-center gap-2.5">
-                <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
-                  {chosen && <span className="size-2 rounded-full bg-accent" />}
-                </span>
-                <span className="font-display text-[22px] leading-none text-ink">{o.name}</span>
-                {chosen && <span className="rounded bg-accent-soft px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-accent">In use</span>}
-              </span>
-              <span className="pl-[28px] text-[13px] font-semibold text-ink">{o.lead}</span>
-              <span className="pl-[28px] text-[13px] leading-[1.45] text-muted text-pretty">{o.detail}</span>
-            </label>
-          )
-        })}
+      <div role="radiogroup" aria-labelledby="ai-title" className="flex flex-col gap-4">
+        {GROUPS.map(([kind, title]) => (
+          <div key={kind} className="flex flex-col gap-2">
+            <p className={label}>{title}</p>
+            <div className={cx('grid grid-cols-1 gap-3.5', kind === 'api' ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
+              {engines.filter((e) => e.kind === kind).map((e) => {
+                const chosen = settings.ai_engine === e.id
+                const copy = ENGINE_COPY[e.id]
+                return (
+                  <label key={e.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
+                    chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
+                    <input type="radio" name="ai-engine" className="sr-only" checked={chosen} aria-label={e.label}
+                      onChange={() => { if (!busy) void apply('engine', () => api.saveSettings({ ai_engine: e.id })) }} />
+                    <span className="flex flex-wrap items-center gap-2.5">
+                      <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+                        {chosen && <span className="size-2 rounded-full bg-accent" />}
+                      </span>
+                      <span className="font-display text-[22px] leading-none text-ink">{e.label}</span>
+                      {chosen && <span className="rounded bg-accent-soft px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-accent">In use</span>}
+                    </span>
+                    <span className="pl-[28px] text-[13px] font-semibold text-ink">{copy.lead}</span>
+                    <span className="pl-[28px] text-[13px] leading-[1.45] text-muted text-pretty">{copy.detail}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </div>
-      {usingApi && (
-        <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-semibold text-ink">API key</span>
-            {k.configured && (
-              <p className="flex flex-wrap items-center gap-3 text-[13px] text-body">
-                <span className="font-mono">{k.masked}</span>
-                <span className="text-muted">{k.source === 'keychain' ? 'stored in your keychain' : 'from ANTHROPIC_API_KEY'}</span>
-                {k.source === 'keychain' && <button className="text-accent hover:text-accent-strong" disabled={!!busy}
-                  onClick={() => apply('delete', api.deleteApiKey)}>Remove</button>}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <input className="field max-w-[420px] font-mono text-[13px]" type="password" autoComplete="off" spellCheck={false}
-                placeholder={k.configured ? 'Replace with a new key…' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} aria-label="Anthropic API key" />
-              <button className="btn btn-primary" disabled={!key.trim() || !!busy}
-                onClick={async () => { if (await apply('key', () => api.saveApiKey(key))) setKey('') }}>{busy === 'key' && <Spinner />}Save key</button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-semibold text-ink">Model</span>
-            <div className="flex flex-wrap gap-2">
-              <input className="field max-w-[300px] font-mono text-[13px]" value={model} placeholder={settings.api_default_model}
-                onChange={(e) => setModel(e.target.value)} aria-label="Model" />
-              <button className="btn" disabled={(model.trim() || null) === (settings.api_model || null) || !!busy}
-                onClick={() => apply('model', () => api.saveSettings({ api_model: model.trim() || null }))}>Save model</button>
-            </div>
-            <span className="text-xs text-faint">Leave empty for the default ({settings.api_default_model}).</span>
-          </div>
-        </div>
+      {current && (current.provider || current.model_setting) && (
+        <EngineOptions key={current.id} engine={current} settings={settings} busy={busy} apply={apply} />
       )}
     </section>
+  )
+}
+
+/** The chosen engine's key (API engines), model, and OpenRouter's privacy routing. */
+function EngineOptions({ engine, settings, busy, apply }: {
+  engine: EngineInfo; settings: SettingsData; busy: string | null
+  apply: (kind: string, call: () => Promise<SettingsData>) => Promise<SettingsData | undefined>
+}) {
+  const [key, setKey] = useState('')
+  const saved = engine.model_setting ? settings[engine.model_setting] : null
+  const [model, setModel] = useState(saved ?? '')
+  const provider = engine.provider
+  const k = provider ? settings.api_keys?.[provider] ?? settings.api_key : null
+  const copy = ENGINE_COPY[engine.id]
+  const fallback = engine.default_model ?? (engine.id === 'codex-cli' ? 'Codex’s own default' : 'the provider’s default')
+  return (
+    <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
+      {provider && k && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">{engine.label} key</span>
+          {k.configured && (
+            <p className="flex flex-wrap items-center gap-3 text-[13px] text-body">
+              <span className="font-mono">{k.masked}</span>
+              <span className="text-muted">{k.source === 'keychain' ? 'stored in your keychain' : `from ${k.env ?? 'the environment'}`}</span>
+              {k.source === 'keychain' && <button className="text-accent hover:text-accent-strong" disabled={!!busy}
+                onClick={() => apply('delete', () => api.deleteApiKey(provider))}>Remove</button>}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <input className="field max-w-[420px] font-mono text-[13px]" type="password" autoComplete="off" spellCheck={false}
+              placeholder={k.configured ? 'Replace with a new key…' : `${k.prefix ?? ''}…`} value={key} onChange={(e) => setKey(e.target.value)} aria-label={`${engine.label} API key`} />
+            <button className="btn btn-primary" disabled={!key.trim() || !!busy}
+              onClick={async () => { if (await apply('key', () => api.saveApiKey(key, provider))) setKey('') }}>{busy === 'key' && <Spinner />}Save key</button>
+          </div>
+          <span className="text-xs text-faint">Create a key at {copy.keyUrl}. AutoCV keeps it in your system’s secure credential store (Keychain, Credential Manager or Secret Service), never in its files.</span>
+        </div>
+      )}
+      {engine.id === 'openrouter-api' && (
+        <label className="flex cursor-pointer items-start gap-3 text-[13px]">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.openrouter_zdr} disabled={!!busy}
+            onChange={(e) => void apply('zdr', () => api.saveSettings({ openrouter_zdr: e.target.checked }))} />
+          <span className="flex flex-col gap-0.5">
+            <span className="font-semibold text-ink">Zero data retention only</span>
+            <span className="text-muted text-pretty">{settings.openrouter_zdr
+              ? 'Only providers that keep nothing serve your requests, so Claude runs on Google Vertex or Amazon Bedrock.'
+              : 'Requests go to Anthropic itself (Anthropic’s usual API retention applies). OpenRouter is still told not to collect your data.'}</span>
+          </span>
+        </label>
+      )}
+      {engine.model_setting && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink">Model</span>
+          <div className="flex flex-wrap gap-2">
+            <input className="field max-w-[340px] font-mono text-[13px]" value={model} placeholder={engine.default_model ?? 'default'}
+              onChange={(e) => setModel(e.target.value)} aria-label={`${engine.label} model`} />
+            <button className="btn" disabled={(model.trim() || null) === (saved || null) || !!busy}
+              onClick={() => apply('model', () => api.saveSettings({ [engine.model_setting!]: model.trim() || null }))}>Save model</button>
+          </div>
+          <span className="text-xs text-faint">Leave empty for the default ({fallback}).</span>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -1,12 +1,13 @@
-"""AI engines, chosen in Settings → AI engine:
+"""AI engines, chosen in Settings → AI engine (ENGINES):
 
-- the local Claude Code CLI in headless mode (`claude -p`), on the CLI's own login (your Claude
-  subscription: no API key, no per-call billing), or
-- the Anthropic API with your own key (kept in the OS keychain), billed per use.
+- subscriptions, through a local app's login (no API key, no per-call billing):
+  the Claude Code CLI (`claude -p`) or OpenAI's Codex CLI (`codex exec`, ChatGPT login);
+- API keys (kept in the OS keychain, billed per use): Anthropic, OpenAI, or OpenRouter.
 
-CLI calls are fully isolated (see ISOLATION_ARGS): no tools, MCP servers, plugins, hooks,
-skills or saved sessions, from an empty working directory. Either way the model only sees the
-prompt AutoCV builds, and must answer with JSON matching the schema.
+CLI calls are isolated (see ISOLATION_ARGS / CODEX_ISOLATION): no tools, MCP servers, plugins, hooks,
+skills or saved sessions, from an empty working directory, with every API key removed from the
+environment. Either way the model only sees the prompt AutoCV builds, and must answer with JSON
+matching the schema (OpenAI-style APIs get it in strict form: see openai_schema).
 
 Set AUTOCV_ENGINE=fake to run the UI with canned responses (tests / demos).
 """
@@ -18,6 +19,7 @@ import json
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -47,26 +49,66 @@ ISOLATION_ARGS = [
 ]
 
 
-def _windows_command(binary: str) -> list[str]:
-    """On Windows an npm install gives `claude.cmd`, which runs through cmd.exe and mangles
-    arguments with quotes or newlines. Run its script with node directly instead."""
+_NPM_SCRIPTS = {"claude": ("@anthropic-ai/claude-code/cli.js", "Claude Code", "claude.exe", "AUTOCV_CLAUDE_BIN"),
+                "codex": ("@openai/codex/bin/codex.js", "Codex", "codex.exe", "AUTOCV_CODEX_BIN")}
+
+
+def _windows_command(binary: str, tool: str = "claude") -> list[str]:
+    """On Windows an npm install gives `claude.cmd` / `codex.cmd`, which run through cmd.exe and mangle
+    arguments with quotes or newlines. Run the script it wraps with node directly instead."""
     if not (oscompat.IS_WINDOWS and binary.lower().endswith((".cmd", ".bat"))):
         return [binary]
-    script = Path(binary).parent / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+    script_path, product, exe, env = _NPM_SCRIPTS[tool]
+    script = Path(binary).parent / "node_modules" / Path(script_path)
     node = shutil.which("node")
     if script.is_file() and node:
         return [node, str(script)]
-    raise EngineError("Found claude.cmd but not the Claude Code script it wraps. Install the native Claude Code "
-                      "for Windows (claude.exe), or set AUTOCV_CLAUDE_BIN to claude.exe.")
+    raise EngineError(f"Found {Path(binary).name} but not the {product} script it wraps. Install the native {product} "
+                      f"for Windows ({exe}), or set {env} to {exe}.")
 
 
-# In `claude -p` an API key in the environment always wins over the subscription login, which would
-# silently bill the key. The subscription engine never passes one on.
-_API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+# A subscription CLI must never see an API key: in `claude -p` ANTHROPIC_API_KEY always wins over the
+# subscription login, and Codex prefers CODEX_API_KEY over the ChatGPT login — either would silently
+# bill a key. Every provider's key is removed from both CLIs' environments.
+_API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+                    "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
 
 
 def cli_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
+
+
+async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: float, product: str,
+                   files: dict[str, str] | None = None, collect: tuple[str, ...] = ()) -> tuple[int, str, str, dict]:
+    """Run a CLI from an empty temp folder (`work`). `files` are written to a sibling folder (`in`) first.
+    `args` is a list in which "{name}" becomes that file's path, or a callable(inputs, work) -> list.
+    Returns (exit code, stdout, stderr, {name: text} for each name in `collect` that the CLI wrote to `in`)."""
+    with tempfile.TemporaryDirectory(prefix="autocv-engine-") as root:
+        cwd, inputs = Path(root, "work"), Path(root, "in")
+        cwd.mkdir()
+        inputs.mkdir()
+        for name, text in (files or {}).items():
+            (inputs / name).write_text(text, encoding="utf-8")
+        if callable(args):
+            args = args(inputs, cwd)
+        else:
+            args = [str(inputs / a[1:-1]) if a[:1] == "{" and a[1:-1] in (files or {}) else a for a in args]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command, *args, cwd=cwd, env=cli_env(),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE, **oscompat.group_kwargs(),
+            )
+        except FileNotFoundError as e:
+            raise EngineError(f"{product} not found — install it, or set its path in the environment") from e
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(stdin.encode() if stdin is not None else None), timeout)
+        except TimeoutError as e:
+            oscompat.kill_tree(proc.pid)  # the CLI and its node/helper processes
+            await proc.wait()  # before the temp folder is removed (Windows can't delete it in use)
+            raise EngineError(f"{product} timed out") from e
+        collected = {n: (inputs / n).read_text(encoding="utf-8") for n in collect if (inputs / n).is_file()}
+    return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace"), collected
 
 
 class ClaudeCLIEngine:
@@ -81,36 +123,18 @@ class ClaudeCLIEngine:
 
     async def _run(self, args: list[str], stdin: str | None = None, timeout: float | None = None,
                    files: dict[str, str] | None = None) -> str:
-        """Run the CLI from an empty temp folder. `files` are written to a sibling folder first, and
-        "{name}" in `args` becomes that file's path (long texts go in files, not on the command line,
+        """Run the CLI from an empty temp folder (long texts go in `files`, not on the command line,
         which Windows limits and cmd.exe mangles)."""
-        with tempfile.TemporaryDirectory(prefix="autocv-engine-") as root:
-            cwd, inputs = Path(root, "work"), Path(root, "in")
-            cwd.mkdir()
-            inputs.mkdir()
-            for name, text in (files or {}).items():
-                (inputs / name).write_text(text, encoding="utf-8")
-            args = [str(inputs / a[1:-1]) if a[:1] == "{" and a[1:-1] in (files or {}) else a for a in args]
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *(self.command or _windows_command(self.binary)), *args, cwd=cwd, env=cli_env(),
-                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE, **oscompat.group_kwargs(),
-                )
-            except FileNotFoundError as e:
+        try:
+            code, out, err, _ = await _run_cli(self.command or _windows_command(self.binary), args, stdin=stdin,
+                                               timeout=timeout or self.timeout, files=files, product="Claude CLI")
+        except EngineError as e:
+            if "not found" in str(e):
                 raise EngineError("Claude Code CLI not found — install it or set AUTOCV_CLAUDE_BIN") from e
-            try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(stdin.encode() if stdin is not None else None),
-                    timeout or self.timeout,
-                )
-            except TimeoutError as e:
-                oscompat.kill_tree(proc.pid)  # the CLI and its node/helper processes
-                await proc.wait()  # before the temp folder is removed (Windows can't delete it in use)
-                raise EngineError("Claude CLI timed out") from e
-        if proc.returncode and not out:
-            raise EngineError(err.decode(errors="replace").strip() or f"claude exited {proc.returncode}")
-        return out.decode(errors="replace")
+            raise
+        if code and not out:
+            raise EngineError(err.strip() or f"claude exited {code}")
+        return out
 
     async def status(self) -> dict:
         if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
@@ -278,8 +302,8 @@ def api_schema(schema: Any) -> Any:
 def _check_stop(msg) -> None:
     reason = getattr(msg, "stop_reason", None)
     if reason == "refusal":
-        raise EngineError("Claude declined this request (its safety checks flagged it). Try again, or switch to "
-                          "the Claude Code engine in Settings → AI engine.")
+        raise EngineError("Claude declined this request (its safety checks flagged it). Try again, or switch "
+                          "engines in Settings → AI engine.")
     if reason == "max_tokens":
         raise EngineError("The answer was cut off (too long). Try again, or shorten the job description.")
 
@@ -302,22 +326,456 @@ def _schema_rejected(e: Exception) -> bool:
     return isinstance(e, anthropic.BadRequestError) and "schema" in str(e).lower()
 
 
+# ---------------------------------------------------------------- OpenAI-style strict schemas
+
+_DROP = ("title", "default", "examples", "$defs", "definitions", "minItems", "$schema")
+
+
+def _deref(node: Any, defs: dict, seen: int = 0) -> Any:
+    while isinstance(node, dict) and "$ref" in node and seen < 50:
+        name = node["$ref"].rsplit("/", 1)[-1]
+        node = {**defs.get(name, {}), **{k: v for k, v in node.items() if k != "$ref"}}
+        seen += 1
+    return node
+
+
+def _nullable(node: dict) -> dict:
+    t = node.get("type")
+    if t == "null" or (isinstance(t, list) and "null" in t):
+        return node
+    if any(isinstance(b, dict) and b.get("type") == "null" for b in node.get("anyOf", [])):
+        return node
+    if isinstance(t, str) and "enum" not in node and "properties" not in node and "items" not in node:
+        return {**node, "type": [t, "null"]}
+    return {"anyOf": [node, {"type": "null"}]}
+
+
+def openai_schema(schema: dict) -> dict:
+    """AutoCV's JSON schema in OpenAI's strict form (OpenAI API, OpenRouter, Codex --output-schema):
+    $refs inlined; titles, defaults and unsupported constraints dropped; every object closed with every
+    property required, the ones that were optional made nullable (the answer goes through strip_nulls)."""
+    defs = schema.get("$defs") or schema.get("definitions") or {}
+
+    def conv(node: Any, depth: int = 0) -> Any:
+        if depth > 40:
+            raise EngineError("The schema is nested too deeply for strict structured outputs.")
+        if isinstance(node, list):
+            return [conv(x, depth + 1) for x in node]
+        if not isinstance(node, dict):
+            return node
+        node = _deref(node, defs)
+        out = {k: conv(v, depth + 1) for k, v in node.items()
+               if k not in _DROP and k not in _UNSUPPORTED and k not in ("properties", "required")}
+        if "properties" in node or node.get("type") == "object":
+            props = node.get("properties", {})
+            required = set(node.get("required", []))
+            out["properties"] = {k: (conv(v, depth + 1) if k in required else _nullable(conv(v, depth + 1)))
+                                 for k, v in props.items()}
+            out["required"] = list(props)
+            out["additionalProperties"] = False
+            out.setdefault("type", "object")
+        return out
+
+    return conv(schema)
+
+
+def _branch(node: Any, kind: str, defs: dict) -> dict | None:
+    node = _deref(node, defs)
+    if not isinstance(node, dict):
+        return None
+    t = node.get("type")
+    if t == kind or (isinstance(t, list) and kind in t) or (kind == "object" and "properties" in node):
+        return node
+    for b in node.get("anyOf", []) + node.get("oneOf", []):
+        if found := _branch(b, kind, defs):
+            return found
+    return None
+
+
+def strip_nulls(value: Any, schema: dict, _defs: dict | None = None) -> Any:
+    """Undo openai_schema's nullable optionals: a null for a property the original schema didn't require
+    is dropped, so the answer validates exactly as it would from Claude."""
+    defs = _defs if _defs is not None else (schema.get("$defs") or schema.get("definitions") or {})
+    if isinstance(value, dict):
+        obj = _branch(schema, "object", defs)
+        if not obj:
+            return value
+        required, props = set(obj.get("required", [])), obj.get("properties", {})
+        return {k: strip_nulls(v, props.get(k, {}), defs) for k, v in value.items()
+                if not (v is None and k not in required)}
+    if isinstance(value, list):
+        arr = _branch(schema, "array", defs)
+        items = arr.get("items", {}) if arr else {}
+        return [strip_nulls(v, items, defs) for v in value]
+    return value
+
+
+# ---------------------------------------------------------------- API-key engines on the openai SDK
+
+class _OpenAIStyleEngine:
+    """Shared by the OpenAI and OpenRouter engines: the key from the keychain (per provider), one client
+    per key, and a briefly cached status check."""
+
+    name = ""
+    provider = ""
+    default_model = ""
+    product = ""
+
+    def __init__(self, model: str | None = None, timeout: float = 600, key=None, client_factory=None):
+        from . import apikey
+        self.model = model or self.default_model
+        self.timeout = timeout
+        self._key = key or (lambda: apikey.get(self.provider)[0])
+        self._client_factory = client_factory
+        self._checked: tuple[str, float, dict] | None = None
+        self._clients: dict = {}
+
+    def _make_client(self, key: str):
+        raise NotImplementedError
+
+    def _client(self, key: str):
+        if self._client_factory:
+            return self._client_factory(key)
+        if self._clients.get("key") != key:
+            self._clients = {"key": key, "client": self._make_client(key)}
+        return self._clients["client"]
+
+    def _explain(self, e: Exception) -> str:
+        import openai
+        p = self.product
+        if isinstance(e, openai.AuthenticationError):
+            return f"The {p} API key was rejected. Check it in Settings → AI engine."
+        if isinstance(e, openai.PermissionDeniedError):
+            return f"This {p} API key isn't allowed to use that model."
+        if isinstance(e, openai.NotFoundError):
+            return f"That model isn't available on {p}. Choose another model in Settings → AI engine."
+        if isinstance(e, openai.RateLimitError):
+            return f"The {p} rate limit or quota was reached. Wait a minute and try again, or check your plan."
+        if isinstance(e, (openai.APIConnectionError, openai.APITimeoutError)):
+            return f"Couldn't reach {p}. Check your internet connection."
+        if isinstance(e, openai.APIStatusError):
+            return f"{p} returned an error ({e.status_code}): {_api_message(e)}"
+        return str(e)
+
+    async def _ping(self, client) -> dict:
+        raise NotImplementedError
+
+    async def status(self) -> dict:
+        import time
+        key = await asyncio.to_thread(self._key)
+        base = {"engine": self.name, "model": self.model}
+        if not key:
+            return {**base, "ready": False, "detail": "No API key yet — add one in Settings → AI engine."}
+        if self._checked and self._checked[0] == key and time.monotonic() - self._checked[1] < \
+                (300 if self._checked[2]["ready"] else 15):
+            return self._checked[2]
+        try:
+            result = {**base, "ready": True, **(await self._ping(self._client(key)))}
+        except Exception as e:  # noqa: BLE001
+            result = {**base, "ready": False, "detail": self._explain(e)}
+        self._checked = (key, time.monotonic(), result)
+        return result
+
+    async def _key_or_fail(self) -> str:
+        key = await asyncio.to_thread(self._key)
+        if not key:
+            raise EngineError(f"No {self.product} API key — add one in Settings → AI engine.")
+        return key
+
+
+def _api_message(e: Exception) -> str:
+    body = getattr(e, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error", body)
+        if isinstance(err, dict) and err.get("message"):
+            return str(err["message"])[:300]
+    return str(getattr(e, "message", e))[:300]
+
+
+def _json_answer(text: str | None, schema: dict) -> Any:
+    try:
+        return strip_nulls(json.loads((text or "").strip()), schema)
+    except json.JSONDecodeError as e:
+        raise EngineError("The model's answer wasn't valid JSON. Try again.") from e
+
+
+DEFAULT_OPENAI_MODEL = "gpt-6.1-sol"
+
+
+class OpenAIAPIEngine(_OpenAIStyleEngine):
+    """OpenAI's Responses API with the user's key: strict structured outputs, nothing stored (store=False)."""
+
+    name, provider, default_model, product = "openai-api", "openai", DEFAULT_OPENAI_MODEL, "OpenAI"
+
+    def _make_client(self, key: str):
+        import openai
+        return openai.AsyncOpenAI(api_key=key, timeout=self.timeout, max_retries=2)
+
+    async def _ping(self, client) -> dict:
+        await client.models.retrieve(self.model)  # free; checks both the key and the model
+        return {"detail": "API key works"}
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        client = self._client(await self._key_or_fail())
+        try:
+            r = await client.responses.create(
+                model=self.model, instructions=system, input=prompt, store=False, max_output_tokens=32000,
+                text={"format": {"type": "json_schema", "name": "result", "schema": openai_schema(schema),
+                                 "strict": True}})
+        except Exception as e:  # noqa: BLE001
+            raise EngineError(self._explain(e)) from e
+        for item in getattr(r, "output", None) or []:
+            for part in getattr(item, "content", None) or []:
+                if getattr(part, "type", None) == "refusal":
+                    raise EngineError("The model declined this request. Try again, or switch engines in "
+                                      "Settings → AI engine.")
+        if getattr(r, "status", None) == "incomplete":
+            reason = getattr(getattr(r, "incomplete_details", None), "reason", None)
+            raise EngineError("The answer was cut off (too long). Try again, or shorten the job description."
+                              if reason == "max_output_tokens" else f"The model stopped early ({reason}). Try again.")
+        return _json_answer(getattr(r, "output_text", None), schema)
+
+
+DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-5.5"  # the same Claude model as DEFAULT_API_MODEL
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+
+
+class OpenRouterEngine(_OpenAIStyleEngine):
+    """OpenRouter with the user's key (Chat Completions, structured outputs). By default only providers
+    with zero data retention and no data collection serve the request; `zdr=False` routes to Anthropic
+    itself instead (still with data collection denied)."""
+
+    name, provider, default_model, product = "openrouter-api", "openrouter", DEFAULT_OPENROUTER_MODEL, "OpenRouter"
+
+    def __init__(self, model: str | None = None, timeout: float = 600, key=None, client_factory=None,
+                 zdr: bool = True):
+        super().__init__(model, timeout, key, client_factory)
+        self.zdr = zdr
+        self._tool_fallback: set[str] = set()
+
+    def _make_client(self, key: str):
+        import openai
+        return openai.AsyncOpenAI(api_key=key, base_url=OPENROUTER_URL, timeout=self.timeout, max_retries=2,
+                                  default_headers={"X-OpenRouter-Title": "AutoCV",
+                                                   "HTTP-Referer": "https://github.com/atenreiro/autocv"})
+
+    def routing(self) -> dict:
+        provider = {"require_parameters": True, "data_collection": "deny"}
+        provider.update({"zdr": True, "allow_fallbacks": True} if self.zdr
+                        else {"only": ["anthropic"], "allow_fallbacks": False})
+        return {"provider": provider}
+
+    def _explain(self, e: Exception) -> str:
+        import openai
+        code = getattr(e, "status_code", None)
+        if isinstance(e, openai.APIStatusError) and code == 402:
+            return "Your OpenRouter credit has run out. Add credits at openrouter.ai, then try again."
+        if isinstance(e, openai.APIStatusError) and code == 403:
+            return f"OpenRouter's moderation blocked this request: {_api_message(e)}"
+        if isinstance(e, openai.APIStatusError) and code == 503:
+            return ("No OpenRouter provider can serve this model with these privacy settings right now. Try again, "
+                    "or allow Anthropic-hosted in Settings → AI engine." if self.zdr else
+                    "OpenRouter has no provider available for this model right now. Try again shortly.")
+        return super()._explain(e)
+
+    async def _ping(self, client) -> dict:
+        info = await client.get("/key", cast_to=object)
+        data = info.get("data", info) if isinstance(info, dict) else {}
+        left = data.get("limit_remaining") if isinstance(data, dict) else None
+        return {"detail": "API key works" + (f" · ${left:.2f} credit left" if isinstance(left, (int, float)) else "")}
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        client = self._client(await self._key_or_fail())
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+        strict = openai_schema(schema)
+        signature = json.dumps(strict, sort_keys=True)
+        if signature not in self._tool_fallback:
+            try:
+                r = await client.chat.completions.create(
+                    model=self.model, messages=messages, max_tokens=16000,
+                    response_format={"type": "json_schema",
+                                     "json_schema": {"name": "result", "strict": True, "schema": strict}},
+                    extra_body={**self.routing(), "plugins": [{"id": "response-healing"}]})
+                return _json_answer(self._content(r), schema)
+            except EngineError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                if not _schema_rejected_openai(e):
+                    raise EngineError(self._explain(e)) from e
+                self._tool_fallback.add(signature)
+        try:  # the model or provider can't take this schema: one ordinary tool call instead
+            r = await client.chat.completions.create(
+                model=self.model, max_tokens=16000, extra_body=self.routing(),
+                messages=[{"role": "system", "content": system + "\n\nAnswer by calling the `answer` tool exactly "
+                                                                  "once with the complete result."},
+                          {"role": "user", "content": prompt}],
+                tools=[{"type": "function", "function": {"name": "answer", "parameters": schema,
+                                                         "description": "Return the complete result."}}],
+                tool_choice="auto")
+        except Exception as e:  # noqa: BLE001
+            raise EngineError(self._explain(e)) from e
+        self._check(r)
+        for call in getattr(r.choices[0].message, "tool_calls", None) or []:
+            if call.function.name == "answer":
+                return _json_answer(call.function.arguments, schema)
+        raise EngineError("The model did not return structured output. Try again.")
+
+    @staticmethod
+    def _check(r) -> None:
+        if not getattr(r, "choices", None):
+            raise EngineError("OpenRouter returned no answer. Try again.")
+        choice = r.choices[0]
+        if getattr(choice.message, "refusal", None):
+            raise EngineError("The model declined this request. Try again, or switch engines in Settings → AI engine.")
+        reason = getattr(choice, "finish_reason", None)
+        if reason == "length":
+            raise EngineError("The answer was cut off (too long). Try again, or shorten the job description.")
+        if reason == "content_filter":
+            raise EngineError("The provider's content filter stopped this answer. Try again, or switch engines.")
+        if reason == "error":
+            raise EngineError("The provider failed while answering. Try again.")
+
+    def _content(self, r) -> str | None:
+        self._check(r)
+        return r.choices[0].message.content
+
+
+def _schema_rejected_openai(e: Exception) -> bool:
+    try:
+        import openai
+    except ImportError:  # pragma: no cover
+        return False
+    return isinstance(e, openai.BadRequestError) and "schema" in str(e).lower()
+
+
+# ---------------------------------------------------------------- Codex CLI (ChatGPT subscription)
+
+# `codex exec` is a coding agent: everything that isn't answering from the prompt is switched off. Its
+# file-editing tool can't be removed, only sandboxed (read-only, in an empty folder, approvals never).
+CODEX_ISOLATION = [
+    "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+    "-s", "read-only", "--color", "never", "--json",
+    "-c", 'approval_policy="never"', "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"',
+    "-c", 'history.persistence="none"', "-c", "features.shell_tool=false", "-c", "features.unified_exec=false",
+    "-c", "features.multi_agent=false", "-c", "features.apps=false", "-c", "features.remote_plugin=false",
+    "-c", "features.memories=false", "-c", "features.hooks=false", "-c", "mcp_servers={}",
+    # Tools that are on by default in Codex 0.160 (see `codex features list`); unknown names are ignored.
+    *[a for f in ("view_image", "image_generation", "browser_use", "browser_use_external", "browser_use_full_cdp_access",
+                  "computer_use", "code_mode_host", "in_app_browser", "in_app_local_automation", "plugins",
+                  "skill_search", "skill_mcp_dependency_install", "tool_suggest", "sleep_tool", "shell_snapshot",
+                  "workspace_dependencies", "worktrees", "goals")
+      for a in ("-c", f"features.{f}=false")],
+]
+CODEX_MIN_VERSION = (0, 160)  # the flags above were checked against this version
+
+
+class CodexCLIEngine:
+    name = "codex-cli"
+
+    def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600,
+                 command: list[str] | None = None):
+        self.binary = binary or os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex") or "codex"
+        self.model = model
+        self.timeout = timeout
+        self.command = command  # the argv prefix to run instead of the binary (tests)
+
+    def _argv(self) -> list[str]:
+        return self.command or _windows_command(self.binary, "codex")
+
+    async def status(self) -> dict:
+        if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
+            return {"engine": self.name, "ready": False, "detail": "Codex CLI not found"}
+        try:
+            code, out, err, _ = await _run_cli(self._argv(), ["login", "status"], stdin=None, timeout=20,
+                                               product="Codex CLI")
+        except EngineError as e:
+            return {"engine": self.name, "ready": False, "detail": str(e)}
+        text = f"{out}\n{err}"
+        model = self.model or "Codex default"
+        if code == 0 and "chatgpt" in text.lower():
+            return {"engine": self.name, "ready": True, "model": model, "detail": "logged in with ChatGPT"}
+        if code == 0 and "api key" in text.lower():
+            return {"engine": self.name, "ready": False, "model": model,
+                    "detail": "Codex is logged in with an API key. Run `codex login` and sign in with ChatGPT, "
+                              "or choose the OpenAI API key engine instead."}
+        return {"engine": self.name, "ready": False, "model": model,
+                "detail": "Not logged in — run `codex login` in a terminal and sign in with ChatGPT"}
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        def args(inputs: Path, work: Path) -> list[str]:
+            argv = ["exec", "-", *CODEX_ISOLATION, "-C", str(work),
+                    "--output-schema", str(inputs / "schema.json"), "-o", str(inputs / "last.json"),
+                    "-c", f"model_instructions_file={json.dumps(str(inputs / 'system.md'))}"]
+            return argv + (["-m", self.model] if self.model else [])
+
+        code, out, err, got = await _run_cli(
+            self._argv(), args, stdin=prompt, timeout=self.timeout, product="Codex CLI",
+            files={"system.md": system, "schema.json": json.dumps(openai_schema(schema))}, collect=("last.json",))
+        failure = _codex_failure(out)
+        if "last.json" not in got or not got["last.json"].strip():
+            raise EngineError(failure or err.strip()[-300:] or f"Codex exited {code} without an answer")
+        return _json_answer(got["last.json"], schema)
+
+
+def _codex_failure(events: str) -> str | None:
+    """The error message from `codex exec --json` events (turn.failed / error), if any."""
+    for line in events.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") in ("turn.failed", "error"):
+            err = ev.get("error") if isinstance(ev.get("error"), dict) else ev
+            return str(err.get("message") or ev)[:300]
+    return None
+
+
+# ---------------------------------------------------------------- the engine chosen in Settings
+
+@dataclass(frozen=True)
+class EngineSpec:
+    label: str
+    kind: str                 # "subscription" | "api"
+    model_setting: str | None  # the settings key holding this engine's model
+    default_model: str | None
+    provider: str | None = None  # apikey provider for API engines
+
+
+ENGINES: dict[str, EngineSpec] = {
+    "claude-cli": EngineSpec("Claude Code", "subscription", None, None),
+    "codex-cli": EngineSpec("Codex (ChatGPT)", "subscription", "codex_model", None),
+    "anthropic-api": EngineSpec("Anthropic API", "api", "api_model", DEFAULT_API_MODEL, "anthropic"),
+    "openai-api": EngineSpec("OpenAI API", "api", "openai_model", DEFAULT_OPENAI_MODEL, "openai"),
+    "openrouter-api": EngineSpec("OpenRouter", "api", "openrouter_model", DEFAULT_OPENROUTER_MODEL, "openrouter"),
+}
+
+
 class SwitchingEngine:
     """The engine chosen in Settings → AI engine, looked up on every call (so switching takes effect
     without a restart)."""
 
     def __init__(self, store):
         self.store = store
-        self._cli: ClaudeCLIEngine | None = None
-        self._api: dict[str, AnthropicAPIEngine] = {}
+        self._engines: dict[tuple, Engine] = {}
 
     def current(self) -> Engine:
         settings = self.store.settings()
-        if settings.get("ai_engine") == "anthropic-api":
-            model = settings.get("api_model") or DEFAULT_API_MODEL
-            return self._api.setdefault(model, AnthropicAPIEngine(model=model))
-        self._cli = self._cli or ClaudeCLIEngine()
-        return self._cli
+        engine_id = settings.get("ai_engine")
+        if engine_id not in ENGINES:
+            engine_id = "claude-cli"
+        spec = ENGINES[engine_id]
+        model = (settings.get(spec.model_setting) if spec.model_setting else None) or spec.default_model
+        zdr = bool(settings.get("openrouter_zdr", True))
+        key = (engine_id, model, zdr if engine_id == "openrouter-api" else None)
+        if key not in self._engines:
+            self._engines[key] = {
+                "claude-cli": lambda: ClaudeCLIEngine(),
+                "codex-cli": lambda: CodexCLIEngine(model=model),
+                "anthropic-api": lambda: AnthropicAPIEngine(model=model),
+                "openai-api": lambda: OpenAIAPIEngine(model=model),
+                "openrouter-api": lambda: OpenRouterEngine(model=model, zdr=zdr),
+            }[engine_id]()
+        return self._engines[key]
 
     @property
     def name(self) -> str:
