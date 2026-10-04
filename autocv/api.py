@@ -1119,7 +1119,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         # Otherwise these fall through to the page route and surface as a cryptic
         # "405 Method Not Allowed" — typically a server started before an update.
         raise HTTPException(404, "Unknown AutoCV endpoint. If you just updated AutoCV, restart the server "
-                                 "(Ctrl+C, then `uv run autocv serve`).")
+                                 "(Ctrl+C, then `autocv serve`, or `uv run autocv serve` in a source checkout).")
 
     dist = paths.web_dir()
     if dist:

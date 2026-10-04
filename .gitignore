@@ -223,3 +223,8 @@ private/
 /*.docx
 /*.pdf
 CLAUDE.local.md
+
+# macOS folder settings; local Claude Code settings and worktrees
+.DS_Store
+.claude/settings.local.json
+.claude/worktrees/

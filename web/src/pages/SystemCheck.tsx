@@ -32,7 +32,7 @@ export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
   const onChecksRef = useRef(onChecks)
   useEffect(() => { onChecksRef.current = onChecks }, [onChecks])
   const load = useCallback(() => api.doctor(phase)
-    .then((c) => { setChecks(c); onChecksRef.current?.(c) })
+    .then((c) => { setChecks(c); setError(null); onChecksRef.current?.(c) })
     .catch((e) => setError(e.message)).finally(() => setBusy(false)), [phase])
   useEffect(() => {
     void load()
@@ -43,8 +43,17 @@ export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
   const missing = checks?.filter((c) => c.status !== 'ok' && (c.level === 'required' || c.level === 'recommended')).length ?? 0
   useEffect(() => {
     if (!poll || !missing) return
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void load() }, 6000)
-    return () => clearInterval(t)
+    // Re-check while something that matters is missing: every 6 s at first, slowing to once a minute, and
+    // stopping after ~15 minutes (Check again still works) — each check runs local programs.
+    let delay = 6000, elapsed = 0, timer = 0
+    const tick = () => {
+      if (document.visibilityState === 'visible') void load()
+      elapsed += delay
+      delay = Math.min(delay * 1.5, 60000)
+      if (elapsed < 15 * 60000) timer = window.setTimeout(tick, delay)
+    }
+    timer = window.setTimeout(tick, delay)
+    return () => window.clearTimeout(timer)
   }, [poll, missing, load])
   useEffect(() => {  // a browser install in progress: follow it, then re-check
     if (browser?.state !== 'running') return

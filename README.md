@@ -31,7 +31,7 @@ uv sync
 npm --prefix web install && npm --prefix web run build
 uv run autocv serve
 ```
-Your browser opens at http://127.0.0.1:8000. Press **Ctrl+C** in the terminal to stop AutoCV.
+Your browser opens AutoCV through a private link (it's also printed in the terminal, starting with `AutoCV →`): it unlocks AutoCV in that browser, so other programs on your computer can't read your data. Press **Ctrl+C** in the terminal to stop AutoCV.
 
 Once AutoCV is published, installing will be a single command, with no Node.js needed:
 ```bash

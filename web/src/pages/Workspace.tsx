@@ -126,15 +126,18 @@ export default function Workspace() {
     if (app?.id === id) return  // already loaded (e.g. after a folder rename)
     if (app) setMemoState({ review: null, gaps: null, gapFocus: null })  // another application: drop the old one's work
     const want = params.get('step')  // e.g. /a/<id>?step=review from the Applications list
+    let current = true  // a quick switch to another application: this (slower) answer must not win
     Promise.all([api.get(id), api.profile()])
       .then(([a, p]) => {
+        if (!current) return
         setApp(a)
         setProfile(p)
         setStep(isStep(want) && enabledSteps(a)[want] ? want
           : a.tailored ? (a.files.length ? 'export' : 'review') : a.analysis ? 'gaps' : 'brief')
         if (want !== null) setParams((prev) => { const next = new URLSearchParams(prev); next.delete('step'); return next }, { replace: true })
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => { if (current) setError(e.message) })
+    return () => { current = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 

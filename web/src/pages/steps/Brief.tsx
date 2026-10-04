@@ -15,7 +15,12 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
   const [showJd, setShowJd] = useState(!app.analysis)
   const a = app.analysis
 
-  const analyze = () =>
+  const analyze = () => {
+    if (memo.gaps?.proposals.some((d) => d.state === 'pending')
+        && !window.confirm('Re-analysing replaces the gap questions and discards the evidence drafts still waiting for your approval. Continue?')) return
+    return analyzeNow()
+  }
+  const analyzeNow = () =>
     run('Reading the job description', [
       'Identifying the industry lens and track…',
       'Matching every requirement to your evidence…',

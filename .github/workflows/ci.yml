@@ -37,11 +37,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - name: Install LibreOffice (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # the download server is sometimes slow or unreachable: retry before failing
+          for i in 1 2 3; do brew install --cask libreoffice && exit 0; sleep 60; done; exit 1
       - name: Install LibreOffice (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer

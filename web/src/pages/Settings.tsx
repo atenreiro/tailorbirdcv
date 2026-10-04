@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, useTitle } from '../lib'
@@ -103,7 +103,7 @@ function Segmented<T extends string | number>({ label: name, options, value, onC
 /** Who the resume is for. With `onContinue` (the setup wizard) it starts from `initial` (suggested
  *  from the CV) and saves on "Save and continue". */
 export function YourTargets({ settings, onSaved, initial, onContinue }: {
-  settings: SettingsData; onSaved: (s: SettingsData) => void; initial?: Targets; onContinue?: () => void
+  settings: SettingsData; onSaved: (s: SettingsData) => void; initial?: Targets; onContinue?: () => void | Promise<void>
 }) {
   const [t, setT] = useState<Targets>(initial ?? settings.targets)
   const [busy, setBusy] = useState(false)
@@ -125,7 +125,7 @@ export function YourTargets({ settings, onSaved, initial, onContinue }: {
       onSaved(next)
       setT(next.targets)
       setFlash(true)
-      onContinue?.()
+      await onContinue?.()  // the wizard's next step: its errors show here too
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -214,6 +214,7 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
     }
   }
   const current = settings.themes.find((t) => t.id === settings.theme) ?? settings.themes[0]
+  const [theme, chooseTheme] = useSettledChoice<string>(settings.theme, (id) => id !== settings.theme && save({ theme: id }))
   const paper = settings.paper ?? current?.paper ?? 'letter'
   return (
     <section aria-labelledby="design-title" className={bare ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
@@ -232,12 +233,12 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       <div role="radiogroup" aria-labelledby="design-title" className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
         {settings.themes.map((t) => {
-          const chosen = t.id === settings.theme
+          const chosen = t.id === theme
           return (
             <label key={t.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-3 rounded-xl border px-4 py-4 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
               chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
               <input type="radio" name="theme" className="sr-only" checked={chosen} aria-label={t.name}
-                onChange={() => { if (!busy) void save({ theme: t.id }) }} />
+                onChange={() => chooseTheme(t.id)} />
               <ThemeSample t={t} />
               <span className="flex items-center gap-2">
                 <span aria-hidden className={cx('grid size-4 flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
@@ -253,6 +254,21 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
       </div>
     </section>
   )
+}
+
+/** A radio group that follows the keyboard at once and saves only the option it settles on (arrowing through
+ *  the options doesn't fire a save per step, and the selection never lags behind the focus). */
+function useSettledChoice<T extends string>(current: T, save: (v: T) => unknown, delay = 350) {
+  const [pending, setPending] = useState<T | null>(null)
+  const timer = useRef(0)
+  const choose = (v: T) => {
+    setPending(v)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(async () => {
+      try { await save(v) } finally { setPending(null) }
+    }, delay)
+  }
+  return [pending ?? current, choose] as const
 }
 
 const code = 'font-mono text-[12.5px]'
@@ -303,6 +319,8 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
     }
   }
   const engines = settings.engines ?? []
+  const [selected, choose] = useSettledChoice<EngineId>(settings.ai_engine,
+    (id) => id !== settings.ai_engine && apply('engine', () => api.saveSettings({ ai_engine: id })))
   const current = engines.find((e) => e.id === settings.ai_engine)
   return (
     <section aria-labelledby="ai-title" className={bare ? 'flex min-w-0 flex-col gap-5' : 'animate-rise flex min-w-0 max-w-[980px] flex-col gap-5 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7'}>
@@ -324,13 +342,13 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
             <p className={label}>{title}</p>
             <div className={cx('grid grid-cols-1 gap-3.5', kind === 'api' ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
               {engines.filter((e) => e.kind === kind).map((e) => {
-                const chosen = settings.ai_engine === e.id
+                const chosen = selected === e.id
                 const copy = ENGINE_COPY[e.id]
                 return (
                   <label key={e.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
                     chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
                     <input type="radio" name="ai-engine" className="sr-only" checked={chosen} aria-label={e.label}
-                      onChange={() => { if (!busy) void apply('engine', () => api.saveSettings({ ai_engine: e.id })) }} />
+                      onChange={() => choose(e.id)} />
                     <span className="flex flex-wrap items-center gap-2.5">
                       <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
                         {chosen && <span className="size-2 rounded-full bg-accent" />}

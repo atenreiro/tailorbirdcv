@@ -181,7 +181,7 @@ def _browser() -> dict:
         return _check("browser", "Headless browser", "ok", "Installed (for job pages that need JavaScript).",
                       level="optional")
     linux = "" if (IS_MAC or IS_WINDOWS) else (" On Linux it may also need system libraries: "
-                                                 "sudo uv run playwright install-deps chromium.")
+                                                 f"sudo {sys.executable} -m playwright install-deps chromium")
     return _check("browser", "Headless browser", "warn",
                   "Not installed: job pages that only render with JavaScript can't be fetched (paste the text instead).",
                   "Install it (about 100 MB), or run `autocv install-browser`." + linux, level="optional",

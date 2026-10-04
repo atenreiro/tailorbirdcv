@@ -3,9 +3,10 @@ import { api, type AppAnswer, type Knowledge } from '../../api'
 import { cx } from '../../lib'
 import { pageLimit, pagesText, useSettings } from '../../settings'
 import { ErrorNote, Spinner } from '../../ui'
+import { setPendingSave } from '../../unsaved'
 import type { StepProps } from '../Workspace'
 import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
-import { gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
+import { draftKey, gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
 
 const card = 'rounded-lg border border-rule bg-sheet'
 const CHIP: Record<GapState, [string, string]> = {
@@ -31,9 +32,9 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   // debounced save can never land after (and undo) a later immediate one.
   const saveChain = useRef<Promise<unknown>>(Promise.resolve())
   const saveSeq = useRef(0)
-  // Proposals being approved right now (by index): a second click must not add the evidence twice.
-  const approving = useRef(new Set<number>())
-  const [approvingNow, setApprovingNow] = useState<number[]>([])
+  // Proposals being approved right now (by stable key): a second click must not add the evidence twice.
+  const approving = useRef(new Set<string>())
+  const [approvingNow, setApprovingNow] = useState<string[]>([])
 
   // State lives in Workspace (memo.gaps) so it survives switching steps; seeded from the server.
   const gaps = memo.gaps ?? {
@@ -86,6 +87,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
   const persist = (next: Record<string, AppAnswer>, immediate = false) => {
     window.clearTimeout(saveTimer.current)
     pendingSave.current = next
+    setPendingSave('gaps', true)  // closing the tab before the save lands asks first
     const save = () => {
       pendingSave.current = null
       const seq = ++saveSeq.current
@@ -99,6 +101,8 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
         } catch (e) {
           setError((e as Error).message)
           if (seq === saveSeq.current) setSaved('idle')
+        } finally {
+          if (seq === saveSeq.current && !pendingSave.current) setPendingSave('gaps', false)
         }
       })
     }
@@ -147,7 +151,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
       const ids = new Set(qs.map((q) => q.id))
       setDrafts((prev) => [
         ...prev.filter((d) => !ids.has(d.question_id) || d.state === 'approved'),
-        ...proposals.map((p): Draft => ({ ...p, state: 'pending' })),
+        ...proposals.map((p): Draft => ({ ...p, state: 'pending', uid: `${p.question_id}-${Date.now()}-${Math.random().toString(36).slice(2)}` })),
       ])
     })
 
@@ -155,8 +159,9 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
 
   async function approve(i: number) {
     const d = drafts[i]
-    if (!d || d.state !== 'pending' || approving.current.has(i)) return
-    approving.current.add(i)
+    const k = d && draftKey(d)
+    if (!d || d.state !== 'pending' || approving.current.has(k)) return
+    approving.current.add(k)
     setApprovingNow([...approving.current])
     try {
       const q = questionFor(d.question_id)
@@ -164,20 +169,20 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
         target: d.target, text: d.text, skills: d.skills,
         note: q ? `Q: ${q.question} A: ${answers[q.id]?.answer ?? ''}` : undefined,
       })
-      setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, state: 'approved', id: res.id } : x)))
+      setDrafts((prev) => prev.map((x) => (draftKey(x) === k ? { ...x, state: 'approved', id: res.id } : x)))
       if (q) update(q, { status: 'approved', evidence_id: res.id }, true)
       await reloadProfile()
     } catch (e) {
       setError((e as Error).message)
     } finally {
-      approving.current.delete(i)
+      approving.current.delete(k)
       setApprovingNow([...approving.current])
     }
   }
 
   function reject(i: number) {
-    if (approving.current.has(i)) return
     const d = drafts[i]
+    if (!d || approving.current.has(draftKey(d))) return
     setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, state: 'rejected' } : x)))
     const q = questionFor(d.question_id)
     if (q) update(q, { status: 'rejected' }, true)
@@ -326,7 +331,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
               <div className="flex flex-col gap-3">
                 {shown.map(({ d, i }) => (
                   <ProposalBox key={i} d={d} roles={roles} categories={categories} question={d.question_id === sel.id ? undefined : questionFor(d.question_id)}
-                    saving={approvingNow.includes(i)} onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
+                    saving={approvingNow.includes(draftKey(d))} onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
                 ))}
               </div>
             )}
@@ -338,7 +343,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             <p className="text-body">Your profile and past answers cover every must-have. You can go straight to composing.</p>
             {/* proposals can't exist without questions, but never hide one that blocks composing */}
             {shown.map(({ d, i }) => (
-              <ProposalBox key={i} d={d} roles={roles} categories={categories} saving={approvingNow.includes(i)}
+              <ProposalBox key={i} d={d} roles={roles} categories={categories} saving={approvingNow.includes(draftKey(d))}
                 onPatch={(p) => patchDraft(i, p)} onApprove={() => approve(i)} onReject={() => reject(i)} />
             ))}
           </section>

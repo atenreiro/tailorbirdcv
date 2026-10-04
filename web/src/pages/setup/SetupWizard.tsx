@@ -4,6 +4,7 @@ import { api, type EngineStatus, type SetupState, type SetupStep, type Settings,
 import { cx, useTitle } from '../../lib'
 import { cacheSettings, loadSettings } from '../../settings'
 import { markSetupDone } from '../../setup'
+import { confirmLeave } from '../../unsaved'
 import { ErrorNote, Spinner } from '../../ui'
 import { AIEngine, ResumeDesign, YourTargets } from '../Settings'
 import SystemCheck from '../SystemCheck'
@@ -37,11 +38,20 @@ function ConnectAI({ settings, onSettings, onNext, onBlank }: {
 }) {
   const [status, setStatus] = useState<EngineStatus | null>(null)
   const check = useCallback(() => api.engine().then(setStatus).catch(() => setStatus(null)), [])
+  const ready0 = !!status?.ready
   useEffect(() => {
     void check()
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void check() }, 4000)
-    return () => clearInterval(t)
-  }, [check, settings.ai_engine, settings.api_key.configured, settings.api_keys])
+    if (ready0) return  // connected: nothing to wait for (re-checked when the engine or key changes)
+    // Waiting for a login or install: check every 4 s at first, then less often (each check runs the CLI).
+    let delay = 4000, timer = 0
+    const tick = () => {
+      if (document.visibilityState === 'visible') void check()
+      delay = Math.min(delay * 1.5, 30000)
+      timer = window.setTimeout(tick, delay)
+    }
+    timer = window.setTimeout(tick, delay)
+    return () => window.clearTimeout(timer)
+  }, [check, ready0, settings.ai_engine, settings.api_key.configured, settings.api_keys])
   // Claude Code stays the default when it's installed; otherwise Codex, when that's installed.
   useEffect(() => {
     if (settings.ai_engine !== 'claude-cli') return
@@ -187,6 +197,7 @@ export default function SetupWizard() {
   useEffect(() => { document.getElementById('step-title')?.focus({ preventScroll: true }); window.scrollTo({ top: 0 }) }, [step, blank])
 
   const go = (next: SetupStep) => {
+    if (next !== step && !confirmLeave()) return  // e.g. unsaved fixes in Review
     setBlank(false)
     setStep(next)
     api.setupStep(next).then(setSetup).catch(() => {})
@@ -257,7 +268,10 @@ export default function SetupWizard() {
       <Panel eyebrow="Review" title="Is this your CV?"
         intro="Check what was read. Nothing is saved until you click Save my profile.">
         <ReviewProfile draft={setup.draft!} onSaved={() => { void refresh(); go('targets') }}
-          onRestart={() => api.discardDraft().then((s) => { setSetup(s); go('upload') })} />
+          onRestart={() => {
+            if (!confirmLeave()) return  // asks only when there are unsaved fixes
+            api.discardDraft().then((s) => { setSetup(s); go('upload') }).catch((e) => setError((e as Error).message))
+          }} />
       </Panel>
     )
   } else if (step === 'targets') {

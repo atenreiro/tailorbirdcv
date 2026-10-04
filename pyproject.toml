@@ -24,9 +24,9 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "playwright>=1.48",
     "platformdirs>=4.0",
-    "anthropic>=0.40",
+    "anthropic>=1.11",  # messages.create(output_config=…) structured outputs, as tested
     "keyring>=25",
-    "openai>=1.60",
+    "openai>=3.24",  # Responses API with strict json_schema, as tested
 ]
 
 [project.scripts]

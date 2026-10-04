@@ -82,12 +82,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.40" },
+    { name = "anthropic", specifier = ">=1.11" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25" },
-    { name = "openai", specifier = ">=1.60" },
+    { name = "openai", specifier = ">=3.24" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "playwright", specifier = ">=1.48" },
     { name = "pydantic", specifier = ">=2.6" },

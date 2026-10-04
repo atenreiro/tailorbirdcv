@@ -37,14 +37,39 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Version matches the tag
         run: test "v$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)" = "$GITHUB_REF_NAME"
+      - name: Absolute image links in the PyPI description (relative ones only work on GitHub)
+        run: sed -i -E "s#(src=\"|\]\()docs/#\1https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/docs/#g" README.md
       - run: uv build
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
-  publish:
+  smoke:
+    # The exact files about to be published: installed in a clean environment, checked outside the checkout.
     needs: build
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the wheel and check it
+        shell: bash
+        run: |
+          uv venv clean
+          uv pip install --python clean $(ls dist/*.whl)
+          if [ -x clean/Scripts/python.exe ]; then PY=clean/Scripts/python.exe; else PY=clean/bin/python; fi
+          $PY -m autocv.cli --version
+          $PY -c "from autocv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); assert (paths.DATA / 'words.txt.gz').is_file()"
+          AUTOCV_PRIVATE=$PWD/smoke-data $PY -m autocv.cli doctor || true  # prints what this runner lacks; never fails the release
+
+  publish:
+    needs: [build, smoke]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

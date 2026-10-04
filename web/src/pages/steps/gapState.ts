@@ -1,7 +1,9 @@
 // Shared by the Gaps step and the workspace stepper: which questions exist and where each stands.
 import type { Analysis, AppAnswer, Proposal } from '../../api'
 
-export type Draft = Proposal & { state: 'pending' | 'approved' | 'rejected'; id?: string }
+export type Draft = Proposal & { state: 'pending' | 'approved' | 'rejected'; id?: string; uid?: string }
+/** A proposal's stable identity (its position in the list can change while it's being approved). */
+export const draftKey = (d: Draft) => d.uid ?? `${d.question_id}|${d.target}|${d.text}`
 export type Question = { id: string; requirement: string; question: string; prefill_from?: string }
 export type GapState = 'open' | 'draft' | 'pending' | 'approved' | 'no_experience'
 

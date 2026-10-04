@@ -525,7 +525,7 @@ export default function Profile() {
 
           {view === 'yaml' && (
             <>
-              <p className="text-sm text-muted">The raw file (<span className="font-mono text-xs">private/profile.yaml</span>). It’s validated on save, and duplicate ids or a bad structure are rejected.</p>
+              <p className="text-sm text-muted">The raw file (<span className="font-mono text-xs">profile.yaml</span> in your data folder; Settings → System check shows where). It’s validated on save, and duplicate ids or a bad structure are rejected.</p>
               <textarea className="min-h-[640px] resize-y rounded-[14px] border border-ink bg-ink px-5 py-[18px] font-mono text-[13px] leading-[1.65] text-[#dfe5fb] outline-none focus:shadow-[0_0_0_3px_rgb(77_107_255/0.45)]" aria-label="Profile YAML" spellCheck={false} value={yaml} onChange={(e) => setYaml(e.target.value)} />
             </>
           )}

@@ -85,7 +85,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
             <span className="font-mono text-xs text-accent">now</span>
             <div>
               <p className="font-semibold text-ink">Current version</p>
-              <p className="font-mono text-[11px] text-faint">{kind === 'profile' ? 'private/profile.yaml' : 'private/knowledge.yaml'}</p>
+              <p className="font-mono text-[11px] text-faint">{kind === 'profile' ? 'profile.yaml' : 'knowledge.yaml'} · in your data folder</p>
             </div>
             <span className="justify-self-start px-3 text-[13px] text-faint sm:justify-self-end">Current</span>
           </div>

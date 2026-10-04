@@ -2,7 +2,7 @@
 
 /* v3 design system: cool greys, one blue accent, Instrument Sans (condensed for display) + Geist Mono. */
 @theme {
-  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --font-sans: "Instrument Sans Variable", "Instrument Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
 
   --color-paper: #e9ecf1;      /* page */
