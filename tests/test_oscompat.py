@@ -73,3 +73,25 @@ def test_reveal_command_per_os(monkeypatch, tmp_path):
     monkeypatch.setattr(oscompat.shutil, "which", lambda name: "/usr/bin/dbus-send")
     cmd = oscompat.reveal_command(target, tmp_path)
     assert cmd[0] == "dbus-send" and f"array:string:{Path(target).resolve().as_uri()}" in cmd
+
+
+def test_reads_retry_while_windows_has_the_file_mid_replace(tmp_path, monkeypatch):
+    """On Windows, opening a file another thread is replacing raises PermissionError for a moment."""
+    from autocv import oscompat
+    f = tmp_path / "profile.yaml"
+    f.write_text("a: 1\r\n", encoding="utf-8")
+    real, calls = Path.read_bytes, {"n": 0}
+
+    def flaky(self):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+    monkeypatch.setattr(oscompat, "IS_WINDOWS", True)
+    monkeypatch.setattr(oscompat.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Path, "read_bytes", flaky)
+    assert oscompat.read_text(f) == "a: 1\n" and calls["n"] == 3
+    monkeypatch.setattr(oscompat, "IS_WINDOWS", False)  # elsewhere it's a real error
+    calls["n"] = 0
+    with pytest.raises(PermissionError):
+        oscompat.read_bytes(f)

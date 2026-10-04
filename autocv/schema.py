@@ -19,7 +19,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .oscompat import replace as _replace
+from .oscompat import read_text as _read_text, replace as _replace
 
 Track = Literal["manager", "ic", "hybrid"]
 Source = Literal["resume", "prep_guide", "interview"]
@@ -265,8 +265,7 @@ _Dumper.add_representer(str, _str_presenter)
 
 
 def load_yaml(path: Path) -> dict:
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return yaml.safe_load(_read_text(path)) or {}
 
 
 def dump_yaml(data: dict, path: Path) -> None:

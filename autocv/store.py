@@ -105,7 +105,7 @@ def _digest(data: bytes) -> str:
 
 
 def file_version(path: Path) -> str:
-    return _digest(path.read_bytes()) if path.exists() else "none"
+    return _digest(oscompat.read_bytes(path)) if path.exists() else "none"
 
 
 def _write_json_atomic(path: Path, data: dict) -> None:
@@ -230,7 +230,7 @@ class Store:
 
     def settings(self) -> dict:
         try:
-            saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
+            saved = json.loads(oscompat.read_text(self.settings_path))
         except (OSError, ValueError):
             saved = {}
         saved = saved if isinstance(saved, dict) else {}
@@ -258,7 +258,7 @@ class Store:
                 else:
                     data[key] = value
             try:  # the setup wizard's progress lives in the same file; keep it
-                setup = json.loads(self.settings_path.read_text(encoding="utf-8")).get("setup")
+                setup = json.loads(oscompat.read_text(self.settings_path)).get("setup")
             except (OSError, ValueError, AttributeError):
                 setup = None
             self.private.mkdir(parents=True, exist_ok=True)
@@ -271,7 +271,7 @@ class Store:
     def setup_state(self) -> dict:
         """{completed, step}. An install that has a profile but predates the wizard counts as set up."""
         try:
-            saved = json.loads(self.settings_path.read_text(encoding="utf-8")).get("setup")
+            saved = json.loads(oscompat.read_text(self.settings_path)).get("setup")
         except (OSError, ValueError, AttributeError):
             saved = None
         if not isinstance(saved, dict):
@@ -283,7 +283,7 @@ class Store:
         with self.lock:
             state = {**self.setup_state(), **changes}
             try:
-                data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+                data = json.loads(oscompat.read_text(self.settings_path))
                 data = data if isinstance(data, dict) else {}
             except (OSError, ValueError):
                 data = {}
@@ -299,7 +299,7 @@ class Store:
     def setup_draft(self) -> dict | None:
         """The imported (not yet saved) profile with its source text, kept so a refresh never loses it."""
         try:
-            data = json.loads(self.setup_draft_path.read_text(encoding="utf-8"))
+            data = json.loads(oscompat.read_text(self.setup_draft_path))
         except (OSError, ValueError):
             return None
         return data if isinstance(data, dict) else None
@@ -358,7 +358,7 @@ class Store:
             k = self.knowledge()
             return {x.id for x in [*k.answers, *k.preferences]}, list(k.retired_ids)
         except Exception:  # noqa: BLE001 — invalid or unparsable: salvage what we can
-            raw = _parse(path.read_bytes())
+            raw = _parse(oscompat.read_bytes(path))
             raw = raw if isinstance(raw, dict) else {}
             retired = [str(i) for i in raw.get("retired_ids") or [] if isinstance(i, (str, int))]
             ids: set[str] = set()
@@ -393,7 +393,7 @@ class Store:
         folder = self.history_dir(kind)
         for f in folder.glob("*.yaml") if folder.exists() else []:
             try:
-                walk(_parse(f.read_bytes()))
+                walk(_parse(oscompat.read_bytes(f)))
             except Exception:  # noqa: BLE001 — a damaged snapshot just contributes nothing
                 continue
         return ids
@@ -416,9 +416,9 @@ class Store:
 
     def _write_with_history(self, kind: str, path: Path, data: dict, cause: str) -> None:
         """Write `data` atomically; if that changes the file, keep the previous version."""
-        old = path.read_bytes() if path.exists() else None
+        old = oscompat.read_bytes(path) if path.exists() else None
         dump_yaml(data, path)
-        if old is not None and old != path.read_bytes() and not _same_content(kind, _parse(old), data):
+        if old is not None and old != oscompat.read_bytes(path) and not _same_content(kind, _parse(old), data):
             folder = self.history_dir(kind)
             folder.mkdir(parents=True, exist_ok=True)
             stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -442,7 +442,7 @@ class Store:
         path = (folder / f"{snapshot_id}.yaml").resolve()
         if path.parent != folder.resolve() or not path.exists():
             raise KeyError(snapshot_id)
-        return path.read_text(encoding="utf-8")
+        return oscompat.read_text(path)
 
     def restore(self, kind: str, snapshot_id: str):
         """Restore a previous version. The current one goes to history first (undoable);
@@ -539,7 +539,7 @@ class Store:
         if not p.exists():
             return {}
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
+            data = json.loads(oscompat.read_text(p))
         except (OSError, ValueError) as e:
             log.warning("AutoCV: ignoring unreadable %s (%s); old application links may not resolve", p, e)
             return {}
@@ -585,7 +585,7 @@ class Store:
         meta_path = old / "meta.json"
         if meta_path.exists():
             try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                meta = json.loads(oscompat.read_text(meta_path))
                 if not isinstance(meta, dict):
                     raise ValueError("not a JSON object")
             except (OSError, ValueError) as e:
@@ -628,7 +628,7 @@ class Store:
         for app in self.list_apps():
             if app.get("status") in LEGACY_CLOSED and not app.get("broken"):
                 path = self.app_path(app["id"]) / "meta.json"
-                meta = json.loads(path.read_text(encoding="utf-8"))
+                meta = json.loads(oscompat.read_text(path))
                 outcome = LEGACY_CLOSED[meta["status"]]
                 closed_at = meta.get("closed_at") or meta.get("updated")
                 meta.update(status="closed", outcome=outcome, closed_at=closed_at)
@@ -732,7 +732,7 @@ class Store:
     def meta(self, app_id: str) -> dict:
         path = self.app_path(app_id) / "meta.json"
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(oscompat.read_text(path))
         except (OSError, ValueError) as e:
             raise CorruptApp(f"This application's meta.json can't be read ({e}). Fix or delete the application.") from e
         if not isinstance(data, dict):
@@ -836,7 +836,7 @@ class Store:
             draft = self.app_path(app_id) / "tailored.yaml"
             if not draft.exists():
                 raise FileNotFoundError("Nothing to build yet.")
-            t_bytes, p_bytes = draft.read_bytes(), self.profile_path.read_bytes()
+            t_bytes, p_bytes = oscompat.read_bytes(draft), oscompat.read_bytes(self.profile_path)
         tailored = TailoredResume.model_validate(yaml.safe_load(t_bytes.decode("utf-8")) or {})
         profile = MasterProfile.model_validate(yaml.safe_load(p_bytes.decode("utf-8")) or {})
         return tailored, _digest(t_bytes), profile, render_fingerprint(profile, tailored)
@@ -1129,7 +1129,7 @@ class Store:
         for d in sorted(folder.iterdir(), reverse=True):
             if (d / "sent.json").exists():
                 try:
-                    record = json.loads((d / "sent.json").read_text(encoding="utf-8"))
+                    record = json.loads(oscompat.read_text(d / "sent.json"))
                 except (OSError, ValueError) as e:
                     log.warning("AutoCV: unreadable sent copy %s (%s)", d, e)
                     continue

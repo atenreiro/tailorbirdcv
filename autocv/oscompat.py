@@ -108,6 +108,24 @@ def replace(src: str | Path, dst: str | Path, attempts: int = 20) -> None:
             time.sleep(0.1)  # pragma: no cover
 
 
+def read_bytes(path: str | Path, attempts: int = 20) -> bytes:
+    """Path.read_bytes, retried for up to ~2 s while Windows refuses to open a file that another
+    thread is replacing at that moment (a read that races `replace` gets "Permission denied")."""
+    for i in range(attempts):
+        try:
+            return Path(path).read_bytes()
+        except PermissionError:
+            if not IS_WINDOWS or i == attempts - 1:
+                raise
+            time.sleep(0.1)  # pragma: no cover
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def read_text(path: str | Path) -> str:
+    """UTF-8 text through `read_bytes` (same retry); newlines normalised like open() in text mode."""
+    return read_bytes(path).decode("utf-8").replace("\r\n", "\n")
+
+
 def reveal_command(target: Path | None, folder: Path) -> list[str] | str:
     """The command that shows `target` selected in its folder (or just opens `folder`)."""
     if IS_MAC:
