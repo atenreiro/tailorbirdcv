@@ -34,7 +34,7 @@ const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
 export default function NewApplication() {
   useTitle(['New tailoring'])
   const nav = useNavigate()
-  const [mode, setMode] = useState<'paste' | 'url'>('paste')
+  const [mode, setMode] = useState<'paste' | 'url'>('url')
   const [jd, setJd] = useState('')
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -74,7 +74,7 @@ export default function NewApplication() {
           <p className="text-lg text-body">What role are we going after?</p>
         </div>
         <div role="group" aria-label="Job description source" className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]">
-          {(['paste', 'url'] as const).map((m) => (
+          {(['url', 'paste'] as const).map((m) => (
             <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)}
               className={cx('h-[34px] cursor-pointer rounded-md px-3.5 font-medium transition-colors',
                 mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
