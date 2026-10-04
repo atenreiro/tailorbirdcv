@@ -77,7 +77,8 @@ def test_duplicate_ids_get_suffixes():
     MasterProfile.model_validate(importer.build_profile(raw))
 
 
-def test_text_is_read_from_docx_pdf_and_plain_text():
+def test_text_is_read_from_docx_pdf_and_plain_text(monkeypatch):
+    import shutil
     from docx import Document
     doc = Document()
     for line in RESUME.splitlines():
@@ -86,7 +87,9 @@ def test_text_is_read_from_docx_pdf_and_plain_text():
     doc.save(buf)
     assert "Northwind Bank" in importer.extract_text("cv.docx", buf.getvalue())
     assert "Northwind Bank" in importer.extract_text("cv.txt", RESUME.encode())
-    with pytest.raises(importer.ImportError_, match=r"\.docx"):
+    real_which = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda name: None if name == "textutil" else real_which(name))
+    with pytest.raises(importer.ImportError_, match=r"\.docx"):  # no converter (Windows/Linux): ask for .docx
         importer.extract_text("cv.doc", b"x" * 200)
     with pytest.raises(importer.ImportError_, match="Paste the text"):
         importer.extract_text("scan.txt", b"   ")
@@ -199,3 +202,18 @@ def test_facts_cannot_move_between_employers():
     right = _two_roles(["Saved US$12M by consolidating vendors."],
                        ["Negotiated vendor contracts saving US$1.7M in a single year."])
     assert importer.unverified(right, SOURCE2) == []
+
+
+@pytest.mark.parametrize("data", ["Jane Example — the user Señor, Security VP with 15 years. ".encode("utf-16") * 3,
+                                  ("Jane Example — the user, Security VP with 15 years in banking. " * 3).encode("cp1252"),
+                                  b"\xef\xbb\xbf" + ("Jane Example — the user, Security VP with 15 years. " * 3).encode()])
+def test_text_cvs_in_any_common_encoding(data):
+    text = importer.extract_text("cv.txt", data)
+    assert "the user" in text and "\x00" not in text and "�" not in text
+
+
+def test_binary_without_an_extension_and_pages_files_are_refused():
+    with pytest.raises(importer.ImportError_, match="isn't plain text"):
+        importer.extract_text("cv", b"PK\x03\x04\x00\x00" + b"\x00" * 200)
+    with pytest.raises(importer.ImportError_, match="Export To"):
+        importer.extract_text("cv.pages", b"PK")

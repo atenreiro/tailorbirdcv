@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 import unicodedata
 import zipfile
 
@@ -34,16 +35,56 @@ def extract_text(filename: str, data: bytes) -> str:
         text = _docx_text(data)
     elif name.endswith(".pdf"):
         text = _pdf_text(data)
-    elif name.endswith(".doc"):
-        raise ImportError_("Old .doc files can't be read. Save it as .docx (or PDF) in your word processor first.")
+    elif name.endswith(".pages"):
+        raise ImportError_("Pages files can't be read directly. In Pages, choose File → Export To → Word (or PDF), "
+                           "then upload that file.")
+    elif name.endswith((".doc", ".rtf", ".rtfd", ".odt")):
+        text = _converted_text(name, data)
     elif any(name.endswith(s) for s in TEXT_SUFFIXES if s) or "." not in name:
-        text = data.decode("utf-8", errors="replace")
+        text = _decode_text(data)
     else:
         raise ImportError_("Use a .docx, .pdf or .txt file, or paste the text.")
     text = text.strip()
     if len(text) < 80:
         raise ImportError_("Couldn't find much text in that file (a scanned PDF has none). Paste the text instead.")
     return text[:MAX_TEXT_CHARS]
+
+
+def _decode_text(data: bytes) -> str:
+    """A plain-text CV in whatever encoding its editor used: UTF-8 (with or without BOM), UTF-16 (Notepad's
+    "Unicode"), or Windows-1252 ("ANSI"). Binary data is refused rather than sent to the AI as gibberish."""
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data[3:].decode("utf-8", errors="replace")
+    if b"\x00" in data[:4096]:
+        raise ImportError_("That file isn't plain text. Upload a .docx, .pdf or .txt file, or paste the text.")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def _converted_text(name: str, data: bytes) -> str:
+    """.doc, .rtf and .odt through macOS's built-in `textutil` (other systems: ask for .docx or PDF)."""
+    import shutil
+    import subprocess
+    import tempfile
+    tool = shutil.which("textutil")
+    if not tool:
+        raise ImportError_(f"{Path(name).suffix} files can't be read here. Save your CV as .docx (or PDF) in your word "
+                           "processor first.")
+    with tempfile.TemporaryDirectory(prefix="autocv-cv-") as tmp:
+        src = Path(tmp) / f"cv{Path(name).suffix}"
+        src.write_bytes(data)
+        try:
+            out = subprocess.run([tool, "-convert", "txt", "-encoding", "UTF-8", "-stdout", str(src)],
+                                 capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            out = None
+    if not out or out.returncode != 0:
+        raise ImportError_("That file couldn't be read. Save your CV as .docx (or PDF) first, then upload it.")
+    return out.stdout.decode("utf-8", errors="replace")
 
 
 def _docx_text(data: bytes) -> str:

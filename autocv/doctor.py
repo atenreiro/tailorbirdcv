@@ -22,6 +22,10 @@ from .engine import Engine
 from .oscompat import IS_MAC, IS_WINDOWS
 
 
+# How to install Codex here: Homebrew on macOS (npm -g often fails there with EACCES), npm elsewhere.
+CODEX_INSTALL = "brew install --cask codex" if IS_MAC else "npm i -g @openai/codex"
+
+
 def _check(id_: str, label: str, status: str, detail: str, fix: str = "", level: str = "required",
            action: dict | None = None, items: list[dict] | None = None) -> dict:
     out = {"id": id_, "label": label, "status": status, "detail": detail, "fix": fix, "level": level}
@@ -32,12 +36,37 @@ def _check(id_: str, label: str, status: str, detail: str, fix: str = "", level:
     return out
 
 
+def _writable(folder: Path) -> bool:
+    """Can AutoCV create files here? On Windows os.access ignores permissions (ACLs, Controlled Folder Access),
+    so try it with a temporary file that's removed at once."""
+    if not IS_WINDOWS:
+        return os.access(folder, os.W_OK)
+    import tempfile  # pragma: no cover
+    try:  # pragma: no cover
+        with tempfile.NamedTemporaryFile(dir=folder, prefix=".autocv-check-"):
+            return True
+    except OSError:  # pragma: no cover
+        return False
+
+
 def _data(private: Path) -> dict:
     target = next((p for p in [private, *private.parents] if p.exists()), None)
-    if target is None or not os.access(target, os.W_OK):
+    if target is None or not _writable(target):
         return _check("data", "Data folder", "error", f"{private} isn't writable.",
                       "Set AUTOCV_PRIVATE to a folder you can write to, then restart AutoCV.")
+    if IS_WINDOWS and not _private_by_default(private):  # pragma: no cover
+        return _check("data", "Data folder", "warn", f"{private} — outside your user folders, so other accounts on "
+                      "this PC may be able to read it.", "Unless you need it there, leave AUTOCV_PRIVATE unset (AutoCV "
+                      "then uses your private AppData folder).", level="recommended")
     return _check("data", "Data folder", "ok", str(private))
+
+
+def _private_by_default(folder: Path) -> bool:  # pragma: no cover - Windows only
+    """Under the user's own profile (where Windows gives other accounts no access by default)."""
+    try:
+        return folder.resolve().is_relative_to(Path.home().resolve())
+    except OSError:
+        return True
 
 
 def _profile(private: Path) -> dict:
@@ -59,7 +88,7 @@ async def _engine(engine: Engine) -> dict:
                       action={"kind": "test-ai", "label": "Test AI"})
     fix = {
         "claude-cli": "Install Claude Code and log in (`claude`, then /login), or choose another engine or an API key in Settings.",
-        "codex-cli": "Install Codex (`npm i -g @openai/codex`) and sign in with ChatGPT (`codex login`), "
+        "codex-cli": f"Install Codex (`{CODEX_INSTALL}`) and sign in with ChatGPT (`codex login`), "
                      "or choose another engine in Settings.",
     }.get(st.get("engine")) or ("Add or fix the API key in Settings → AI engine." if "key" in (st.get("detail") or "").lower()
                                 else "Check the model and your connection in Settings → AI engine, or choose another engine.")
@@ -85,13 +114,13 @@ def _codex(engine_name: str | None) -> dict | None:
     shown = ".".join(map(str, version))
     if version[:2] < CODEX_MIN_VERSION:
         return _check("codex", "Codex CLI version", "warn", f"Codex {shown} is older than AutoCV was tested with.",
-                      "Update it: `npm i -g @openai/codex` (or your installer's update command).")
+                      ("Update it: `brew upgrade --cask codex`" if IS_MAC else "Update it: `npm i -g @openai/codex`")
+                      + " (or your installer's update command).")
     return _check("codex", "Codex CLI version", "ok", f"Codex {shown}.")
 
 
 def _pdf(preferred: str | None) -> dict:
     engines = pdf.detect()
-    test = {"kind": "test-pdf", "label": "Test PDF"}
     try:
         chosen = pdf.resolve(preferred, engines)
     except RuntimeError:
@@ -100,6 +129,11 @@ def _pdf(preferred: str | None) -> dict:
                 "Install Microsoft Word, or LibreOffice (free, libreoffice.org), then Check again.")
         return _check("pdf", "PDF engine", "error", "Neither Microsoft Word nor LibreOffice was found; "
                       "only the Word document can be built.", hint, level="recommended")
+    test = {"kind": "test-pdf", "label": "Test PDF",
+            "hint": "" if chosen != "word" else ("Word runs hidden. The first time, look for a macOS prompt to let AutoCV control Word, and for "
+                     "Word's “Grant File Access” window (click Select). Word must be activated." if IS_MAC else
+                     "Word runs hidden. If Word has never been opened on this PC, open it once, sign in and close "
+                     "its first-run prompts." if IS_WINDOWS else "")}
     found = ", ".join(f"{e['name']}{' ' + e['version'] if e['version'] else ''}" for e in engines if e["available"])
     lo = next((e for e in engines if e["id"] == "libreoffice"), {})
     sandboxed = next((k for k in ("/snap/", "/flatpak/") if k in (lo.get("path") or "")), None)
@@ -189,7 +223,8 @@ def _browser() -> dict:
 
 
 def _node() -> dict:
-    exe = shutil.which("node")
+    from .engine import find_node
+    exe = find_node()
     if not exe:
         return _check("node", "Node.js", "warn", "Not installed.",
                       "Only needed to install Codex with npm (nodejs.org), or to build AutoCV from source.",
@@ -209,6 +244,8 @@ def _keychain(needed: bool) -> dict:
     fix = ("Install a Secret Service keychain (GNOME Keyring or KWallet) and log in again, or start AutoCV with the "
            "key in an environment variable, e.g. OPENAI_API_KEY=… autocv serve."
            if not (IS_MAC or IS_WINDOWS) else
+           'Start AutoCV with the key in an environment variable instead: in PowerShell, $env:ANTHROPIC_API_KEY="…"; '
+           "autocv serve" if IS_WINDOWS else
            "Start AutoCV with the key in an environment variable instead, e.g. ANTHROPIC_API_KEY=… autocv serve.")
     return _check("keychain", "Keychain for API keys", "warn" if needed else "ok",
                   "No system keychain is available, so API keys can't be saved from the app.", fix,
@@ -223,7 +260,7 @@ async def _ai_options() -> dict:
     claude, codex = await asyncio.gather(ClaudeCLIEngine().status(), CodexCLIEngine().status())
     items = []
     for engine_id, st, install in (("claude-cli", claude, "Install Claude Code, then run claude and /login"),
-                                   ("codex-cli", codex, "npm i -g @openai/codex, then codex login")):
+                                   ("codex-cli", codex, f"{CODEX_INSTALL}, then codex login")):
         missing = "not found" in (st.get("detail") or "").lower()
         items.append({"id": engine_id, "label": ENGINES[engine_id].label,
                       "state": "ready" if st.get("ready") else "missing" if missing else "needs-login",
@@ -231,10 +268,11 @@ async def _ai_options() -> dict:
     for engine_id, spec in ENGINES.items():
         if spec.kind != "api":
             continue
-        key, source = apikey.get(spec.provider)
+        key, source = await asyncio.to_thread(apikey.get, spec.provider)  # may wait on a keychain prompt
         items.append({"id": engine_id, "label": spec.label, "state": "ready" if key else "no-key",
                       "detail": ("Key saved." if source == "keychain" else f"Key from {apikey.PROVIDERS[spec.provider].env}.")
-                      if key else "No key yet (pay per use)."})
+                      if key else "Can't read the keychain (locked, or access denied) — unlock it or allow access, then "
+                                  "Check again." if source == "locked" else "No key yet (pay per use)."})
     usable = [i for i in items if i["state"] == "ready"]
     if usable:
         return _check("ai_options", "AI", "ok", f"Ready to use: {', '.join(i['label'] for i in usable)}.",

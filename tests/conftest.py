@@ -34,5 +34,5 @@ def memory_keyring(monkeypatch):
 def client_for(app) -> TestClient:
     """A client that behaves like the AutoCV UI: allowed host + the X-AutoCV header."""
     client = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"})
-    client.cookies.set("autocv_key", app.state.access_key)  # like a browser opened from `autocv serve`'s link
+    client.cookies.set(app.state.cookie_name, app.state.access_key)  # like a browser opened from `autocv serve`'s link
     return client

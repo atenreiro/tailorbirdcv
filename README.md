@@ -20,7 +20,7 @@ AutoCV is a small web app that runs on your own computer (macOS, Windows or Linu
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, a Python tool installer.
 - **An AI**, one of:
   - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.
-  - **[Codex](https://github.com/openai/codex)**, logged in with your ChatGPT subscription (`npm i -g @openai/codex`, then `codex login`). No extra cost.
+  - **[Codex](https://github.com/openai/codex)**, logged in with your ChatGPT subscription (macOS: `brew install --cask codex`; Windows/Linux: `npm i -g @openai/codex`; then `codex login`). No extra cost.
   - **An API key**, billed per use: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) (which uses the same Claude model by default). Keys are stored in your system's keychain, never in AutoCV's files.
 - **Something to make PDFs**: Microsoft Word (macOS, Windows) or the free [LibreOffice](https://www.libreoffice.org/) (all systems). Without either, you still get the Word document.
 

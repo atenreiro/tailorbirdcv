@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from . import ats, factcheck
+from .oscompat import IS_WINDOWS
 from .ingest import ingest, merge_reingest
 from .render import docx_text, render
 from .schema import MasterProfile, dump_yaml, load_profile, load_tailored, load_yaml
@@ -265,20 +266,33 @@ def cmd_serve(args) -> int:
 
     from .api import create_app
     from .paths import web_dir
+    import socket
+    # Claim the port first: if something else already listens there (another AutoCV, a dev server), never open
+    # this data folder's private link on it.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if not IS_WINDOWS:  # reuse a port left in TIME_WAIT; on Windows this flag would allow two listeners
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", args.port))
+    except OSError:
+        sock.close()
+        print(f"Port {args.port} is already in use — AutoCV may already be running (open its link from that "
+              f"terminal), or start this one on another port: autocv serve --port {args.port + 1}", file=sys.stderr)
+        return PDF_FAILED
     url = f"http://127.0.0.1:{args.port}/?key={STORE.access_key()}"  # unlocks this browser (see api.guard)
     built = web_dir() is not None
     if not built:
         print("note: web UI not built — run `npm --prefix web install && npm --prefix web run build` "
               "(or use `npm --prefix web run dev` on :5173). Serving the API only.")
+    app = create_app()
     print(f"AutoCV → {url}", flush=True)
     print("  (this link unlocks AutoCV in your browser; keep it to yourself)", flush=True)
     if built and not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
-    config = uvicorn.Config(create_app(), host="127.0.0.1", port=args.port,
-                            timeout_graceful_shutdown=SHUTDOWN_GRACE)
+    config = uvicorn.Config(app, host="127.0.0.1", port=args.port, timeout_graceful_shutdown=SHUTDOWN_GRACE)
     logging.getLogger("uvicorn.error").addFilter(_QuietShutdown())
     try:
-        _server_class(uvicorn)(config).run()
+        _server_class(uvicorn)(config).run(sockets=[sock])
     except KeyboardInterrupt:  # uvicorn re-raises the Ctrl+C once it has shut down
         pass
     print("AutoCV stopped.", flush=True)

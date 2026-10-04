@@ -43,18 +43,21 @@ def _provider(provider: str) -> Provider:
 
 
 def get(provider: str = "anthropic") -> tuple[str | None, str | None]:
-    """(key, where it came from: "keychain" | "environment" | None)."""
+    """(key, where it came from: "keychain" | "environment" | None), or (None, "locked") when a keychain exists
+    but reading it failed (locked, or access denied in the system prompt). Can block while the OS asks the user
+    for permission: call it from a thread, never on the event loop."""
     p = _provider(provider)
+    locked = False
     try:
         keyring, KeyringError = _keyring()
         stored = keyring.get_password(SERVICE, p.account)
-    except Exception:  # noqa: BLE001 — no usable keychain backend
-        stored = None
+    except Exception:  # noqa: BLE001
+        stored, locked = None, backend_status()["available"]  # a real keychain that refused: not "no key"
     if stored:
         return stored, "keychain"
     if env := os.environ.get(p.env, "").strip():
         return env, "environment"
-    return None, None
+    return None, "locked" if locked else None
 
 
 def save(key: str, provider: str = "anthropic") -> None:

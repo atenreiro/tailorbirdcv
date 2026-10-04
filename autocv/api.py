@@ -227,6 +227,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     import hmac
     app.state.access_key = access_key = store.access_key()
+    # One cookie per data folder: a second AutoCV (another folder, another port) doesn't lock this one out.
+    import hashlib
+    cookie = app.state.cookie_name = ACCESS_COOKIE + "_" + hashlib.sha256(str(store.private.resolve()).encode()).hexdigest()[:10]
     oscompat.make_private(store.private)  # resumes, profile and the key: not readable by other accounts
 
     @app.exception_handler(AppNotFound)
@@ -250,7 +253,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 target = "/"
             response = RedirectResponse(target, status_code=303)
             if hmac.compare_digest(given.encode(), access_key.encode()):
-                response.set_cookie(ACCESS_COOKIE, access_key, max_age=400 * 24 * 3600, httponly=True,
+                response.set_cookie(cookie, access_key, max_age=400 * 24 * 3600, httponly=True,
                                     samesite="strict", path="/")
             return response
         if request.url.path.startswith("/api/"):
@@ -267,7 +270,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
                                     status_code=403)
             # Only this user's browser: other programs and other accounts on this computer don't have the key.
-            if not hmac.compare_digest(request.cookies.get(ACCESS_COOKIE, "").encode(), access_key.encode()):
+            if not hmac.compare_digest(request.cookies.get(cookie, "").encode(), access_key.encode()):
                 return JSONResponse({"detail": {"code": "locked", "message": "Open AutoCV from the link `autocv serve` "
                                                 "printed in your terminal (it unlocks this browser)."}},
                                     status_code=401)
@@ -480,12 +483,19 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             try:
                 proc = await asyncio.create_subprocess_exec(
                     sys.executable, "-m", "playwright", "install", "chromium",
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-                out, _ = await asyncio.wait_for(proc.communicate(), 900)
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **oscompat.group_kwargs())
+                try:
+                    out, _ = await asyncio.wait_for(proc.communicate(), 900)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    oscompat.kill_tree(proc.pid)  # never leave a download running behind a "failed" message
+                    raise
                 lines = [ln for ln in out.decode(errors="replace").splitlines() if ln.strip()]
                 ok = proc.returncode == 0
                 browser_install.update(state="done" if ok else "failed",
                                        detail="Installed." if ok else (lines[-1] if lines else "Install failed."))
+            except asyncio.TimeoutError:
+                browser_install.update(state="failed", detail="The download took more than 15 minutes and was stopped. "
+                                                              "Check your connection, then try again.")
             except Exception as e:  # noqa: BLE001
                 browser_install.update(state="failed", detail=str(e) or "Install failed.")
 

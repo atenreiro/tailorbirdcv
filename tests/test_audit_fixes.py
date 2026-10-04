@@ -61,7 +61,7 @@ def test_cross_site_post_without_header_is_refused(env):
     res = raw.post("/api/applications", json={"jd": JD})
     assert res.status_code == 403 and "cross-site" in res.json()["detail"]
     assert raw.get("/api/applications").status_code == 401          # no access key: nothing to read either
-    raw.cookies.set("autocv_key", store.access_key())
+    raw.cookies.set(raw.app.state.cookie_name, store.access_key())
     assert raw.get("/api/applications").status_code == 200          # reading with the key is fine
     headers = raw.get("/api/applications").headers
     assert headers["X-Frame-Options"] == "SAMEORIGIN"                 # own PDF preview may frame…
@@ -320,7 +320,7 @@ def test_the_api_needs_this_users_access_key(env):
     raw = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"}, follow_redirects=False)
     r = raw.get("/api/profile")
     assert r.status_code == 401 and r.json()["detail"]["code"] == "locked"
-    assert raw.get("/?key=wrong").status_code == 303 and "autocv_key" not in raw.cookies
+    assert raw.get("/?key=wrong").status_code == 303 and app.state.cookie_name not in raw.cookies
     r = raw.get(f"/applications?key={store.access_key()}&x=1")
     assert r.status_code == 303 and r.headers["location"] == "/applications?x=1"  # the key leaves the address bar
     cookie = r.headers["set-cookie"].lower()
@@ -377,3 +377,53 @@ def test_profile_create_ignores_fields_that_widen_the_fact_check(env):
                                     "summary_facts": [{"id": "s1", "text": "t", "source": "interview", "tags": ["x"]}]})
     assert "vocabulary" not in shaped and "synonyms" not in shaped and "retired_ids" not in shaped
     assert shaped["summary_facts"] == [{"id": "s1", "text": "t"}]
+
+
+def test_serve_never_opens_its_link_on_a_busy_port(tmp_path, monkeypatch, capsys):
+    import argparse
+    import socket
+    from autocv import cli
+    busy = socket.socket()
+    busy.bind(("127.0.0.1", 0))
+    busy.listen()
+    port = busy.getsockname()[1]
+    opened = []
+    monkeypatch.setattr(cli, "_open_when_ready", lambda *a, **k: opened.append(a))
+    try:
+        code = cli.cmd_serve(argparse.Namespace(port=port, no_browser=False))
+    finally:
+        busy.close()
+    out = capsys.readouterr()
+    assert code == cli.PDF_FAILED and "already in use" in out.err
+    assert "?key=" not in out.out and not opened
+
+
+def test_each_data_folder_has_its_own_cookie(tmp_path):
+    a, b = Store(tmp_path / "a"), Store(tmp_path / "b")
+    (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+    assert create_app(a, FakeEngine()).state.cookie_name != create_app(b, FakeEngine()).state.cookie_name
+
+
+def test_a_failed_pdf_test_offers_the_other_engine(monkeypatch):
+    from autocv import pdf
+    monkeypatch.setattr(pdf, "detect", lambda: [{"id": "word", "name": "Microsoft Word", "available": True, "path": None, "version": None},
+                                                {"id": "libreoffice", "name": "LibreOffice", "available": True, "path": None, "version": None}])
+
+    def failing(docx, pdf_path=None, timeout=0, engine=None):
+        raise RuntimeError("Word did not produce the PDF: -1743")
+    monkeypatch.setattr(pdf, "to_pdf", failing)
+    r = pdf.test_conversion("word")
+    assert not r["ok"] and r["alternative"] == "libreoffice"
+
+
+def test_a_keychain_that_refuses_is_not_no_key(monkeypatch):
+    from autocv import apikey
+
+    class Refusing:
+        def get_password(self, *a):
+            raise RuntimeError("User interaction is not allowed.")
+    import keyring
+    monkeypatch.setattr(apikey, "_keyring", lambda: (type("K", (), {"get_password": staticmethod(Refusing().get_password)}), Exception))
+    monkeypatch.setattr(apikey, "backend_status", lambda: {"available": True, "backend": "macOS Keychain"})
+    assert apikey.get("openai") == (None, "locked")
+    assert keyring  # imported for the fixture's backend

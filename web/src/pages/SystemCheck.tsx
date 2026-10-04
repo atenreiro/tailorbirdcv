@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type DoctorCheck, type TestResult } from '../api'
 import { cx } from '../lib'
+import { cacheSettings } from '../settings'
 import { ErrorNote, Spinner } from '../ui'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
@@ -138,10 +139,18 @@ export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
                   )}
                   {c.fix && (c.status !== 'ok' || c.action) && <span className="text-body">→ {c.fix}</span>}
                   {c.id === 'browser' && browser?.state === 'failed' && <span className="text-bad">Install failed: {browser.detail}</span>}
+                  {res === 'running' && c.action?.hint && <span className="text-body">{c.action.hint}</span>}
                   {res && res !== 'running' && (
                     <span role="status" className={res.ok ? 'text-ok' : 'text-bad'}>
                       {res.ok ? '✓ ' : '✗ '}{res.detail}{res.ok && res.seconds ? ` (${res.seconds} s)` : ''}
                     </span>
+                  )}
+                  {res && res !== 'running' && !res.ok && res.alternative && (
+                    <button className="btn self-start" onClick={() => api.saveSettings({ pdf_engine: res.alternative as 'word' | 'libreoffice' })
+                      .then((next) => { cacheSettings(next); setResults((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== c.id))); void load() })
+                      .catch((e) => setError((e as Error).message))}>
+                      Use {res.alternative === 'libreoffice' ? 'LibreOffice' : 'Word'} instead
+                    </button>
                   )}
                 </span>
                 {c.action && <span className="flex-none">{act(c)}</span>}

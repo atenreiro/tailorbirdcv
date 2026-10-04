@@ -144,7 +144,7 @@ export interface EngineStatus { engine: string; ready: boolean; model?: string; 
 /** The AI engines (mirrors engine.ENGINES): two subscriptions through a local app, three API keys. */
 export type EngineId = 'claude-cli' | 'codex-cli' | 'anthropic-api' | 'openai-api' | 'openrouter-api'
 export type KeyProvider = 'anthropic' | 'openai' | 'openrouter'
-export interface ApiKeyInfo { configured: boolean; source: 'keychain' | 'environment' | null; masked: string | null; env?: string; prefix?: string }
+export interface ApiKeyInfo { configured: boolean; source: 'keychain' | 'environment' | 'locked' | null; masked: string | null; env?: string; prefix?: string }
 export interface EngineInfo {
   id: EngineId; label: string; kind: 'subscription' | 'api'
   model_setting: 'api_model' | 'openai_model' | 'codex_model' | 'openrouter_model' | null
@@ -159,10 +159,10 @@ export type Platform = 'macos' | 'windows' | 'linux'
 export interface DoctorCheck {
   id: string; label: string; status: 'ok' | 'warn' | 'error'; detail: string; fix: string
   level?: 'required' | 'recommended' | 'optional' | 'info'
-  action?: { kind: 'install-browser' | 'test-pdf' | 'test-ai' | 'settings'; label: string }
+  action?: { kind: 'install-browser' | 'test-pdf' | 'test-ai' | 'settings'; label: string; hint?: string }
   items?: { id: string; label: string; state: 'ready' | 'missing' | 'needs-login' | 'no-key'; detail: string }[]
 }
-export interface TestResult { ok: boolean; detail: string; seconds: number; engine?: string | null }
+export interface TestResult { ok: boolean; detail: string; seconds: number; engine?: string | null; alternative?: string | null }
 /** Who the resume is for: steers the AI's prompts and sets the page limit (never a source of facts). */
 export interface Targets { field: string; seniority: string; roles: string; region: string; spelling: 'US' | 'UK'; pages: 1 | 2 | 3; pack: string }
 export interface ThemeInfo { id: string; name: string; description: string; fonts: string[]; accent: string; ink: string; rule: string; name_font: string; paper: 'letter' | 'a4' }

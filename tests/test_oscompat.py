@@ -1,5 +1,6 @@
 """OS differences: locks, read-only folders, reserved names, the Windows claude.cmd wrapper."""
 
+import os
 import stat
 import threading
 import time
@@ -52,8 +53,8 @@ def test_windows_claude_cmd_runs_its_script_with_node(tmp_path, monkeypatch):
     script.parent.mkdir(parents=True)
     cmd.write_text("@echo off", encoding="utf-8")
     script.write_text("", encoding="utf-8")
-    monkeypatch.setattr(engine.shutil, "which", lambda name: "C:/node/node.exe" if name == "node" else None)
-    assert engine._windows_command(str(cmd)) == ["C:/node/node.exe", str(script)]
+    monkeypatch.setattr(engine, "find_node", lambda: "C:/node/node.exe")
+    assert engine._windows_command(str(cmd)) == ["C:/node/node.exe", str(script)]  # older Claude Code: cli.js
     assert engine._windows_command("C:/claude/claude.exe") == ["C:/claude/claude.exe"]
     script.unlink()
     with pytest.raises(engine.EngineError, match="claude.exe"):
@@ -95,3 +96,43 @@ def test_reads_retry_while_windows_has_the_file_mid_replace(tmp_path, monkeypatc
     calls["n"] = 0
     with pytest.raises(PermissionError):
         oscompat.read_bytes(f)
+
+
+def _shim(folder, name, target_rel, node_runs=False):
+    """A Windows .cmd shim like npm writes: runs %dp0%\\<target> (with node first for scripts)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    win_rel = target_rel.replace("/", "\\")
+    body = (f'@ECHO off\r\nSET dp0=%~dp0\r\n"%_prog%"  "%dp0%\\{win_rel}" %*\r\n' if node_runs
+            else f'@ECHO off\r\n"%dp0%\\{win_rel}"   %*\r\n')
+    (folder / name).write_text(body, encoding="utf-8")
+    target = folder / target_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("", encoding="utf-8")
+    return folder / name, target
+
+
+def test_windows_npm_claude_runs_its_native_exe(tmp_path, monkeypatch):
+    """Claude Code's npm package now ships bin/claude.exe (no cli.js): run it directly."""
+    monkeypatch.setattr(oscompat, "IS_WINDOWS", True)
+    cmd, exe = _shim(tmp_path / "npm", "claude.cmd", "node_modules/@anthropic-ai/claude-code/bin/claude.exe")
+    assert engine._windows_command(str(cmd)) == [str(exe.resolve())]
+
+
+def test_windows_pnpm_shim_runs_its_script_with_node(tmp_path, monkeypatch):
+    monkeypatch.setattr(oscompat, "IS_WINDOWS", True)
+    cmd, js = _shim(tmp_path / "pnpm", "codex.cmd", "global/5/node_modules/@openai/codex/bin/codex.js", node_runs=True)
+    monkeypatch.setattr(engine, "find_node", lambda: "C:/node/node.exe")
+    assert engine._windows_command(str(cmd), "codex") == ["C:/node/node.exe", str(js.resolve())]
+    monkeypatch.setattr(engine, "find_node", lambda: None)
+    with pytest.raises(engine.EngineError, match="needs Node.js"):
+        engine._windows_command(str(cmd), "codex")
+
+
+def test_cli_env_puts_the_cli_and_node_first_on_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine, "find_node", lambda: str(tmp_path / "node" / "bin" / "node"))
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    env = engine.cli_env(str(tmp_path / "brew" / "bin" / "codex"))
+    parts = env["PATH"].split(os.pathsep)
+    assert parts[0] == str(tmp_path / "brew" / "bin") and str(tmp_path / "node" / "bin") in parts and parts[-1] == "/usr/bin"
+    assert "CLAUDE_CODE_USE_BEDROCK" not in env

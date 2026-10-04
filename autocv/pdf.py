@@ -104,6 +104,8 @@ try {
   try { $word = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application') } catch { }
   if ($null -eq $word) {
     $before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    # Recorded first: if Word blocks inside New-Object (first run, activation), a timeout can still find it.
+    Set-Content -LiteralPath ($env:AUTOCV_PIDFILE + '.before') -Value ($before -join ',') -Encoding ascii
     $word = New-Object -ComObject Word.Application
     $created = $true
     $new = @(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } | ForEach-Object { $_.Id })
@@ -254,8 +256,9 @@ def test_conversion(engine: str | None = None) -> dict:
             detail = "A test page converted fine." if ok else "No PDF came back."
         except Exception as e:  # noqa: BLE001 — report any failure as text
             ok, detail = False, str(e)
+    other = next((e["id"] for e in detect() if e["available"] and e["id"] != chosen), None)
     return {"ok": ok, "engine": NAMES.get(chosen, chosen), "seconds": round(time.monotonic() - start, 1),
-            "detail": detail}
+            "detail": detail, "alternative": None if ok else other}
 
 
 def detect() -> list[dict]:
@@ -297,6 +300,7 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
                          pidfile=pidfile)
                 finally:
                     pidfile.unlink(missing_ok=True)
+                    Path(str(pidfile) + ".before").unlink(missing_ok=True)
             else:
                 _lo_copy(docx, src)
                 _run(_lo_command(src, work), timeout, dst, engine, work)
@@ -339,6 +343,9 @@ def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path, env
         lines = [ln.strip() for ln in (out or b"").decode(errors="replace").splitlines() if ln.strip()]
         if engine == "word":
             detail = lines[-1] if lines else _word_dialog_hint(work)
+            if IS_MAC and ("-1743" in detail or "not authorized to send apple events" in detail.lower()):
+                detail = ("macOS isn't letting AutoCV control Word. Open System Settings → Privacy & Security → "
+                          "Automation, and allow your terminal (or Python) to control Microsoft Word, then try again.")
         else:
             detail = lines[-1] if lines else "no output was produced."
         raise RuntimeError(f"{NAMES[engine]} did not produce the PDF: {detail}")
@@ -347,21 +354,31 @@ def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path, env
 def _word_dialog_hint(work: Path) -> str:
     if IS_MAC:
         return (f"It may be waiting on a dialog: the first time, macOS asks Word for access to {work} "
-                "(“Grant File Access”, click Select), or to allow AutoCV to control Word. Answer it in Word, "
-                "then rebuild.")
+                "(“Grant File Access”, click Select), or to allow AutoCV to control Word; Word may also need to be "
+                "activated (signed in). Open Word, answer any dialog, then rebuild.")
     return ("It may be waiting on a dialog (activation, sign-in or a repair prompt). Open Word once, "
             "answer it, then rebuild.")
 
 
 def _kill_started_word(pidfile: Path | None) -> None:
-    """After a timeout on Windows: stop the hidden Word that this conversion started (and only that one)."""
+    """After a timeout on Windows: stop the hidden Word that this conversion started (and only that one).
+    If Word hung while starting (a first-run or activation prompt), its id was never recorded: stop any Word
+    that appeared since the conversion began and has no window of its own (never the user's open Word)."""
     if not (IS_WINDOWS and pidfile):
         return
-    try:
-        pid = int(pidfile.read_text(encoding="ascii").strip())
+    try:  # pragma: no cover - Windows only
+        oscompat.kill_tree(int(pidfile.read_text(encoding="ascii").strip()))
+        return
     except (OSError, ValueError):
-        return  # Word was already running (the user's), or didn't start
-    oscompat.kill_tree(pid)  # pragma: no cover - Windows only
+        pass
+    before_file = Path(str(pidfile) + ".before")  # pragma: no cover - Windows only
+    if not before_file.exists():  # pragma: no cover
+        return  # Word was already running (the user's), or never started
+    before = before_file.read_text(encoding="ascii").strip()  # pragma: no cover
+    script = (f"$b = @({before or ''}); Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object "  # pragma: no cover
+              "{ $b -notcontains $_.Id -and $_.MainWindowHandle -eq 0 } | Stop-Process -Force")
+    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],  # pragma: no cover
+                   capture_output=True, timeout=30, check=False)
 
 
 def _command(src: Path, dst: Path) -> list[str]:

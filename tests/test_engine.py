@@ -54,3 +54,20 @@ def test_engine_surfaces_cli_errors(fake_claude, monkeypatch):
     monkeypatch.setenv("FAKE_MODE", "error")
     with pytest.raises(EngineError, match="Failed to authenticate"):
         asyncio.run(ClaudeCLIEngine(command=binary).complete("SYS", "TASK: x", {}))
+
+
+@pytest.mark.parametrize("info,ready,needle", [
+    ({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"}, True, "logged in"),
+    ({"loggedIn": True}, True, "logged in"),  # older Claude Code without these fields
+    ({"loggedIn": True, "authMethod": "console", "apiProvider": "firstParty"}, False, "Console"),
+    ({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "bedrock"}, False, "bedrock"),
+    ({"loggedIn": False}, False, "Not logged in"),
+])
+def test_claude_is_ready_only_on_a_subscription_login(monkeypatch, info, ready, needle):
+    eng = ClaudeCLIEngine(command=["claude"])
+
+    async def fake_run(self, args, **kw):
+        return json.dumps(info)
+    monkeypatch.setattr(ClaudeCLIEngine, "_run", fake_run)
+    st = asyncio.run(eng.status())
+    assert st["ready"] is ready and needle in st["detail"]

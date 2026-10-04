@@ -277,7 +277,7 @@ const ENGINE_COPY: Record<EngineId, { lead: string; detail: ReactNode; keyUrl?: 
   'claude-cli': { lead: 'Your Claude subscription. No extra cost.',
     detail: <>Uses the <code className={code}>claude</code> command on this computer: install Claude Code, run <code className={code}>claude</code>, then <code className={code}>/login</code>.</> },
   'codex-cli': { lead: 'Your ChatGPT subscription. No extra cost.',
-    detail: <>Uses OpenAI’s <code className={code}>codex</code> command: install it with <code className={code}>npm i -g @openai/codex</code>, then run <code className={code}>codex login</code> and sign in with ChatGPT. Privacy: on ChatGPT plans OpenAI may use what you send to improve its models unless you turn off “Improve the model for everyone” in ChatGPT’s Data controls. API keys aren’t used for training.</> },
+    detail: <>Uses OpenAI’s <code className={code}>codex</code> command: install it (macOS: <code className={code}>brew install --cask codex</code>; elsewhere: <code className={code}>npm i -g @openai/codex</code>), then run <code className={code}>codex login</code> and sign in with ChatGPT. Privacy: on ChatGPT plans OpenAI may use what you send to improve its models unless you turn off “Improve the model for everyone” in ChatGPT’s Data controls. API keys aren’t used for training.</> },
   'anthropic-api': { lead: 'Pay per use on your Anthropic account.', keyUrl: 'console.anthropic.com',
     detail: 'Claude through your own key, without Claude Code.' },
   'openai-api': { lead: 'Pay per use on your OpenAI account.', keyUrl: 'platform.openai.com',
@@ -388,8 +388,12 @@ function EngineOptions({ engine, settings, busy, apply }: {
     <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
       {provider && k && settings.keychain?.available === false && !k.configured && (
         <p className="text-[13px] text-warn text-pretty">This computer has no system keychain, so AutoCV can’t save the key.
-          Start AutoCV with it in an environment variable instead: <code className="font-mono text-[12.5px]">{k.env}=… autocv serve</code>
+          Start AutoCV with it in an environment variable instead: <code className="font-mono text-[12.5px]">{settings.platform === 'windows' ? `$env:${k.env}="…"; autocv serve` : `${k.env}=… autocv serve`}</code>
           {settings.platform === 'linux' && ' (or install GNOME Keyring / KWallet and log in again)'}.</p>
+      )}
+      {provider && k?.source === 'locked' && (
+        <p className="text-[13px] text-warn text-pretty">AutoCV can’t read your keychain right now (it’s locked, or access was
+          denied). Unlock it, or click Allow when your system asks, then Test again.</p>
       )}
       {provider && k && settings.keychain?.available !== false && (
         <div className="flex flex-col gap-1.5">

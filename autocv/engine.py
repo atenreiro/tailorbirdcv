@@ -49,33 +49,97 @@ ISOLATION_ARGS = [
 ]
 
 
-_NPM_SCRIPTS = {"claude": ("@anthropic-ai/claude-code/cli.js", "Claude Code", "claude.exe", "AUTOCV_CLAUDE_BIN"),
-                "codex": ("@openai/codex/bin/codex.js", "Codex", "codex.exe", "AUTOCV_CODEX_BIN")}
+# Where npm (and pnpm/yarn) put the program a `.cmd` shim runs, newest layout first.
+_NPM_TARGETS = {"claude": ["@anthropic-ai/claude-code/bin/claude.exe", "@anthropic-ai/claude-code/cli.js"],
+                "codex": ["@openai/codex/bin/codex.js"]}
+_PRODUCTS = {"claude": ("Claude Code", "claude.exe", "AUTOCV_CLAUDE_BIN"), "codex": ("Codex", "codex.exe", "AUTOCV_CODEX_BIN")}
+
+
+def _shim_target(shim: Path) -> Path | None:
+    """What a Windows `.cmd` shim from npm, pnpm or yarn runs (the last `%dp0%\…` / `%~dp0\…` path in it)."""
+    import re
+    try:
+        text = shim.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    found = re.findall(r'%~?dp0%?\\([^"%\r\n]+\.(?:exe|js|cjs|mjs))', text, re.I)
+    for rel in reversed(found):
+        target = (shim.parent / rel.replace("\\", "/")).resolve()
+        if target.is_file() and target.name.lower() != "node.exe":
+            return target
+    return None
+
+
+def find_node() -> str | None:
+    return find_cli("node")
 
 
 def _windows_command(binary: str, tool: str = "claude") -> list[str]:
     """On Windows an npm install gives `claude.cmd` / `codex.cmd`, which run through cmd.exe and mangle
-    arguments with quotes or newlines. Run the script it wraps with node directly instead."""
+    arguments with quotes or newlines. Run what the shim wraps directly instead: a native .exe as is, a
+    script with Node."""
     if not (oscompat.IS_WINDOWS and binary.lower().endswith((".cmd", ".bat"))):
         return [binary]
-    script_path, product, exe, env = _NPM_SCRIPTS[tool]
-    script = Path(binary).parent / "node_modules" / Path(script_path)
-    node = shutil.which("node")
-    if script.is_file() and node:
-        return [node, str(script)]
-    raise EngineError(f"Found {Path(binary).name} but not the {product} script it wraps. Install the native {product} "
-                      f"for Windows ({exe}), or set {env} to {exe}.")
+    shim = Path(binary)
+    product, exe, env = _PRODUCTS[tool]
+    target = _shim_target(shim) or next(
+        (shim.parent / "node_modules" / t for t in _NPM_TARGETS[tool] if (shim.parent / "node_modules" / t).is_file()), None)
+    if target is None:
+        raise EngineError(f"Found {shim.name} but not the {product} program it starts. Reinstall {product}, or set "
+                          f"{env} to {exe}.")
+    if target.suffix.lower() == ".exe":
+        return [str(target)]
+    node = next((str(n) for n in (shim.parent / "node.exe",) if n.is_file()), None) or find_node()
+    if not node:
+        raise EngineError(f"{product} needs Node.js, which AutoCV can't find. Install it from nodejs.org, then "
+                          "restart AutoCV (Ctrl+C, then autocv serve).")
+    return [node, str(target)]
 
 
 # A subscription CLI must never see an API key: in `claude -p` ANTHROPIC_API_KEY always wins over the
 # subscription login, and Codex prefers CODEX_API_KEY over the ChatGPT login — either would silently
-# bill a key. Every provider's key is removed from both CLIs' environments.
+# bill a key. Every provider's key is removed from both CLIs' environments, and so are the switches that
+# send Claude Code to a cloud provider instead of the subscription.
 _API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
-                    "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
+                    "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
 
 
-def cli_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
+def cli_env(binary: str | None = None) -> dict[str, str]:
+    """The CLIs' environment: no API keys, and PATH starting with the CLI's own folder and Node's (a CLI found
+    outside the server's PATH, e.g. installed after AutoCV started, still finds `node`)."""
+    env = {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
+    extra: list[str] = []
+    for path in (binary, find_node()):
+        if path and os.path.isabs(path):
+            for folder in (os.path.dirname(path), os.path.dirname(os.path.realpath(path))):
+                if folder not in extra:
+                    extra.append(folder)
+    if extra:
+        env["PATH"] = os.pathsep.join([*extra, env.get("PATH", "")])
+    return env
+
+
+def _cli_folders() -> list[Path]:
+    """Where installers put CLIs (and Node) when they aren't on this server's PATH yet."""
+    home = Path.home()
+    if oscompat.IS_WINDOWS:  # pragma: no cover
+        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+        local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+        program = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        folders = [home / ".local" / "bin", appdata / "npm", local / "Microsoft" / "WinGet" / "Links",
+                   local / "Volta" / "bin", local / "pnpm", home / "scoop" / "shims", program / "nodejs",
+                   home / ".claude" / "local"]
+        if os.environ.get("NVM_SYMLINK"):
+            folders.append(Path(os.environ["NVM_SYMLINK"]))
+        return folders
+    folders = [home / ".local" / "bin", home / ".claude" / "local", home / ".npm-global" / "bin", home / ".volta" / "bin",
+               home / "Library" / "pnpm", home / ".local" / "share" / "pnpm", home / ".asdf" / "shims",
+               home / ".local" / "share" / "mise" / "shims", Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
+    # version managers keep one folder per Node version: newest first
+    for pattern in (".nvm/versions/node/*/bin", ".local/share/fnm/node-versions/*/installation/bin",
+                    "Library/Application Support/fnm/node-versions/*/installation/bin"):
+        folders += sorted(home.glob(pattern), reverse=True)
+    return folders
 
 
 def find_cli(tool: str) -> str | None:
@@ -83,14 +147,8 @@ def find_cli(tool: str) -> str | None:
     old PATH (installers add their folder in shell start-up files), so look there too."""
     if found := shutil.which(tool):
         return found
-    home = Path.home()
-    folders = [home / ".local" / "bin", home / ".claude" / "local", home / ".npm-global" / "bin",
-               home / ".volta" / "bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
-    if oscompat.IS_WINDOWS:  # pragma: no cover
-        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
-        folders = [home / ".local" / "bin", appdata / "npm", home / ".claude" / "local"]
     names = [f"{tool}.exe", f"{tool}.cmd"] if oscompat.IS_WINDOWS else [tool]
-    for folder in folders:
+    for folder in _cli_folders():
         for name in names:
             if (folder / name).is_file():
                 return str(folder / name)
@@ -103,19 +161,27 @@ def cli_version(binary: str) -> tuple[int, ...] | None:
     import subprocess
     try:
         out = subprocess.run([*_windows_command(binary, "codex" if "codex" in Path(binary).name.lower() else "claude"),
-                              "--version"], capture_output=True, text=True, timeout=15, env=cli_env()).stdout
+                              "--version"], capture_output=True, text=True, timeout=30, env=cli_env(binary)).stdout
     except (OSError, subprocess.SubprocessError, EngineError):
         return None
     m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
     return tuple(int(x) for x in m.groups() if x is not None) if m else None
 
 
+def _needs_node(code: int, text: str) -> bool:
+    """The CLI is a Node script and `node` couldn't be started."""
+    t = text.lower()
+    return code in (127, 9009) or "env: node" in t or "'node' is not recognized" in t or "node: not found" in t
+
+
 async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: float, product: str,
-                   files: dict[str, str] | None = None, collect: tuple[str, ...] = ()) -> tuple[int, str, str, dict]:
+                   files: dict[str, str] | None = None, collect: tuple[str, ...] = (),
+                   binary: str | None = None) -> tuple[int, str, str, dict]:
     """Run a CLI from an empty temp folder (`work`). `files` are written to a sibling folder (`in`) first.
     `args` is a list in which "{name}" becomes that file's path, or a callable(inputs, work) -> list.
     Returns (exit code, stdout, stderr, {name: text} for each name in `collect` that the CLI wrote to `in`)."""
-    with tempfile.TemporaryDirectory(prefix="autocv-engine-") as root:
+    # ignore_cleanup_errors: on Windows a folder still in use can't be removed; never let that mask the result
+    with tempfile.TemporaryDirectory(prefix="autocv-engine-", ignore_cleanup_errors=True) as root:
         cwd, inputs = Path(root, "work"), Path(root, "in")
         cwd.mkdir()
         inputs.mkdir()
@@ -127,7 +193,7 @@ async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: floa
             args = [str(inputs / a[1:-1]) if a[:1] == "{" and a[1:-1] in (files or {}) else a for a in args]
         try:
             proc = await asyncio.create_subprocess_exec(
-                *command, *args, cwd=cwd, env=cli_env(),
+                *command, *args, cwd=cwd, env=cli_env(binary or command[0]),
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE, **oscompat.group_kwargs(),
             )
@@ -135,9 +201,15 @@ async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: floa
             raise EngineError(f"{product} not found — install it, or set its path in the environment") from e
         try:
             out, err = await asyncio.wait_for(proc.communicate(stdin.encode() if stdin is not None else None), timeout)
-        except TimeoutError as e:
+        except (TimeoutError, asyncio.CancelledError) as e:
+            # timed out, or the request was cancelled (Stop, a shorter outer limit, shutdown): never leave it running
             oscompat.kill_tree(proc.pid)  # the CLI and its node/helper processes
-            await proc.wait()  # before the temp folder is removed (Windows can't delete it in use)
+            try:
+                await asyncio.wait_for(proc.wait(), 10)  # before the temp folder is removed
+            except (TimeoutError, asyncio.CancelledError):
+                pass
+            if isinstance(e, asyncio.CancelledError):
+                raise
             raise EngineError(f"{product} timed out") from e
         collected = {n: (inputs / n).read_text(encoding="utf-8") for n in collect if (inputs / n).is_file()}
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace"), collected
@@ -163,7 +235,8 @@ class ClaudeCLIEngine:
         which Windows limits and cmd.exe mangles)."""
         try:
             code, out, err, _ = await _run_cli(self.command or _windows_command(self.binary), args, stdin=stdin,
-                                               timeout=timeout or self.timeout, files=files, product="Claude CLI")
+                                               timeout=timeout or self.timeout, files=files, product="Claude CLI",
+                                               binary=None if self.command else self.binary)
         except EngineError as e:
             if "not found" in str(e):
                 raise EngineError("Claude Code CLI not found — install it or set AUTOCV_CLAUDE_BIN") from e
@@ -176,15 +249,25 @@ class ClaudeCLIEngine:
         if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
             return {"engine": self.name, "ready": False, "detail": "Claude Code CLI not found"}
         try:
-            raw = await self._run(["auth", "status"], timeout=20)
+            raw = await self._run(["auth", "status"], timeout=45)  # the first run can be slow (antivirus scan)
             info = json.loads(raw)
         except (EngineError, json.JSONDecodeError) as e:
             return {"engine": self.name, "ready": False, "detail": str(e)}
-        ready = bool(info.get("loggedIn"))
-        return {
-            "engine": self.name, "ready": ready, "model": self.model or "CLI default",
-            "detail": "logged in" if ready else "Not logged in — run `claude` in a terminal and use /login",
-        }
+        model = self.model or "CLI default"
+        if not info.get("loggedIn"):
+            return {"engine": self.name, "ready": False, "model": model,
+                    "detail": "Not logged in — run `claude` in a terminal and use /login"}
+        method, provider = info.get("authMethod"), info.get("apiProvider")
+        if provider not in (None, "firstParty"):  # Bedrock/Vertex: billed by the cloud provider, not the subscription
+            return {"engine": self.name, "ready": False, "model": model,
+                    "detail": f"Claude Code is set up to use {provider}, which is billed per use. Use /login with your "
+                              "Claude subscription, or choose the Anthropic API key engine."}
+        if method not in (None, "claude.ai"):  # an Anthropic Console (API) login bills per call
+            return {"engine": self.name, "ready": False, "model": model,
+                    "detail": "Claude Code is logged in with an Anthropic Console account, which is billed per use. Run "
+                              "`claude`, then /login, and choose your Claude subscription — or use the Anthropic API key "
+                              "engine instead."}
+        return {"engine": self.name, "ready": True, "model": model, "detail": "logged in"}
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
         args = [
@@ -748,18 +831,22 @@ class CodexCLIEngine:
         if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
             return {**base, "ready": False, "detail": "Codex CLI not found"}
         try:
-            code, out, err, _ = await _run_cli(self._argv(), ["login", "status"], stdin=None, timeout=20,
-                                               product="Codex CLI")
+            code, out, err, _ = await _run_cli(self._argv(), ["login", "status"], stdin=None, timeout=45,
+                                               product="Codex CLI", binary=None if self.command else self.binary)
         except EngineError as e:
             return {**base, "ready": False, "detail": str(e)}
         text = f"{out}\n{err}".lower()
+        if _needs_node(code, text):
+            return {**base, "ready": False, "detail": "Codex needs Node.js, which AutoCV can't find. Install it from "
+                                                      "nodejs.org (or reinstall Codex), then Check again."}
         if code == 0 and "chatgpt" in text:
             if not self.command:
                 version = await asyncio.to_thread(cli_version, self.binary)
                 if version and version[:2] < CODEX_MIN_VERSION:
                     shown = ".".join(map(str, version))
                     return {**base, "ready": False, "detail": f"Codex {shown} is too old for AutoCV — update it: "
-                                                              "npm i -g @openai/codex"}
+                                                              + ("brew upgrade --cask codex" if oscompat.IS_MAC
+                                                                 else "npm i -g @openai/codex")}
             return {**base, "ready": True, "detail": "logged in with ChatGPT"}
         if code == 0 and "api key" in text:
             return {**base, "ready": False,
@@ -769,7 +856,10 @@ class CodexCLIEngine:
             return {**base, "ready": False,
                     "detail": "Codex is logged in some other way (not ChatGPT). Run `codex login` and sign in with "
                               "ChatGPT to use your subscription."}
-        return {**base, "ready": False, "detail": "Not logged in — run `codex login` in a terminal and sign in with ChatGPT"}
+        if "not logged in" in text or code == 0:
+            return {**base, "ready": False, "detail": "Not logged in — run `codex login` in a terminal and sign in with ChatGPT"}
+        shown = (err or out).strip().splitlines()
+        return {**base, "ready": False, "detail": f"Codex didn't start properly: {shown[-1][:200] if shown else f'exit {code}'}"}
 
     async def _require_chatgpt(self) -> None:
         """Never run on an API-key login (it would bill the key): checked before calls, cached for a minute."""
@@ -792,10 +882,15 @@ class CodexCLIEngine:
 
         code, out, err, got = await _run_cli(
             self._argv(), args, stdin=prompt, timeout=self.timeout, product="Codex CLI",
+            binary=None if self.command else self.binary,
             files={"system.md": system, "schema.json": json.dumps(openai_schema(schema))}, collect=("last.json",))
         failure = _codex_failure(out)
         if "last.json" not in got or not got["last.json"].strip():
-            raise EngineError(failure or err.strip()[-300:] or f"Codex exited {code} without an answer")
+            detail = failure or err.strip()[-300:] or f"Codex exited {code} without an answer"
+            if oscompat.IS_WINDOWS and "sandbox" in detail.lower():  # pragma: no cover
+                detail += (" — Codex's Windows sandbox may not be set up: run `codex` once in a terminal and follow its "
+                           "sandbox setup, then Test again.")
+            raise EngineError(detail)
         return _json_answer(got["last.json"], schema)
 
 

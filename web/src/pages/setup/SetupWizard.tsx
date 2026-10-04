@@ -96,14 +96,14 @@ function ConnectAI({ settings, onSettings, onNext, onBlank }: {
       )}
       {cli && !ready && status && (
         <ol className="flex max-w-[760px] list-decimal flex-col gap-1.5 pl-5 text-[14px] text-body">
-          <li><a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong">Install Claude Code</a> (it needs a Claude Pro or Max subscription).</li>
+          <li><a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong">Install Claude Code</a> (it needs a Claude Pro or Max subscription{settings.platform === 'windows' ? '; on Windows it may also ask for Git for Windows' : ''}).</li>
           <li>Open a terminal and run <code className="rounded bg-wash px-1.5 font-mono text-[13px]">claude</code>, then type <code className="rounded bg-wash px-1.5 font-mono text-[13px]">/login</code> and finish in your browser.</li>
           <li>Come back here: this page notices by itself within a few seconds.</li>
         </ol>
       )}
       {codex && !ready && status && (
         <ol className="flex max-w-[760px] list-decimal flex-col gap-1.5 pl-5 text-[14px] text-body">
-          <li>Install Codex: <code className={step}>npm i -g @openai/codex</code> (it needs a ChatGPT plan that includes Codex).</li>
+          <li>Install Codex: <code className={step}>{settings.platform === 'macos' ? 'brew install --cask codex' : 'npm i -g @openai/codex'}</code> (it needs a ChatGPT plan that includes Codex{settings.platform === 'macos' ? '' : ', and Node.js from nodejs.org'}).</li>
           <li>Open a terminal and run <code className={step}>codex login</code>, then sign in with ChatGPT in your browser.</li>
           <li>Come back here: this page notices by itself within a few seconds.</li>
         </ol>

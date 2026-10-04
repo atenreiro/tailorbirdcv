@@ -15,6 +15,8 @@ import json, os, sys, time
 args = sys.argv[1:]
 mode = os.environ.get("FAKE_MODE", "")
 if args[:2] == ["login", "status"]:
+    if mode == "nonode":
+        print("env: node: No such file or directory", file=sys.stderr); sys.exit(127)
     msg = {{"": "Logged in using ChatGPT", "key": "Logged in using an API key - sk-...", "out": "Not logged in"}}[mode if mode in ("key", "out") else ""]
     print(msg, file=sys.stderr); sys.exit(1 if mode == "out" else 0)
 prompt = sys.stdin.read()
@@ -86,7 +88,7 @@ def test_codex_timeout_stops_it(fake_codex, monkeypatch):
 
 
 @pytest.mark.parametrize("mode,ready,needle", [("", True, "ChatGPT"), ("key", False, "API key"),
-                                                ("out", False, "codex login")])
+                                                ("out", False, "codex login"), ("nonode", False, "Node.js")])
 def test_codex_login_status(fake_codex, monkeypatch, mode, ready, needle):
     command, _ = fake_codex
     monkeypatch.setenv("FAKE_MODE", mode)
