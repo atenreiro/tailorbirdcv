@@ -55,6 +55,10 @@ LEGACY_CLOSED = {"rejected": "rejected", "withdrawn": "withdrew"}  # old statuse
 _LOCK = threading.RLock()
 
 
+class IncompleteRole(ValueError):
+    pass
+
+
 class Conflict(Exception):
     """The file changed since the client loaded it (another tab, or a background save)."""
 
@@ -332,6 +336,14 @@ class Store:
     def profile_version(self) -> str:
         return file_version(self.profile_path)
 
+    def profile_snapshot(self) -> tuple[MasterProfile, str, str]:
+        """(profile, version, text) from one read, so the version always matches the content a client edits
+        (reading them separately could pair old text with a newer version and defeat If-Match)."""
+        import yaml
+        raw = oscompat.read_bytes(self.profile_path)
+        text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        return MasterProfile.model_validate(yaml.safe_load(text) or {}), _digest(raw), text
+
     def save_profile(self, data: dict, base_version: str | None = None, cause: str = "edit") -> MasterProfile:
         """Validate and save. Ids that disappear are retired so they're never reused. The
         previous version is kept in history (labelled with `cause`). With `base_version`,
@@ -341,6 +353,9 @@ class Store:
                 raise Conflict("Your profile changed since this page loaded (another tab or an approval). "
                                "Reload, then re-apply your edits.")
             profile = MasterProfile.model_validate(data)  # raises on invalid
+            blank = [r.employer.strip() or r.id for r in profile.roles if not (r.employer.strip() and r.title.strip())]
+            if blank:  # these print on every resume: a role can't lose its company or title
+                raise IncompleteRole(f"Every role needs a company name and a title (missing in: {', '.join(blank)}).")
             live = set(profile.all_ids())
             old_ids, old_retired = self._previous_ids("profile", self.profile_path)
             reused = _reused(live, old_retired, profile.retired_ids)

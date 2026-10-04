@@ -28,8 +28,8 @@ from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
 from .render import docx_text, render, use_design
 from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
-from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, NeedsBuild, OutputInUse, RetiredIdReused, Store,
-                    next_id)
+from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, IncompleteRole, NeedsBuild, OutputInUse,
+                    RetiredIdReused, Store, next_id)
 
 log = logging.getLogger("autocv")
 
@@ -71,7 +71,7 @@ class TargetsPatch(BaseModel):
     pack: Literal[tuple(ai.PACKS)] | None = None  # type: ignore[valid-type]
 
 
-MODEL_ID = r"^[A-Za-z0-9._:/\-]*$"  # e.g. claude-sonnet-5-5, gpt-6.1-sol, anthropic/claude-sonnet-5.5
+MODEL_ID = r"^(?:[A-Za-z0-9][A-Za-z0-9._:/\-]*)?$"  # e.g. claude-sonnet-5-5, gpt-6.1-sol, anthropic/claude-sonnet-5.5
 
 
 class SettingsPatch(BaseModel):
@@ -276,9 +276,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return store.profile()
 
     def profile_payload(profile=None):
-        profile = profile or store.profile()
+        if profile is None:
+            profile, version, _ = store.profile_snapshot()
+        else:
+            version = store.profile_version()
         return {"profile": profile.model_dump(exclude_none=True), "evidence": factcheck.evidence_index(profile),
-                "version": store.profile_version()}
+                "version": version}
 
     def knowledge_payload(knowledge=None):
         return {**(knowledge or store.knowledge()).model_dump(exclude_none=True), "version": store.knowledge_version()}
@@ -361,7 +364,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.get("/profile")
     def get_profile():
-        return profile_payload(need_profile())
+        need_profile()  # 409 when there's none yet
+        return profile_payload()  # content and version from one read
 
     # -- first run: the setup wizard ----------------------------------------------------
     def setup_payload() -> dict:
@@ -496,7 +500,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             data, cause = importer.mark_confirmed(data, confirmed), "resume import"
         try:
             profile = store.save_profile(data, cause=cause)
-        except (ValidationError, RetiredIdReused) as e:
+        except (ValidationError, RetiredIdReused, IncompleteRole) as e:
             raise HTTPException(422, str(e))
         store.save_setup_state(step="targets")
         return profile_payload(profile)
@@ -508,14 +512,15 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             profile = store.save_profile(data, base_version=if_match, cause="profile editor")
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except (ValidationError, RetiredIdReused) as e:
+        except (ValidationError, RetiredIdReused, IncompleteRole) as e:
             raise HTTPException(422, str(e))
         return profile_payload(profile)
 
     @api.get("/profile/yaml")
     def get_profile_yaml():
         need_profile()
-        return {"yaml": store.profile_path.read_text(encoding="utf-8"), "version": store.profile_version()}
+        _, version, text = store.profile_snapshot()
+        return {"yaml": text, "version": version}
 
     @api.put("/profile/yaml")
     def put_profile_yaml(body: ProfileYaml, if_match: str | None = Header(default=None)):
@@ -619,6 +624,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
                "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id),
                "sent": store.sent_copies(app_id)}
+        fill = out["meta"].get("fill")
+        if fill and fill.get("design") != ai.design_key():  # measured in another design: no longer meaningful
+            out["meta"] = {**out["meta"], "fill": None}
         ai_draft = store.ai_tailored(app_id)
         if ai_draft and tailored:
             out["edits"] = len(ai.edited_claims(ai_draft, tailored))
@@ -791,9 +799,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         tailored, analysis, meta = store.tailored(app_id), store.analysis(app_id) or {}, store.meta(app_id)
         if not tailored:
             raise HTTPException(409, "Nothing to fill yet.")
-        room = (meta.get("fill") or {}).get("room", 0)
-        if store.outputs_stale(app_id) or not meta.get("pages"):
+        fill = meta.get("fill") or {}
+        room = fill.get("room", 0)
+        if store.outputs_stale(app_id) or not meta.get("pages") or fill.get("design") != ai.design_key():
             raise HTTPException(409, "Build the PDF first, so AutoCV can measure the room left on the last page.")
+        if meta["pages"] > page_limit():
+            raise HTTPException(409, f"The PDF is over the {page_limit()}-page limit: trim it instead.")
         if room < fit.ROOM_MIN_LINES:
             raise HTTPException(409, "The last page is already full enough.")
         profile = need_profile()
@@ -918,7 +929,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except KeyError:
             raise HTTPException(404, "snapshot not found")
         path = store.profile_path if kind == "profile" else store.knowledge_path
-        current_text = path.read_text(encoding="utf-8") if path.exists() else ""
+        current_text = oscompat.read_text(path) if path.exists() else ""
         return {"id": snapshot_id, "yaml": old_text,
                 "summary": history_summary(kind, old_text, current_text),
                 "diff": "".join(difflib.unified_diff(old_text.splitlines(keepends=True),
@@ -957,7 +968,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                                           cause="answers & preferences editor"))
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except (ValidationError, RetiredIdReused) as e:
+        except (ValidationError, RetiredIdReused, IncompleteRole) as e:
             raise HTTPException(422, str(e))
 
     @api.post("/applications/{app_id}/preferences")

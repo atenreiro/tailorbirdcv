@@ -43,19 +43,22 @@ def _path(private: Path) -> Path:
     return private / "calibration.json"
 
 
-def _load(private: Path | None) -> dict:
-    if not private:
+def _load(private: Path | None) -> dict | None:
+    """The calibration data; {} when there is none yet, None when the file exists but can't be read
+    (then nothing is learned, rather than overwriting what other designs learned)."""
+    if not private or not _path(private).exists():
         return {}
+    from .oscompat import read_text
     try:
-        data = json.loads(_path(private).read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
+        data = json.loads(read_text(_path(private)))
     except (OSError, ValueError):
-        return {}
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def lines_factor(private: Path | None, theme: Theme, paper: str | None) -> float:
     """Measured lines-per-page ÷ the theme's nominal figure for this design (1.0 until a PDF was measured)."""
-    entry = _load(private).get(f"{theme.id}/{paper or theme.paper}", {})
+    entry = (_load(private) or {}).get(f"{theme.id}/{paper or theme.paper}", {})
     factor = entry.get("factor") if isinstance(entry, dict) else None
     return float(factor) if isinstance(factor, (int, float)) else 1.0
 
@@ -68,6 +71,8 @@ def record(private: Path, theme: Theme, paper: str | None, est_lines: int, fills
     nominal = theme.lines_per_page(paper)
     sample = min(max(est_lines / used / nominal, _FACTOR_RANGE[0]), _FACTOR_RANGE[1])
     data = _load(private)
+    if data is None:
+        return
     key = f"{theme.id}/{paper or theme.paper}"
     old = data.get(key) if isinstance(data.get(key), dict) else {}
     factor = sample if "factor" not in old else (1 - _WEIGHT) * float(old["factor"]) + _WEIGHT * sample

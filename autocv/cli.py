@@ -190,10 +190,11 @@ def cmd_build(args) -> int:
         pages = page_count(pdf)
         print(f"pdf:  {pdf} ({pages} pages)")
         limit = args.max_pages or int(STORE.settings()["targets"]["pages"])
+        from . import ai, fit
         if pages > limit:
+            STORE.record_build(app_id, built_hash, profile_version, pages)  # the files on disk are this build
             print(f"TOO LONG: {pages} pages > {limit} — trim lowest-relevance content and rebuild")
             return 2
-        from . import ai, fit
         try:
             fill = ai.measure_pdf(profile, tailored, pdf, STORE.lock)
         except Exception:  # noqa: BLE001 — measuring never fails a build

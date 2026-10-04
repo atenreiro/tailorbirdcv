@@ -54,11 +54,17 @@ def test_every_schema_converts_to_openai_strict_form(name):
     for path, node in walk(strict):
         if path.endswith(".properties"):
             continue  # a map of field names (a role's "title" is a field, not the keyword)
-        assert not {"$ref", "$defs", "title", "default", "maxItems", "minimum", "maximum", "minItems"} & set(node), path
+        assert not {"title", "default", "maxItems", "minimum", "maximum", "minItems"} & set(node), path
+        if "$ref" in node:  # shared definitions stay shared, and must exist
+            assert set(node) == {"$ref"} and node["$ref"].removeprefix("#/$defs/") in strict["$defs"], path
         if "properties" in node:
             assert node["additionalProperties"] is False, path
             assert set(node["required"]) == set(node["properties"]), path
     json.dumps(strict)  # serialisable
+    if name == "tailored":  # the evidence-id enum is defined once, not copied into every claim
+        ids = set(ai.factcheck.evidence_index(PROFILE))
+        copies = [n for _, n in walk(strict) if isinstance(n.get("enum"), list) and ids <= set(n["enum"])]
+        assert len(copies) == 1
     if name == "import":  # field names survive the keyword cleanup
         assert "title" in strict["properties"]["roles"]["items"]["properties"]
 
@@ -265,3 +271,15 @@ def test_provider_keys_are_stored_per_provider_and_never_returned(client):
     assert set(engines) == {"claude-cli", "codex-cli", "anthropic-api", "openai-api", "openrouter-api"}
     assert engines["openrouter-api"]["default_model"] == "anthropic/claude-sonnet-5.5"
     assert client.delete("/api/settings/api-key?provider=openrouter").json()["api_keys"]["openrouter"]["configured"] is False
+
+
+def test_openrouter_without_zero_retention_only_pins_anthropic_for_claude():
+    eng = OpenRouterEngine(model="openai/gpt-6.1-sol", key=lambda: OR_KEY, zdr=False)
+    assert eng.routing()["provider"] == {"require_parameters": True, "data_collection": "deny"}
+
+
+def test_saved_roles_keep_their_company_and_title(client):
+    data = client.get("/api/profile").json()
+    data["profile"]["roles"][0]["employer"] = "  "
+    r = client.put("/api/profile", json=data["profile"], headers={"If-Match": data["version"]})
+    assert r.status_code == 422 and "company name and a title" in r.json()["detail"]

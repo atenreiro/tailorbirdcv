@@ -432,7 +432,13 @@ def measure_pdf(profile: MasterProfile, tailored: TailoredResume, pdf: Path, loc
         est = estimate_lines(profile, tailored)
         with lock or contextlib.nullcontext():
             fit.record(private, theme, paper, est, fills)
-    return {"pages": fills, "room": fit.room_lines(fills, lines_per_page())}
+    return {"pages": fills, "room": fit.room_lines(fills, lines_per_page()), "design": design_key()}
+
+
+def design_key() -> str:
+    """The active theme and paper, e.g. "classic/a4" (what a measured fill belongs to)."""
+    theme, paper = active_design()
+    return f"{theme.id}/{paper or theme.paper}"
 
 
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,
@@ -554,7 +560,7 @@ evidence that best supports this job and isn't in the resume yet, using at most 
 vocabulary only where the meaning is identical; never add facts. A role's bullets may cite only that role's \
 evidence; highlights may cite any evidence. Keep every existing item exactly as it is (same text, sources \
 and order); only insert new items where they read best.
-Do NOT add back evidence the candidate removed: {", ".join(removed) or "(none)"}.
+Do NOT add back anything the candidate removed (evidence, projects, sub-roles): {", ".join(removed) or "(none)"}.
 
 JOB MUST-HAVES:
 {_yaml([r["text"] for r in analysis.get("requirements", []) if r.get("priority") == "must"])}
@@ -565,15 +571,30 @@ TAILORED RESUME:
 """
 
 
+def _used_ids(t: TailoredResume) -> set[str]:
+    """Every evidence or item id a resume uses: claim sources, sub-roles, projects, education, extras."""
+    ids = {i for _, c in _claims(t) for i in c.sources}
+    for r in t.experience:
+        ids |= {sr.id for sr in r.sub_roles}
+    return ids | {p.id for p in t.projects} | set(t.education) | set(t.extras)
+
+
+def _kept_everything(before: TailoredResume, after: TailoredResume) -> bool:
+    """`after` still has every claim of `before` (same text and sources) and every item it listed."""
+    def key(c: Claim) -> tuple[str, frozenset]:
+        return " ".join(c.text.split()), frozenset(c.sources)
+    claims_after = {key(c) for _, c in _claims(after)}
+    return all(key(c) in claims_after for _, c in _claims(before)) and _used_ids(before) <= _used_ids(after)
+
+
 async def fill(engine: Engine, profile: MasterProfile, tailored: TailoredResume, analysis: dict, room: int,
                ai_draft: TailoredResume | None = None) -> TailoredResume | None:
     """A longer version of `tailored` that uses about `room` more lines with relevant, unused evidence, or
-    None when nothing valid came back. Fact-checked, never saved: the UI loads it into Review as edits."""
+    None when nothing valid came back. It only adds: every existing line stays exactly as it is, and nothing
+    the candidate removed from the AI's draft comes back. Fact-checked, never saved (the UI loads it into
+    Review as edits)."""
     schema = tailored_schema(profile, analysis.get("track"))
-    removed: list[str] = []
-    if ai_draft:  # evidence the candidate deliberately took out of the AI's draft stays out
-        kept = {i for _, c in _claims(tailored) for i in c.sources}
-        removed = sorted({i for _, c in _claims(ai_draft) for i in c.sources} - kept)
+    removed = sorted(_used_ids(ai_draft) - _used_ids(tailored)) if ai_draft else []
     before = estimate_lines(profile, tailored)
     raw = await engine.complete(system_prompt(), _fill_prompt(profile, tailored.model_dump(exclude_none=True), room,
                                                               analysis, removed), schema)
@@ -581,12 +602,10 @@ async def fill(engine: Engine, profile: MasterProfile, tailored: TailoredResume,
         filled, report, _ = await _validated(engine, profile, schema, raw)
     except ValidationError:
         return None
-    if not report.ok:
+    if not report.ok or not _kept_everything(tailored, filled) or _used_ids(filled) & set(removed):
         return None
-    if estimate_lines(profile, filled) > before + room:  # overshot: one trim back to the room available
-        filled = (await fit_to_length(engine, profile, filled, analysis, before + room, max_rounds=1))["tailored"]
     after = estimate_lines(profile, filled)
-    if after <= before or after > before + room or not factcheck.check(profile, filled).ok:
+    if after <= before or after > before + room + 2:  # a little slack; never trims the candidate's own lines
         return None
     return filled
 

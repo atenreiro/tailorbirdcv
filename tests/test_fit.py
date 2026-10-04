@@ -167,3 +167,41 @@ def test_fill_is_refused_when_the_last_page_is_full_or_the_files_are_stale(env):
     client.put(f"/api/applications/{app_id}/tailored", json={**t, "highlights": t["highlights"][:0]})
     r = client.post(f"/api/applications/{app_id}/fill")
     assert r.status_code == 409 and "Build the PDF first" in r.json()["detail"]
+
+
+def test_fill_never_drops_existing_lines_or_brings_back_removed_ones(env):
+    client, store, engine, _ = env
+    app_id = composed(client)
+    client.post(f"/api/applications/{app_id}/build")
+
+    def drops_a_bullet(prompt):
+        t = copy.deepcopy(TAILORED)
+        t["experience"][0]["bullets"] = t["experience"][0]["bullets"][:1] + [
+            {"text": "Wrote Python tooling that triages Splunk alerts automatically.", "sources": ["acme-bank.a3"]}]
+        return t
+    engine.responses["fill"] = drops_a_bullet
+    assert client.post(f"/api/applications/{app_id}/fill").json()["fill_proposal"] is None
+
+    # the candidate removed a bullet from the AI's draft; a fill that re-adds it is refused
+    t = client.get(f"/api/applications/{app_id}").json()["tailored"]
+    removed = t["experience"][0]["bullets"].pop()
+    client.put(f"/api/applications/{app_id}/tailored", json=t)
+    client.post(f"/api/applications/{app_id}/build")
+
+    def re_adds(prompt):
+        t2 = copy.deepcopy(t)
+        t2["experience"][0]["bullets"].append(removed)
+        return t2
+    engine.responses["fill"] = re_adds
+    assert client.post(f"/api/applications/{app_id}/fill").json()["fill_proposal"] is None
+    assert removed["sources"][0] in next(p for task, p in engine.calls if task == "fill").split("removed")[1]
+
+
+def test_fill_needs_a_build_in_the_current_design_and_within_the_limit(env):
+    client, store, _, depth = env
+    app_id = composed(client)
+    client.post(f"/api/applications/{app_id}/build")
+    assert client.get(f"/api/applications/{app_id}").json()["meta"]["fill"]["design"] == "classic/a4"
+    store.save_settings({"paper": "letter"})  # measured on A4: no longer meaningful
+    assert client.get(f"/api/applications/{app_id}").json()["meta"]["fill"] is None
+    assert client.post(f"/api/applications/{app_id}/fill").status_code == 409

@@ -50,24 +50,16 @@ async def _engine(engine: Engine) -> dict:
         "claude-cli": "Install Claude Code and log in (`claude`, then /login), or choose another engine or an API key in Settings.",
         "codex-cli": "Install Codex (`npm i -g @openai/codex`) and sign in with ChatGPT (`codex login`), "
                      "or choose another engine in Settings.",
-    }.get(st.get("engine"), "Add or fix the API key in Settings → AI engine.")
+    }.get(st.get("engine")) or ("Add or fix the API key in Settings → AI engine." if "key" in (st.get("detail") or "").lower()
+                                else "Check the model and your connection in Settings → AI engine, or choose another engine.")
     return _check("ai", "AI engine", "error", st.get("detail") or "Not ready.", fix)
 
 
 def codex_version(binary: str | None = None) -> tuple[int, ...] | None:
     """Codex CLI's version (e.g. (0, 160, 0)), or None when it isn't installed or doesn't say."""
-    import re
-    import shutil
-    import subprocess
-    exe = binary or os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex")
-    if not exe:
-        return None
-    try:
-        out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
-    return tuple(int(x) for x in m.groups() if x is not None) if m else None
+    from .engine import cli_version, find_cli
+    exe = binary or os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex")
+    return cli_version(exe) if exe else None
 
 
 def _codex(engine_name: str | None) -> dict | None:

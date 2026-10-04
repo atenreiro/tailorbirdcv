@@ -115,7 +115,8 @@ function finalizeNewRoles(p: P, saved: P): { profile: P; problems: string[] } {
   const known = new Set(saved.roles.map((r) => r.id))
   const profile = structuredClone(p)
   const problems: string[] = []
-  const taken = allIds(profile)
+  // Ids in the last saved profile count as taken too: one deleted in this edit is retired on save, never reused.
+  const taken = new Set([...allIds(profile), ...allIds(saved)])
   profile.roles.forEach((r, i) => {
     if (known.has(r.id)) return
     for (const key of ['employer', 'location', 'title', 'dates'] as const) r[key] = r[key].trim()
@@ -231,7 +232,7 @@ export default function Profile() {
   const q = query.trim().toLowerCase()
   const match = (e: { id: string; text: string; label?: string }) => !q || `${e.id} ${e.label ?? ''} ${e.text}`.toLowerCase().includes(q)
   const view: Tab = q && !SEARCHABLE.includes(tab) ? 'experience' : tab
-  const ids = allIds(p)
+  const ids = new Set([...allIds(p), ...allIds(saved!)])  // incl. ids deleted in this edit (retired on save)
   const k = kn.k
   const proposed = k?.preferences.filter((x) => x.status === 'proposed').length ?? 0
   const counts: Record<Tab, string | number> = {

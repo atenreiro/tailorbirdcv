@@ -79,7 +79,7 @@ def test_reads_retry_while_windows_has_the_file_mid_replace(tmp_path, monkeypatc
     """On Windows, opening a file another thread is replacing raises PermissionError for a moment."""
     from autocv import oscompat
     f = tmp_path / "profile.yaml"
-    f.write_text("a: 1\r\n", encoding="utf-8")
+    f.write_bytes(b"a: 1\r\nb: 2\r")  # exact bytes on every OS (text mode would add \r on Windows)
     real, calls = Path.read_bytes, {"n": 0}
 
     def flaky(self):
@@ -90,7 +90,7 @@ def test_reads_retry_while_windows_has_the_file_mid_replace(tmp_path, monkeypatc
     monkeypatch.setattr(oscompat, "IS_WINDOWS", True)
     monkeypatch.setattr(oscompat.time, "sleep", lambda s: None)
     monkeypatch.setattr(Path, "read_bytes", flaky)
-    assert oscompat.read_text(f) == "a: 1\n" and calls["n"] == 3
+    assert oscompat.read_text(f) == "a: 1\nb: 2\n" and calls["n"] == 3
     monkeypatch.setattr(oscompat, "IS_WINDOWS", False)  # elsewhere it's a real error
     calls["n"] = 0
     with pytest.raises(PermissionError):

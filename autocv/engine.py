@@ -78,6 +78,38 @@ def cli_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
 
 
+def find_cli(tool: str) -> str | None:
+    """`tool` on PATH, or in the folders installers put it in. A server started before the install has an
+    old PATH (installers add their folder in shell start-up files), so look there too."""
+    if found := shutil.which(tool):
+        return found
+    home = Path.home()
+    folders = [home / ".local" / "bin", home / ".claude" / "local", home / ".npm-global" / "bin",
+               home / ".volta" / "bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
+    if oscompat.IS_WINDOWS:  # pragma: no cover
+        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+        folders = [home / ".local" / "bin", appdata / "npm", home / ".claude" / "local"]
+    names = [f"{tool}.exe", f"{tool}.cmd"] if oscompat.IS_WINDOWS else [tool]
+    for folder in folders:
+        for name in names:
+            if (folder / name).is_file():
+                return str(folder / name)
+    return None
+
+
+def cli_version(binary: str) -> tuple[int, ...] | None:
+    """`<binary> --version` as numbers, e.g. (0, 160, 0); None when it doesn't say."""
+    import re
+    import subprocess
+    try:
+        out = subprocess.run([*_windows_command(binary, "codex" if "codex" in Path(binary).name.lower() else "claude"),
+                              "--version"], capture_output=True, text=True, timeout=15, env=cli_env()).stdout
+    except (OSError, subprocess.SubprocessError, EngineError):
+        return None
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
+    return tuple(int(x) for x in m.groups() if x is not None) if m else None
+
+
 async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: float, product: str,
                    files: dict[str, str] | None = None, collect: tuple[str, ...] = ()) -> tuple[int, str, str, dict]:
     """Run a CLI from an empty temp folder (`work`). `files` are written to a sibling folder (`in`) first.
@@ -116,10 +148,14 @@ class ClaudeCLIEngine:
 
     def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600,
                  command: list[str] | None = None):
-        self.binary = binary or os.environ.get("AUTOCV_CLAUDE_BIN") or shutil.which("claude") or "claude"
+        self._binary = binary
         self.model = model or os.environ.get("AUTOCV_MODEL")
         self.timeout = timeout
         self.command = command  # the argv prefix to run instead of the binary (tests)
+
+    @property
+    def binary(self) -> str:  # looked up each time, so a Claude Code installed after AutoCV started is found
+        return self._binary or os.environ.get("AUTOCV_CLAUDE_BIN") or find_cli("claude") or "claude"
 
     async def _run(self, args: list[str], stdin: str | None = None, timeout: float | None = None,
                    files: dict[str, str] | None = None) -> str:
@@ -345,15 +381,17 @@ def _nullable(node: dict) -> dict:
         return node
     if any(isinstance(b, dict) and b.get("type") == "null" for b in node.get("anyOf", [])):
         return node
-    if isinstance(t, str) and "enum" not in node and "properties" not in node and "items" not in node:
+    if isinstance(t, str) and "enum" not in node and "properties" not in node and "items" not in node \
+            and "$ref" not in node:
         return {**node, "type": [t, "null"]}
     return {"anyOf": [node, {"type": "null"}]}
 
 
 def openai_schema(schema: dict) -> dict:
     """AutoCV's JSON schema in OpenAI's strict form (OpenAI API, OpenRouter, Codex --output-schema):
-    $refs inlined; titles, defaults and unsupported constraints dropped; every object closed with every
-    property required, the ones that were optional made nullable (the answer goes through strip_nulls)."""
+    titles, defaults and unsupported constraints dropped; every object closed with every property required,
+    the ones that were optional made nullable (the answer goes through strip_nulls). Shared definitions
+    ($defs) stay shared, each converted once, so big enums (evidence ids) aren't copied into every use."""
     defs = schema.get("$defs") or schema.get("definitions") or {}
 
     def conv(node: Any, depth: int = 0) -> Any:
@@ -363,7 +401,8 @@ def openai_schema(schema: dict) -> dict:
             return [conv(x, depth + 1) for x in node]
         if not isinstance(node, dict):
             return node
-        node = _deref(node, defs)
+        if "$ref" in node:  # a shared definition: keep the reference (siblings like description are dropped)
+            return {"$ref": "#/$defs/" + node["$ref"].rsplit("/", 1)[-1]}
         out = {k: conv(v, depth + 1) for k, v in node.items()
                if k not in _DROP and k not in _UNSUPPORTED and k not in ("properties", "required")}
         if "properties" in node or node.get("type") == "object":
@@ -376,7 +415,10 @@ def openai_schema(schema: dict) -> dict:
             out.setdefault("type", "object")
         return out
 
-    return conv(schema)
+    out = conv(schema)
+    if defs:
+        out["$defs"] = {name: conv(d, 1) for name, d in defs.items()}
+    return out
 
 
 def _branch(node: Any, kind: str, defs: dict) -> dict | None:
@@ -561,8 +603,10 @@ class OpenRouterEngine(_OpenAIStyleEngine):
 
     def routing(self) -> dict:
         provider = {"require_parameters": True, "data_collection": "deny"}
-        provider.update({"zdr": True, "allow_fallbacks": True} if self.zdr
-                        else {"only": ["anthropic"], "allow_fallbacks": False})
+        if self.zdr:
+            provider.update({"zdr": True, "allow_fallbacks": True})
+        elif self.model.startswith("anthropic/"):  # Claude: served by Anthropic itself
+            provider.update({"only": ["anthropic"], "allow_fallbacks": False})
         return {"provider": provider}
 
     def _explain(self, e: Exception) -> str:
@@ -579,6 +623,7 @@ class OpenRouterEngine(_OpenAIStyleEngine):
         return super()._explain(e)
 
     async def _ping(self, client) -> dict:
+        await client.get(f"/models/{self.model}/endpoints", cast_to=object)  # free: the model exists
         info = await client.get("/key", cast_to=object)
         data = info.get("data", info) if isinstance(info, dict) else {}
         left = data.get("limit_remaining") if isinstance(data, dict) else None
@@ -600,7 +645,7 @@ class OpenRouterEngine(_OpenAIStyleEngine):
             except EngineError:
                 raise
             except Exception as e:  # noqa: BLE001
-                if not _schema_rejected_openai(e):
+                if not (_schema_rejected_openai(e) or _no_structured_endpoint(e)):
                     raise EngineError(self._explain(e)) from e
                 self._tool_fallback.add(signature)
         try:  # the model or provider can't take this schema: one ordinary tool call instead
@@ -640,6 +685,16 @@ class OpenRouterEngine(_OpenAIStyleEngine):
         return r.choices[0].message.content
 
 
+def _no_structured_endpoint(e: Exception) -> bool:
+    """OpenRouter has the model, but no provider for it supports structured outputs (require_parameters)."""
+    try:
+        import openai
+    except ImportError:  # pragma: no cover
+        return False
+    text = str(e).lower()
+    return isinstance(e, openai.NotFoundError) and "endpoint" in text and ("parameter" in text or "support" in text)
+
+
 def _schema_rejected_openai(e: Exception) -> bool:
     try:
         import openai
@@ -674,38 +729,65 @@ class CodexCLIEngine:
 
     def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600,
                  command: list[str] | None = None):
-        self.binary = binary or os.environ.get("AUTOCV_CODEX_BIN") or shutil.which("codex") or "codex"
+        self._binary = binary
         self.model = model
         self.timeout = timeout
         self.command = command  # the argv prefix to run instead of the binary (tests)
+        self._login: tuple[float, dict] | None = None  # the last login check (when, status)
+
+    @property
+    def binary(self) -> str:  # looked up each time, so a Codex installed after AutoCV started is found
+        return self._binary or os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex") or "codex"
 
     def _argv(self) -> list[str]:
         return self.command or _windows_command(self.binary, "codex")
 
     async def status(self) -> dict:
+        model = self.model or "Codex default"
+        base = {"engine": self.name, "model": model}
         if not self.command and not shutil.which(self.binary) and not os.path.exists(self.binary):
-            return {"engine": self.name, "ready": False, "detail": "Codex CLI not found"}
+            return {**base, "ready": False, "detail": "Codex CLI not found"}
         try:
             code, out, err, _ = await _run_cli(self._argv(), ["login", "status"], stdin=None, timeout=20,
                                                product="Codex CLI")
         except EngineError as e:
-            return {"engine": self.name, "ready": False, "detail": str(e)}
-        text = f"{out}\n{err}"
-        model = self.model or "Codex default"
-        if code == 0 and "chatgpt" in text.lower():
-            return {"engine": self.name, "ready": True, "model": model, "detail": "logged in with ChatGPT"}
-        if code == 0 and "api key" in text.lower():
-            return {"engine": self.name, "ready": False, "model": model,
-                    "detail": "Codex is logged in with an API key. Run `codex login` and sign in with ChatGPT, "
-                              "or choose the OpenAI API key engine instead."}
-        return {"engine": self.name, "ready": False, "model": model,
-                "detail": "Not logged in — run `codex login` in a terminal and sign in with ChatGPT"}
+            return {**base, "ready": False, "detail": str(e)}
+        text = f"{out}\n{err}".lower()
+        if code == 0 and "chatgpt" in text:
+            if not self.command:
+                version = await asyncio.to_thread(cli_version, self.binary)
+                if version and version[:2] < CODEX_MIN_VERSION:
+                    shown = ".".join(map(str, version))
+                    return {**base, "ready": False, "detail": f"Codex {shown} is too old for AutoCV — update it: "
+                                                              "npm i -g @openai/codex"}
+            return {**base, "ready": True, "detail": "logged in with ChatGPT"}
+        if code == 0 and "api key" in text:
+            return {**base, "ready": False,
+                    "detail": "Codex is logged in with an API key, which would be billed. Run `codex login` and sign "
+                              "in with ChatGPT, or choose the OpenAI API key engine instead."}
+        if code == 0 and "not logged in" not in text:
+            return {**base, "ready": False,
+                    "detail": "Codex is logged in some other way (not ChatGPT). Run `codex login` and sign in with "
+                              "ChatGPT to use your subscription."}
+        return {**base, "ready": False, "detail": "Not logged in — run `codex login` in a terminal and sign in with ChatGPT"}
+
+    async def _require_chatgpt(self) -> None:
+        """Never run on an API-key login (it would bill the key): checked before calls, cached for a minute."""
+        import time
+        if self.command:  # tests drive a fake binary
+            return
+        if not self._login or time.monotonic() - self._login[0] > 60 or not self._login[1]["ready"]:
+            self._login = (time.monotonic(), await self.status())
+        if not self._login[1]["ready"]:
+            raise EngineError(self._login[1]["detail"])
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        await self._require_chatgpt()
+
         def args(inputs: Path, work: Path) -> list[str]:
             argv = ["exec", "-", *CODEX_ISOLATION, "-C", str(work),
                     "--output-schema", str(inputs / "schema.json"), "-o", str(inputs / "last.json"),
-                    "-c", f"model_instructions_file={json.dumps(str(inputs / 'system.md'))}"]
+                    "-c", f"model_instructions_file={json.dumps(str(inputs / 'system.md'), ensure_ascii=False)}"]
             return argv + (["-m", self.model] if self.model else [])
 
         code, out, err, got = await _run_cli(

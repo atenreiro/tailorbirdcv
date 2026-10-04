@@ -129,13 +129,13 @@ class _Builder:
             self._run(dates, t.date, t.date_size)
         self.add(self._para(runs, before=t.company_before, after=t.company_after, tab=True, keep_next=True))
 
-    def title(self, text):
-        self.add(self._para(self._run(text, self.t.accent, self.t.body_size, bold=True), keep_next=True))
+    def title(self, text, keep_next=True):
+        self.add(self._para(self._run(text, self.t.accent, self.t.body_size, bold=True), keep_next=keep_next))
 
-    def scope(self, text, italic=True):
+    def scope(self, text, italic=True, keep_next=True):
         t = self.t
         self.add(self._para(self._run(text, t.scope if italic else t.body, t.body_size, italic=italic),
-                            after=t.scope_after, keep_next=True))
+                            after=t.scope_after, keep_next=keep_next))
 
 
 def _set(el, **attrs) -> None:
@@ -205,9 +205,12 @@ def render(profile: MasterProfile, tailored: TailoredResume, out: Path,
         for tr in tailored.experience:
             role = profile.role(tr.role)
             b.company(f"{role.employer}, {role.location}", role.dates)
-            b.title(role.title)
+            # Keep the heading with what follows *in this role* only: a role that ends at its title or scope
+            # must not glue itself to the next role (a run of short older roles would become unbreakable).
+            body = bool(tr.bullets or tr.sub_roles)
+            b.title(role.title, keep_next=bool(tr.scope) or body)
             if tr.scope:
-                b.scope(tr.scope.text, italic=role.scope.italic if role.scope else True)
+                b.scope(tr.scope.text, italic=role.scope.italic if role.scope else True, keep_next=body)
             for bl in tr.bullets:
                 b.bullet(bl.text)
             for sr in tr.sub_roles:

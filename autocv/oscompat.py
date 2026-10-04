@@ -122,8 +122,9 @@ def read_bytes(path: str | Path, attempts: int = 20) -> bytes:
 
 
 def read_text(path: str | Path) -> str:
-    """UTF-8 text through `read_bytes` (same retry); newlines normalised like open() in text mode."""
-    return read_bytes(path).decode("utf-8").replace("\r\n", "\n")
+    """UTF-8 text through `read_bytes` (same retry); newlines normalised like open() in text mode
+    (\r\n and a lone \r both become \n)."""
+    return read_bytes(path).decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def reveal_command(target: Path | None, folder: Path) -> list[str] | str:

@@ -81,3 +81,13 @@ def test_headings_stay_with_the_text_under_them(tmp_path, theme):
     assert keep("PROFESSIONAL EXPERIENCE") and keep("Acme Bank") and keep("Vice President | Detection Lead")
     assert keep("Led a team of 5 engineers protecting 20M+ customers.")
     assert not keep("Rebuilt Splunk detection logic")
+
+
+def test_a_role_without_bullets_does_not_glue_itself_to_the_next_role(tmp_path):
+    t = TAILORED.model_copy(deep=True)
+    t.experience[0].bullets, t.experience[0].sub_roles = [], []  # Acme: title + scope only
+    doc = xml(render(PROFILE, t, tmp_path / "r.docx"))
+    paras = re.findall(r"<w:p\b[^>]*>(.*?)</w:p>", doc)
+    keep = lambda needle: next("<w:keepNext/>" in p for p in paras if needle in p)  # noqa: E731
+    assert keep("Acme Bank") and keep("Vice President | Detection Lead")  # company → title → scope stay together
+    assert not keep("Led a team of 5 engineers protecting 20M+ customers.")  # …but the scope doesn't pull Telco
