@@ -259,7 +259,10 @@ _DASHES = str.maketrans({c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u
 
 
 def _tokens(text: str) -> list[str]:
-    return re.findall(r"\w+", unicodedata.normalize("NFKC", text or "").translate(_DASHES).lower())
+    """Words, whole numbers ("1.2", "3,000") and the symbols that change a fact (% + # $ € £ ¥): "US$1.2M" never
+    matches "US$12M", "C#" never matches "C++", "40%" never matches "40"."""
+    return re.findall(r"\d+(?:[.,]\d+)*|[^\W\d_]+|\d+|[%+#$€£¥]",
+                      unicodedata.normalize("NFKC", text or "").translate(_DASHES).lower())
 
 
 class _Source:
@@ -269,6 +272,11 @@ class _Source:
         tokens = _tokens(text)
         self.spaced = " " + " ".join(tokens) + " "
         self.joined = "".join(tokens)
+        self.starts, self.ends, at = set(), set(), 0
+        for t in tokens:  # where each word begins and ends in `joined`
+            self.starts.add(at)
+            at += len(t)
+            self.ends.add(at)
 
     def has(self, text: str) -> bool:
         tokens = _tokens(text)
@@ -277,8 +285,16 @@ class _Source:
         if " " + " ".join(tokens) + " " in self.spaced:  # the same words, in order, as whole words
             return True
         joined = "".join(tokens)
-        # PDFs split words at line ends ("detec- tion"): long items may also match without word breaks.
-        return len(joined) >= 12 and joined in self.joined
+        # PDFs split words at line ends ("detec- tion"): long items may also match without word breaks, but only
+        # where the match starts and ends on word boundaries ("Head of Security" is not in "ahead of security").
+        if len(joined) < 12:
+            return False
+        at = self.joined.find(joined)
+        while at != -1:
+            if at in self.starts and at + len(joined) in self.ends:
+                return True
+            at = self.joined.find(joined, at + 1)
+        return False
 
 
 def _url_text(url: str) -> str:
@@ -315,12 +331,43 @@ def checkable(profile: dict) -> list[tuple[str, str]]:
     return out
 
 
+def _role_sections(profile: dict, source: str) -> dict[str, str]:
+    """Each role's own part of the CV: from where its employer (next to its title) appears to where the next
+    role's begins. A role whose heading can't be found isn't sectioned (it's checked against the whole file)."""
+    words = _tokens(source)
+    starts: list[tuple[int, str]] = []
+    for r in profile.get("roles") or []:
+        emp, title = _tokens(r.get("employer", "")), _tokens(r.get("title", ""))[:3]
+        hits = [i for i in range(len(words)) if emp and words[i:i + len(emp)] == emp]
+        near = [i for i in hits if title and any(words[j:j + len(title)] == title
+                                                 for j in range(max(0, i - 40), min(len(words), i + 40)))]
+        if near:
+            pos = near[0]
+            title_at = [j for j in range(max(0, pos - 40), pos) if words[j:j + len(title)] == title]
+            starts.append((min([pos, *title_at]), r["id"]))  # some CVs put the title first
+    starts.sort()
+    sections: dict[str, str] = {}
+    for k, (pos, rid) in enumerate(starts):
+        end = starts[k + 1][0] if k + 1 < len(starts) else len(words)
+        sections[rid] = " ".join(words[pos:end])
+    return sections
+
+
 def unverified(profile: dict, source: str) -> list[str]:
-    """Paths whose text isn't in the original resume word-for-word (whole words, in order)."""
+    """Paths whose text isn't in the original resume word-for-word (whole words, in order). A role's fields and
+    bullets must be in that role's own part of the CV, so facts can't move between employers."""
     src = _Source(source)
+    sections = {rid: _Source(text) for rid, text in _role_sections(profile, source).items()}
+    owner: dict[str, str] = {}
+    for r in profile.get("roles") or []:
+        for f in ("employer", "location", "title", "dates"):
+            owner[f"{r['id']}.{f}"] = r["id"]
+        for item in [*([r["scope"]] if r.get("scope") else []), *(r.get("achievements") or []), *(r.get("sub_roles") or [])]:
+            owner[item["id"]] = r["id"]
     out: list[str] = []
     for path, text in checkable(profile):
-        if not src.has(text) and path not in out:
+        where = sections.get(owner.get(path, ""), src)
+        if not where.has(text) and path not in out:
             out.append(path)
     return out
 

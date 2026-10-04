@@ -21,7 +21,7 @@ import yaml
 from pydantic import ValidationError
 
 from . import factcheck, fit, paths
-from .engine import Engine
+from .engine import Engine, EngineError
 from .render import active_design, docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 
@@ -537,14 +537,14 @@ async def fit_to_length(engine: Engine, profile: MasterProfile, tailored: Tailor
     lines, trims, rounds = estimate_lines(profile, tailored), 0, 0
     while lines > budget and trims < max_rounds:
         trims += 1
-        raw = await engine.complete(system_prompt(), _trim_prompt(profile, tailored.model_dump(exclude_none=True), lines,
-                                                         budget, analysis), schema)
         try:
+            raw = await engine.complete(system_prompt(), _trim_prompt(profile, tailored.model_dump(exclude_none=True),
+                                                                      lines, budget, analysis), schema)
             candidate, report, r = await _validated(engine, profile, schema, raw)
-        except ValidationError:
-            break
+        except (ValidationError, EngineError):
+            break  # a failed round (timeout, bad answer) keeps the last version that passed
         rounds += r
-        if not report.ok:
+        if not report.ok or not _only_removed(tailored, candidate):
             break  # keep the last version that passed
         tailored, lines = candidate, estimate_lines(profile, candidate)
     return {"tailored": tailored, "trim_rounds": trims, "repair_rounds": rounds,
@@ -579,12 +579,35 @@ def _used_ids(t: TailoredResume) -> set[str]:
     return ids | {p.id for p in t.projects} | set(t.education) | set(t.extras)
 
 
+def _claim_key(c: Claim) -> tuple[str, frozenset]:
+    return " ".join(c.text.split()), frozenset(c.sources)
+
+
+def _extra_claims(t: TailoredResume) -> list[Claim]:
+    """Sub-role and project text overrides (not in _claims)."""
+    return [sr.text for r in t.experience for sr in r.sub_roles if sr.text] + [p.text for p in t.projects if p.text]
+
+
+def _skills(t: TailoredResume) -> set[tuple[str, str]]:
+    return {(" ".join(g.label.split()), " ".join(i.split())) for g in t.competencies for i in g.items}
+
+
 def _kept_everything(before: TailoredResume, after: TailoredResume) -> bool:
-    """`after` still has every claim of `before` (same text and sources) and every item it listed."""
-    def key(c: Claim) -> tuple[str, frozenset]:
-        return " ".join(c.text.split()), frozenset(c.sources)
-    claims_after = {key(c) for _, c in _claims(after)}
-    return all(key(c) in claims_after for _, c in _claims(before)) and _used_ids(before) <= _used_ids(after)
+    """`after` still has everything `before` had, word for word: every claim (incl. sub-role and project text),
+    every listed item, every skill under its label, and the same headline."""
+    claims_after = {_claim_key(c) for _, c in _claims(after)} | {_claim_key(c) for c in _extra_claims(after)}
+    return (all(_claim_key(c) in claims_after for _, c in _claims(before))
+            and all(_claim_key(c) in claims_after for c in _extra_claims(before))
+            and _used_ids(before) <= _used_ids(after) and _skills(before) <= _skills(after)
+            and before.headline == after.headline)
+
+
+def _only_removed(before: TailoredResume, after: TailoredResume) -> bool:
+    """A trim may shorten or drop, never add: every role kept, no evidence the draft didn't already use, no new
+    skills, the same headline."""
+    roles = lambda t: [r.role for r in t.experience]  # noqa: E731
+    return (roles(after) == roles(before) and _used_ids(after) <= _used_ids(before)
+            and {i for _, i in _skills(after)} <= {i for _, i in _skills(before)} and after.headline == before.headline)
 
 
 async def fill(engine: Engine, profile: MasterProfile, tailored: TailoredResume, analysis: dict, room: int,

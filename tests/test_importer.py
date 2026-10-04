@@ -155,3 +155,47 @@ def test_the_demo_engine_works_for_a_brand_new_user(tmp_path, monkeypatch):
     assert client.post(f"/api/applications/{app_id}/analyze").status_code == 200
     composed = client.post(f"/api/applications/{app_id}/compose", json={}).json()
     assert composed["report"]["ok"], composed["report"]
+
+
+# ---- second audit: verification gaps ------------------------------------------------------------
+
+SOURCE2 = """Jane Example
+Acme Bank — Singapore
+Vice President, Jan 2022 – Present
+• Saved US$12M by consolidating vendors.
+• Built C++ tooling for 40 engineers.
+• Stayed ahead of security deadlines across 12M+ accounts.
+Telco Co — Leeds
+Head of Network, Jan 2012 – Dec 2021
+• Negotiated vendor contracts saving US$1.7M in a single year.
+"""
+
+
+def _two_roles(acme_bullets, telco_bullets, acme_title="Vice President", telco_title="Head of Network"):
+    ach = lambda rid, items: [{"id": f"{rid}.a{i + 1}", "text": t} for i, t in enumerate(items)]  # noqa: E731
+    return {"contact": {"name": "Jane Example"}, "headlines": [], "roles": [
+        {"id": "acme", "employer": "Acme Bank", "location": "Singapore", "title": acme_title,
+         "dates": "Jan 2022 – Present", "achievements": ach("acme", acme_bullets), "sub_roles": []},
+        {"id": "telco", "employer": "Telco Co", "location": "Leeds", "title": telco_title,
+         "dates": "Jan 2012 – Dec 2021", "achievements": ach("telco", telco_bullets), "sub_roles": []}]}
+
+
+@pytest.mark.parametrize("bullet", ["Saved US$1.2M by consolidating vendors.", "Built C# tooling for 40 engineers.",
+                                    "Built C++ tooling for 40% engineers.", "Stayed ahead of security deadlines across 12M accounts."])
+def test_symbols_and_decimals_must_match(bullet):
+    p = _two_roles([bullet], ["Negotiated vendor contracts saving US$1.7M in a single year."])
+    assert "acme.a1" in importer.unverified(p, SOURCE2), bullet
+
+
+def test_the_joined_fallback_needs_word_boundaries():
+    p = _two_roles(["Saved US$12M by consolidating vendors."], [], acme_title="Head of Security")
+    assert "acme.title" in importer.unverified(p, SOURCE2)  # not "ahead of security"
+
+
+def test_facts_cannot_move_between_employers():
+    swapped = _two_roles(["Negotiated vendor contracts saving US$1.7M in a single year."],
+                         ["Saved US$12M by consolidating vendors."])
+    assert {"acme.a1", "telco.a1"} <= set(importer.unverified(swapped, SOURCE2))
+    right = _two_roles(["Saved US$12M by consolidating vendors."],
+                       ["Negotiated vendor contracts saving US$1.7M in a single year."])
+    assert importer.unverified(right, SOURCE2) == []

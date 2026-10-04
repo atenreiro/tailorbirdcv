@@ -90,7 +90,7 @@ export default function NewApplication() {
             <div className="animate-rise overflow-hidden rounded-[14px] border border-rule bg-sheet focus-within:border-accent">
               <textarea
                 className="block min-h-[420px] w-full resize-y border-0 bg-transparent px-7 py-6 text-base leading-[1.6] text-ink outline-none"
-                placeholder="Paste the full job description here — title, company, responsibilities, requirements…"
+                placeholder="Paste the full job description here — title, company, responsibilities, requirements…" maxLength={60000}
                 aria-label="Job description" value={jd} onChange={(e) => setJd(e.target.value)} onKeyDown={onKey} autoFocus />
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line bg-wash px-7 py-2.5 font-mono text-xs text-faint">
                 <span>{jd.trim().split(/\s+/).filter(Boolean).length} words</span>

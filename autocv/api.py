@@ -38,11 +38,14 @@ log = logging.getLogger("autocv")
 # --------------------------------------------------------------------------- request models
 
 
+MAX_JD = 60_000  # characters: ~15 pages of job description; longer is almost certainly not one job
+
+
 class NewApplication(BaseModel):
-    jd: str = ""
-    url: str | None = None
-    company: str = ""
-    role: str = ""
+    jd: str = Field("", max_length=MAX_JD * 2)  # trimmed below; refuse absurd bodies outright
+    url: str | None = Field(None, max_length=2000)
+    company: str = Field("", max_length=500)
+    role: str = Field("", max_length=500)
 
 
 class ProfileImport(BaseModel):
@@ -629,7 +632,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         jd, company, role = body.jd.strip(), body.company, body.role
         if not jd and body.url:
             try:
-                job = await fetch_job(body.url.strip())
+                job = await asyncio.wait_for(fetch_job(body.url.strip()), 90)
+            except asyncio.TimeoutError:
+                raise HTTPException(422, "The job page took too long to load. Paste the job description instead.")
             except FetchError as e:
                 raise HTTPException(422, f"{e} Paste the job description instead.")
             except ValueError:
@@ -637,6 +642,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             jd, company, role = job.text, company or job.company, role or job.role
         if len(jd) < 100:
             raise HTTPException(422, "The job description looks too short — paste the full text.")
+        if len(jd) > MAX_JD:
+            raise HTTPException(422, f"The job description is very long ({len(jd):,} characters; the limit is "
+                                     f"{MAX_JD:,}). Paste just the posting itself.")
         app_id = store.create_app(company or "company", role or "role", jd, body.url)
         return {"id": app_id}
 

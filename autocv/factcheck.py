@@ -91,7 +91,7 @@ MAGNITUDE_RE = re.compile(
 _MULT = {"k": 1e3, "m": 1e6, "million": 1e6, "mn": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9,
          "thousand": 1e3, "hundred": 1e2, "dozen": 12, "trillion": 1e12, "tn": 1e12}
 # possessive quantifiers: "1.5x" must not backtrack into a bare "1"
-_NUM_RE = re.compile(r"(?<![\w.])(\d[\d,]*+(?:\.\d++)?)\s?(k|mn|m|bn|b|tn|million|billion|trillion|thousand|"
+_NUM_RE = re.compile(r"(?<![\w.,])(\d{1,3}(?:,\d{3})++|\d++)((?:\.\d++)?)\s?(k|mn|m|bn|b|tn|million|billion|trillion|thousand|"
                      r"hundred|dozen)?(?![a-z0-9])", re.I)
 _ORDINAL_RE = re.compile(r"(?<![\w.])(\d+)(?:st|nd|rd|th)\b", re.I)
 _MULTIPLIER_RE = re.compile(r"(?<![\w.])\d+(?:\.\d+)?x\b", re.I)
@@ -122,12 +122,22 @@ RISKY_WORDS = {
     # products / languages that are also dictionary words
     "python", "ruby", "swift", "spark", "chef", "puppet", "snowflake", "oracle", "tableau", "confluence",
     "sentinel", "falcon", "consul", "cisco", "juniper", "cortex", "apache", "flask", "scala", "cobalt",
-    "git", "wiz", "arbor", "sap", "burp", "ai",
+    "git", "wiz", "arbor", "sap", "burp", "ai", "jenkins", "ansible", "kinesis", "tenable",
 }
 # Company/product names that are also dictionary words: never accepted as an "ordinary
 # capitalised first word" or as a generic group-label word (lowercase use is fine).
 BRAND_WORDS = {"apple", "amazon", "visa", "shell", "meta", "alphabet", "stripe", "ripple", "windows", "outlook",
-               "office", "citadel", "jump", "virtu", "optiver", "oracle", "sentinel", "defender", "prisma"}
+               "office", "citadel", "jump", "virtu", "optiver", "oracle", "sentinel", "defender", "prisma",
+               # tools and products that are also dictionary words ("Elastic dashboards…", "Jenkins pipelines…")
+               "elastic", "jenkins", "react", "kinesis", "fortify", "helm", "snort", "sigma", "pandas", "presto",
+               "workday", "looker", "android", "tenable", "ansible", "chef", "puppet", "nagios", "zabbix",
+               "grafana", "kibana", "redis", "mongo", "postgres", "lambda", "fargate", "athena", "redshift",
+               "bigquery", "dataflow", "pulsar", "airflow", "dagster", "spark", "flink",
+               "palo", "fortinet", "proofpoint", "okta",
+               "auth0", "vault", "consul", "nomad", "packer", "vagrant", "istio", "envoy", "linkerd",
+               "falco", "trivy", "snyk", "sonar", "veracode", "checkmarx", "nessus", "qualys", "rapid7", "metasploit",
+               "cobalt", "mimikatz", "bloodhound", "nmap", "wireshark", "zeek", "suricata", "yara",
+               "tines", "swimlane", "phantom", "demisto", "xsoar", "jira", "servicenow", "slack"}
 # Abbreviations that are ordinary prose.
 _ABBREVIATIONS = {"e.g", "i.e", "eg", "ie", "etc", "vs", "approx", "incl", "cf", "yoy", "qoq", "p.a"}
 # Hyphen suffixes that don't change a claim ("Splunk-based"); never credentials.
@@ -188,18 +198,9 @@ podcasts webinar webinars smartphone smartphones laptop laptops startup startups
 
 # Generic words a competency group label may use even if the profile doesn't.
 LABEL_WORDS = set("""
-security cyber cybersecurity information data cloud network networks infrastructure application applications
-platform platforms tool tools tooling technology technologies engineering operations leadership management
-governance risk risks compliance regulatory strategy strategic architecture detection response incident
-incidents threat threats intelligence identity access privacy resilience continuity assurance audit controls
-control frameworks framework standards programs program programmes programme delivery people team teams
-talent stakeholder stakeholders vendor vendors budget communication core key technical business domain
-expertise skills competencies capabilities practices methods languages programming automation analytics
-monitoring testing offensive defensive product products digital transformation modernization other
-additional general emerging edge perimeter operational policy policies secure software development
-endpoint endpoints systems services service enterprise investigations forensics engagement executive
-advisory consulting oversight planning design research reporting training awareness
-quality project projects communications
+skills skill competencies competency capabilities capability expertise tools tooling technologies technology
+platforms platform languages frameworks framework methods methodologies practices areas area domain domains
+core key technical other additional general selected relevant professional specialist specialties
 """.split())
 # Only structural words here: a label naming a domain ("Healthcare", "Sales") must find support in the
 # profile itself (its skills or text), so a label can't imply experience the evidence doesn't show.
@@ -381,8 +382,8 @@ def numbers(text: str) -> set[float]:
     text = normalize(text)
     found: set[float] = set()
     for m in _NUM_RE.finditer(text):
-        value = float(m.group(1).replace(",", ""))
-        found.add(value * _MULT.get((m.group(2) or "").lower(), 1))
+        value = float(m.group(1).replace(",", "") + m.group(2))
+        found.add(value * _MULT.get((m.group(3) or "").lower(), 1))
     for m in _ORDINAL_RE.finditer(text):
         found.add(float(m.group(1)))
     found.update(_number_word_values(text))
@@ -552,6 +553,84 @@ def character_problems(text: str, allowed_text: str) -> list[str]:
     return problems
 
 
+# Words that state authority, ownership, credentials or scope — in any form ("Headed", "certifications",
+# "patents", "multinational"). A claim using one needs a form of it in the cited sources; for leadership
+# verbs, a weaker form in the claim is satisfied by a stronger one in the source, never the reverse.
+_STEMS: dict[str, str] = {
+    "lead": r"led|lead|leads|leading|leader|leaders|leadership",
+    "head": r"head|heads|headed|heading",
+    "direct": r"directed|directing|directs|director|directors|directorship",
+    "spearhead": r"spearhead|spearheads|spearheaded|spearheading",
+    "chair": r"chaired|chairs|chairing|chairman|chairwoman|chairperson",
+    "manage": r"managed|manages|managing|manager|managers",
+    "oversee": r"oversaw|oversee|oversees|overseeing|overseen",
+    "own": r"own|owned|owns|owning|owner|owners|ownership",
+    "certify": r"certif\w*", "accredit": r"accredit\w*", "license": r"licen[cs]\w*",
+    "award": r"award\w*", "patent": r"patent\w*", "publish": r"publish\w*|publication|publications",
+    "invent": r"invent\w*", "found": r"founded|founder|founders|founding|cofounded|cofounder",
+    "international": r"international\w*", "multinational": r"multinational\w*", "enterprise": r"enterprise\w*",
+    "department": r"departments?|departmental", "division": r"divisions?|divisional",
+}
+_STEM_RE = {k: re.compile(r"(?<![^\W_])(?:" + v + r")(?![^\W_])", re.I) for k, v in _STEMS.items()}
+_LEADS = {"lead", "head", "direct", "spearhead", "chair"}
+# what in a source can support each group (a source saying "Headed" supports a claim saying "Led")
+_SUPPORTED_BY = {k: {k} for k in _STEMS} | {k: _LEADS for k in _LEADS} | {
+    "manage": _LEADS | {"manage", "oversee"}, "oversee": _LEADS | {"manage", "oversee"}}
+
+
+def _words(text: str) -> list[str]:
+    """Words and "&", without the punctuation around them ("Chartered." → "chartered")."""
+    return re.findall(r"[^\s,.;:()|/\"!?]+", text.lower())
+
+
+def _stem_groups(text: str) -> set[str]:
+    flat = text.replace("-", " ")
+    return {k for k, rx in _STEM_RE.items() if rx.search(flat)}
+
+
+_PAIR_SKIP = STOPWORDS | {"per", "than", "from", "over", "under", "across", "while", "more", "less", "plus",
+                          "x", "times", "fold", "percent", "pct", "k", "m", "b", "mn", "bn", "million", "billion",
+                          "thousand", "hundred", "dozen", "trillion", "tn", "into", "within", "after", "before",
+                          "each", "every", "via", "through", "up", "down", "about", "around", "roughly", "nearly"}
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ies", "es", "s"):
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            return word[: -len(suffix)] + ("y" if suffix == "ies" else "")
+    return word
+
+
+def _number_mentions(text: str) -> list[tuple[float, bool, str | None, int]]:
+    """(value, is a percentage, the word right after it, position) for each number written with digits."""
+    out = []
+    for m in _NUM_RE.finditer(text):
+        value = float(m.group(1).replace(",", "") + m.group(2)) * _MULT.get((m.group(3) or "").lower(), 1)
+        after = text[m.end(): m.end() + 60]
+        percent = bool(re.match(r"\s*(?:%|percent\b|pct\b)", after))
+        word = re.match(r"[\s%+$€£]*(?:-\s*)?([a-z][a-z'-]*)", after)
+        w = word.group(1).split("-")[0] if word else None
+        out.append((value, percent, None if not w or w in _PAIR_SKIP else w, m.end()))
+    return out
+
+
+def _paired_in(value: float, percent: bool, word: str | None, source: str) -> bool | None:
+    """Whether one source states `value` (as a percentage when `percent`) with `word` in the 4 words after
+    it. None when the source only states the value in words ("six"), which can't be paired reliably."""
+    mentions = [x for x in _number_mentions(source) if abs(x[0] - value) <= 1e-9 * max(1.0, abs(value))]
+    if not mentions:
+        return None
+    for _, pct, _, end in mentions:
+        if percent and not pct:
+            continue
+        if word is None:
+            return True
+        following = re.findall(r"[a-z][a-z']*", source[end: end + 80].replace("-", " "))[:4]
+        if any(_stem(t) == _stem(word) for t in following):
+            return True
+    return False
+
+
 # --------------------------------------------------------------------------- evidence
 
 
@@ -602,6 +681,17 @@ class FactChecker:
         self.profile_corpus = normalize("\n".join(
             [*self.index.values(), self.skill_raw, *(h.text for h in profile.headlines)]))
         self.dictionary_available = bool(_system_words())
+        self.use_vocabulary = True  # off while checking a role's own lines (they cite only that role)
+        # For pairing checks: each role's employer and the parts of its title ("Vice President | Team Lead").
+        self.employers: dict[str, list[str]] = {}
+        for r in profile.roles:  # "First Harbor Bank" is also written "First Harbor"
+            full = normalize(r.employer).strip(" ,.")
+            short = re.sub(r"(\s+(bank|ltd|limited|inc|plc|llc|group|corp|corporation|co|holdings|sa|ag|gmbh))+$", "", full)
+            names = {n for n in (full, short) if len(n) >= 3}
+            if names:
+                self.employers[r.id] = sorted(names, key=len, reverse=True)
+        self.title_parts = {r.id: {t for t in (normalize(x).strip(" ()") for x in re.split(r"[|,(;]", r.title))
+                                   if len(t.split()) >= 2} for r in profile.roles}
 
     # -- claims ------------------------------------------------------------------
     def check_claim(self, claim: Claim, where: str, report: Report, role: str | None = None,
@@ -637,9 +727,17 @@ class FactChecker:
                 report.error(where, f"cites evidence from another entry ({', '.join(foreign)}) — this line may "
                                     f"only cite {', '.join(sorted(allowed))}")
                 return
+        # Approved vocabulary is for the summary and highlights; a role's own lines stick to that role's evidence.
+        self.use_vocabulary = role is None and allowed is None
+        try:
+            self._check_claim_text(claim, where, report)
+        finally:
+            self.use_vocabulary = True
+
+    def _check_claim_text(self, claim: Claim, where: str, report: Report) -> None:
 
         raw_sources = "\n".join(self.index[s] for s in claim.sources)
-        problems = character_problems(claim.text, raw_sources + "\n" + self.vocab_raw)
+        problems = character_problems(claim.text, raw_sources + "\n" + (self.vocab_raw if self.use_vocabulary else ""))
         for msg in problems:
             report.error(where, msg)
         if problems:
@@ -652,6 +750,24 @@ class FactChecker:
         for value in sorted(numbers(claim.text)):
             if not _contains_number(pool, value):
                 report.error(where, f"number {_shown(value)} not found in cited sources {claim.sources}")
+        # A number must keep its meaning: stated with the same thing (and as a percentage when it is one) in a
+        # single cited source — "3 engineers" can't borrow the 3 from one source and "engineers" from another.
+        sources_n = [normalize(self._fact_text(s)) for s in claim.sources]
+        fact_pool = numbers("\n".join(sources_n))
+        for value, percent, word, _ in _number_mentions(text):
+            if not _contains_number(pool, value):
+                continue
+            if not _contains_number(fact_pool, value):  # only in a role's dates: fine as a year, never as a count
+                if not (1900 <= value <= 2100 and word is None and not percent):
+                    report.error(where, f"{_shown(value)} comes from the role's dates, not its evidence — don't use "
+                                        "it as a number of anything")
+                continue
+            verdicts = [_paired_in(value, percent, word, src) for src in sources_n]
+            if True in verdicts or all(v is None for v in verdicts):
+                continue
+            what = f"{_shown(value)}{'%' if percent else ''}" + (f' with "{word}"' if word else "")
+            report.error(where, f"{what} isn't stated together in one cited source {claim.sources} — keep each "
+                                "number with what it counts")
         for m in [*MAGNITUDE_RE.finditer(text), *_MULTIPLIER_RE.finditer(text)]:
             if not has(m.group(0), corpus):
                 report.error(where, f'"{m.group(0)}" is a magnitude/multiplier not stated in cited sources')
@@ -667,10 +783,22 @@ class FactChecker:
                                 "match the evidence, or remove it")
 
         stripped_n = normalize(stripped)
+        flat, corpus_flat = stripped_n.replace("-", " "), corpus.replace("-", " ")
         for word in sorted(RISKY_WORDS):
-            if has(word, stripped_n) and not self._word_supported(word, corpus):
+            if (has(word, stripped_n) or has(word.replace("-", " "), flat)) and not (
+                    self._word_supported(word, corpus, vocabulary=False)
+                    or has(word.replace("-", " "), corpus_flat)):
                 report.error(where, f'"{word}" is not stated in cited sources {claim.sources} — '
                                     "don't add scope, credentials or technologies")
+        # From the evidence itself: a role's title ("Detection Lead") doesn't make every bullet a leadership claim.
+        in_sources = _stem_groups(normalize("\n".join(self._fact_text(s) for s in claim.sources)))
+        for group in sorted(_stem_groups(stripped_n)):
+            if _SUPPORTED_BY[group] & in_sources or self._phrase_in_skills(group, flat):
+                continue
+            shown = _STEM_RE[group].search(flat).group(0)
+            report.error(where, f'"{shown}" is not stated in cited sources {claim.sources} — don\'t add '
+                                "leadership, ownership, credentials or scope the evidence doesn't state")
+        self._check_title_pairs(text, claim, where, report)
 
         if self.dictionary_available:
             flagged: list[str] = []
@@ -683,6 +811,43 @@ class FactChecker:
         elif not any(w.message.startswith("system dictionary") for w in report.warnings):
             report.warn("factcheck", "system dictionary (the bundled word list) not found — lowercase "
                                      "tool/product names were not checked")
+
+    def _phrase_in_skills(self, group: str, flat: str) -> bool:
+        """Every use of the word is part of a phrase from the profile's skills ("control ownership")."""
+        skills = self.skill_corpus.replace("-", " ")
+        for m in _STEM_RE[group].finditer(flat):
+            before = flat[: m.start()].split()[-1:]
+            after = flat[m.end():].split()[:1]
+            if not ((before and has(f"{before[0]} {m.group(0)}", skills)) or (after and has(f"{m.group(0)} {after[0]}", skills))):
+                return False
+        return True
+
+    def _fact_text(self, source_id: str) -> str:
+        """The evidence itself, without the role's locked line (employer, title, dates) appended for naming."""
+        return self.index[source_id].split("\n", 1)[0] if source_id in self.owner else self.index[source_id]
+
+    def _check_title_pairs(self, text: str, claim: Claim, where: str, report: Report) -> None:
+        """A job title next to an employer must be that employer's title ("Head of Security at Acme Bank" is
+        wrong when Head of Security was at Telco)."""
+        words = _words(text)
+
+        def positions(phrase: str) -> list[int]:
+            target = _words(phrase)
+            return [i for i in range(len(words)) if words[i:i + len(target)] == target]
+        employer_at = {i: rid for rid, names in self.employers.items() for emp in names for i in positions(emp)}
+        if not employer_at:
+            return
+        for rid, parts in self.title_parts.items():
+            for part in parts:
+                for i in positions(part):
+                    end = i + len(_words(part))
+                    after = [j for j in employer_at if 0 <= j - end <= 3]  # "Head of Security at Telco"
+                    near = min(after) if after else min(employer_at, key=lambda j: abs(j - i))
+                    other = employer_at[near]
+                    if abs(near - i) <= 8 and other != rid and part not in self.title_parts.get(other, set()) \
+                            and part not in normalize(self.profile.role(other).title):
+                        report.error(where, f'"{part}" was your title at {self.profile.role(rid).employer}, not at '
+                                            f"{self.profile.role(other).employer} — keep titles with their employer")
 
     def _lower_word_ok(self, word: str, corpus: str) -> bool:
         if word in STOPWORDS or word in RISKY_WORDS or word in _ABBREVIATIONS:
@@ -708,7 +873,7 @@ class FactChecker:
     def _strip_approved_phrases(self, text: str, corpus: str) -> str:
         """Remove multi-word synonyms/vocabulary (e.g. "Web Application Firewall") whose
         meaning is supported, so they are not checked word by word."""
-        phrases = [canon(v) for v in self.profile.vocabulary if " " in v]
+        phrases = [canon(v) for v in self.profile.vocabulary if " " in v] if self.use_vocabulary else []
         for group, raw in zip(self.synonyms, self.profile.synonyms):
             if any(has(alt, corpus) for alt in group):
                 phrases += [canon(m) for m in raw if " " in m]
@@ -716,8 +881,9 @@ class FactChecker:
             text = re.sub(r"(?<![^\W_])" + re.escape(phrase) + r"(?![^\W_])", "approved", text, flags=re.I)
         return text
 
-    def _word_supported(self, n: str, corpus: str) -> bool:
-        if has(n, corpus) or any(has(n, v) for v in self.vocabulary):
+    def _word_supported(self, n: str, corpus: str, vocabulary: bool | None = None) -> bool:
+        use_vocab = self.use_vocabulary if vocabulary is None else vocabulary
+        if has(n, corpus) or (use_vocab and any(has(n, v) for v in self.vocabulary)):
             return True
         return any(n in group and any(has(alt, corpus) for alt in group) for group in self.synonyms)
 
@@ -797,6 +963,11 @@ class FactChecker:
             return False
         if any(v in LABEL_WORDS for v in variants):
             return True
+        if len(w) >= 7 and re.search(r"(?<![^\W_])" + re.escape(w[:-2]), self.profile_corpus):
+            return True  # a close form of a profile word: "Delivery" ← "delivered", "Advisory" ← "advisor"
+        groups = _stem_groups(w)  # "Leadership" when the profile says "Led a team"
+        if groups and all(_SUPPORTED_BY[g] & _stem_groups(self.profile_corpus) for g in groups):
+            return True
         return is_common_word(w) and any(has(v, self.profile_corpus) for v in variants)
 
     # -- whole resume --------------------------------------------------------------
@@ -827,6 +998,9 @@ class FactChecker:
             where = f"experience[{i}]"
             if tr.role not in role_ids:
                 report.error(where, f"unknown role id '{tr.role}'")
+                continue
+            if tr.role in used:
+                report.error(where, f"role '{tr.role}' appears twice — list each role once")
                 continue
             used.append(tr.role)
             role = p.role(tr.role)

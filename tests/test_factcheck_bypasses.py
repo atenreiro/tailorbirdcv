@@ -245,7 +245,7 @@ def test_competency_label_bypasses_are_rejected(profile, tailored, label, needle
 
 
 @pytest.mark.parametrize("label", ["Platforms", "Security Platforms & Tools", "Detection Engineering",
-                                   "Cloud & Edge Security", "WAF & DDoS", "Banking Security Leadership"])
+                                   "Edge Security", "WAF & DDoS", "Banking Security Leadership"])
 def test_reasonable_competency_labels_pass(profile, tailored, label):
     tailored.competencies[1].label = label
     assert errs_at(profile, tailored, "competencies[1].label") == []
