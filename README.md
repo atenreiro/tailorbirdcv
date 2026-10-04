@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" alt="AutoCV" width="240"></p>
+
 # AutoCV
 
 AutoCV tailors your resume to a specific job, **without inventing anything**.
