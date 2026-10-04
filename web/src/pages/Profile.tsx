@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, type Evidence, type LeadItem, type Profile as P, type Track } from '../api'
+import { api, type Evidence, type LeadItem, type Profile as P, type Role, type Track } from '../api'
 import { AnswersPanel, PreferencesPanel } from './Memory'
 import { useKnowledge } from './useKnowledge'
 import { HistoryPanel } from './History'
@@ -28,7 +28,9 @@ const soft = 'w-full rounded-lg border border-line bg-wash outline-none transiti
 const quiet = 'rounded-lg border border-transparent bg-transparent outline-none transition-colors hover:border-rule focus:border-accent focus:bg-sheet'
 const addBtn = 'h-8 cursor-pointer self-start rounded-lg px-2.5 font-medium text-accent hover:bg-[#eef1fd]'
 
-function Grow({ value, onChange, className, label }: { value: string; onChange: (v: string) => void; className?: string; label: string }) {
+function Grow({ value, onChange, className, label, placeholder, autoFocus }: {
+  value: string; onChange: (v: string) => void; className?: string; label: string; placeholder?: string; autoFocus?: boolean
+}) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -38,7 +40,8 @@ function Grow({ value, onChange, className, label }: { value: string; onChange: 
     window.addEventListener('resize', fit)  // re-wrap when the window narrows or widens
     return () => window.removeEventListener('resize', fit)
   }, [value])
-  return <textarea ref={ref} rows={1} aria-label={label} className={cx(soft, 'min-h-[38px] resize-none overflow-hidden px-3 py-2 text-sm leading-[1.45]', className)} value={value} onChange={(e) => onChange(e.target.value)} />
+  return <textarea ref={ref} rows={1} aria-label={label} placeholder={placeholder} autoFocus={autoFocus}
+    className={cx(soft, 'min-h-[38px] resize-none overflow-hidden px-3 py-2 text-sm leading-[1.45]', className)} value={value} onChange={(e) => onChange(e.target.value)} />
 }
 
 function nextId(prefix: string, taken: Set<string>) {
@@ -67,19 +70,21 @@ function RawListField({ parse, format, label }: { parse: (t: string) => void; fo
   )
 }
 
-function EvidenceRow({ e, scope, idCol, onChange, onDelete }: {
+function EvidenceRow({ e, scope, idCol, onChange, onDelete, placeholder, autoFocus, hideId }: {
   e: Evidence; scope?: boolean; idCol: string; onChange: (e: Evidence) => void; onDelete: () => void
+  placeholder?: string; autoFocus?: boolean; hideId?: boolean
 }) {
   const source = e.source ?? 'resume'
   return (
     <div className={cx('grid items-start gap-3 border-b border-[#eef0f4] py-2 xl:gap-3.5', idCol)}>
       <div className="col-span-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-[3px] sm:col-span-1 sm:flex-col sm:flex-nowrap sm:items-start sm:pt-2">
-        <span className="break-all font-mono text-[11px] text-accent">{e.id}</span>
+        <span className="break-all font-mono text-[11px] text-accent">{hideId ? (scope ? 'scope' : 'bullet') : e.id}</span>
         <span className={cx('font-mono text-[10px] uppercase tracking-[0.06em]', source === 'resume' ? 'text-faint' : 'text-[#7a4700]')}>
-          {scope && 'scope · '}{source}{e.in_base_resume === false && ' · not in base'}
+          {hideId ? 'new' : <>{scope && 'scope · '}{source}{e.in_base_resume === false && ' · not in base'}</>}
         </span>
       </div>
-      <Grow label={e.id} value={e.text} className={scope ? 'italic' : undefined} onChange={(text) => onChange({ ...e, text })} />
+      <Grow label={e.id} value={e.text} className={scope ? 'italic' : undefined} placeholder={placeholder} autoFocus={autoFocus}
+        onChange={(text) => onChange({ ...e, text })} />
       <button className="h-[38px] cursor-pointer text-faint hover:text-bad" onClick={onDelete} aria-label={`Delete ${e.id}`}
         title="Delete. Tailored resumes that cite it will fail the fact-check.">✕</button>
     </div>
@@ -90,6 +95,50 @@ function EvidenceRow({ e, scope, idCol, onChange, onDelete }: {
 // Phones: id on its own line above the text; wider screens: id column on the left.
 const ROLE_ROW = 'grid-cols-[minmax(0,1fr)_24px] sm:grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[150px_minmax(0,1fr)_28px]'
 const SIDE_ROW = 'grid-cols-[minmax(0,1fr)_24px] sm:grid-cols-[92px_minmax(0,1fr)_24px] xl:grid-cols-[110px_minmax(0,1fr)_24px]'
+
+const MAX_BULLETS = 10  // resume bullets a new role starts with: 1 to 10
+
+function slug(text: string) {
+  return text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'role'
+}
+
+function blankRole(id: string): Role {
+  const fresh = (eid: string): Evidence => ({ id: eid, text: '', source: 'interview', in_base_resume: false })
+  return { id, employer: '', location: '', title: '', dates: '', scope: { ...fresh(`${id}.scope`), italic: true },
+    achievements: [fresh(`${id}.a1`)], sub_roles: [] }
+}
+
+/** Roles added since the last save get their final ids from the company name (their evidence ids follow:
+ *  `<id>.scope`, `<id>.a1`…), never an id in use or retired. Empty bullets and an empty scope are dropped.
+ *  Returns what's missing instead when a new role is incomplete. */
+function finalizeNewRoles(p: P, saved: P): { profile: P; problems: string[] } {
+  const known = new Set(saved.roles.map((r) => r.id))
+  const profile = structuredClone(p)
+  const problems: string[] = []
+  const taken = allIds(profile)
+  profile.roles.forEach((r, i) => {
+    if (known.has(r.id)) return
+    for (const key of ['employer', 'location', 'title', 'dates'] as const) r[key] = r[key].trim()
+    const name = r.employer || `New role ${i + 1}`
+    const missing = (['employer', 'location', 'dates', 'title'] as const).filter((k) => !r[k])
+      .map((k) => ({ employer: 'company name', location: 'location', dates: 'dates', title: 'title' })[k])
+    r.achievements = r.achievements.map((a) => ({ ...a, text: a.text.trim() })).filter((a) => a.text)
+    if (missing.length) problems.push(`${name}: add the ${missing.join(', ')}.`)
+    if (r.achievements.length === 0) problems.push(`${name}: add at least one resume bullet.`)
+    if (r.achievements.length > MAX_BULLETS) problems.push(`${name}: at most ${MAX_BULLETS} resume bullets.`)
+    if (r.scope && !r.scope.text.trim()) delete r.scope
+    // Replace the placeholder ids with ones derived from the company name.
+    const own = [r.id, r.scope?.id, ...r.achievements.map((a) => a.id)]
+    own.forEach((x) => x && taken.delete(x))
+    let id = slug(r.employer || 'role'), n = 2
+    while (taken.has(id) || [...taken].some((t) => t.startsWith(`${id}.`))) id = `${slug(r.employer || 'role')}-${n++}`
+    r.id = id
+    if (r.scope) r.scope = { ...r.scope, id: `${id}.scope`, text: r.scope.text.trim() }
+    r.achievements = r.achievements.map((a, ai) => ({ ...a, id: `${id}.a${ai + 1}` }))
+    ;[r.id, r.scope?.id, ...r.achievements.map((a) => a.id)].forEach((x) => x && taken.add(x))
+  })
+  return { profile, problems }
+}
 
 function initialTab(param: string | null): Tab {
   return TABS.includes(param as Tab) ? (param as Tab) : 'experience'
@@ -162,7 +211,9 @@ export default function Profile() {
         setYaml(r.yaml); setSavedYaml(r.yaml); setYamlVersion(r.version)
         await load()
       } else if (profileDirty) {
-        const r = await api.saveProfile(p!, version)
+        const { profile, problems } = finalizeNewRoles(p!, saved!)
+        if (problems.length) { setError(`Not saved yet. ${problems.join(' ')}`); return }
+        const r = await api.saveProfile(profile, version)
         setSaved(r.profile); setP(structuredClone(r.profile)); setVersion(r.version)
       }
       if (kn.dirty && !(await kn.save())) return
@@ -205,6 +256,15 @@ export default function Profile() {
     const subRoles = r.sub_roles.map((s, si) => ({ s, si })).filter(({ s }) => match(s))
     return { r, ri, scope, achievements, subRoles, count: (scope ? 1 : 0) + achievements.length }
   }).filter((x) => !q || x.count + x.subRoles.length > 0)
+  const savedRoleIds = new Set(saved!.roles.map((r) => r.id))
+  const addRole = () => edit((d) => { d.roles.unshift(blankRole(nextId('new-role-', ids))) })
+  const moveRole = (ri: number, by: number) => edit((d) => { const [r] = d.roles.splice(ri, 1); d.roles.splice(ri + by, 0, r) })
+  const deleteRole = (r: Role, ri: number) => {
+    const n = (r.scope ? 1 : 0) + r.achievements.length + r.sub_roles.length
+    if (savedRoleIds.has(r.id) && !window.confirm(`Delete ${r.employer || 'this role'} and its ${n} evidence item${n === 1 ? '' : 's'}? `
+      + 'Their ids are retired, and tailored resumes that cite them will fail the fact-check until you edit them.')) return
+    edit((d) => { d.roles.splice(ri, 1) })
+  }
   const noMatches = !!q && (view === 'experience' ? roles.length === 0
     : !p.summary_facts.some(match) && !p.highlights.some(match))
 
@@ -264,40 +324,74 @@ export default function Profile() {
             </div>
           )}
 
-          {view === 'experience' && roles.map(({ r, ri, scope, achievements, subRoles, count }, i) => (
-            <section key={r.id} className={cx(card, 'animate-rise overflow-hidden')} style={{ animationDelay: `${i * 50}ms` }}>
+          {view === 'experience' && !q && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted text-pretty">Roles print in this order, most recent first. Use ↑ ↓ to reorder.</p>
+              <button className={cx(addBtn, 'hover:bg-sheet')} onClick={addRole}>+ Add role</button>
+            </div>
+          )}
+          {view === 'experience' && roles.map(({ r, ri, scope, achievements, subRoles, count }, i) => {
+            const isNew = !savedRoleIds.has(r.id)
+            const ghost = isNew ? 'border-rule bg-wash placeholder:text-faint' : ''
+            return (
+            <section key={r.id} className={cx(card, 'animate-rise overflow-hidden', isNew && 'border-accent/50 shadow-[0_0_0_3px_rgb(31_63_209/0.08)]')} style={{ animationDelay: `${i * 50}ms` }}>
               <div className="flex flex-col gap-3 border-b border-line px-4 pb-[18px] pt-5 sm:px-6">
+                {isNew && <p className={cx(label, 'text-accent')}>New role · company, location, dates, title, scope and 1–{MAX_BULLETS} resume bullets</p>}
                 <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
-                  <input aria-label="Employer" className={cx(quiet, '-ml-2.5 h-11 min-w-0 flex-[1_1_260px] px-2.5 font-display text-[30px] tracking-[-0.01em] text-ink')}
+                  <input aria-label="Employer" placeholder="Company name" autoFocus={isNew && !r.employer}
+                    className={cx(quiet, ghost, '-ml-2.5 h-11 min-w-0 flex-[1_1_260px] px-2.5 font-display text-[30px] tracking-[-0.01em] text-ink')}
                     value={r.employer} onChange={(e) => edit((d) => { d.roles[ri].employer = e.target.value })} />
-                  <input aria-label="Location" className={cx(quiet, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 text-sm text-muted focus:text-ink')}
-                    style={{ width: `calc(${Math.max(8, r.location.length)}ch + 22px)` }}
+                  <input aria-label="Location" placeholder="City, Country" className={cx(quiet, ghost, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 text-sm text-muted focus:text-ink')}
+                    style={{ width: `calc(${Math.max(isNew ? 14 : 8, r.location.length)}ch + 22px)` }}
                     value={r.location} onChange={(e) => edit((d) => { d.roles[ri].location = e.target.value })} />
-                  <input aria-label="Dates" className={cx(quiet, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 font-mono text-[13px] text-muted focus:text-ink')}
-                    style={{ width: `calc(${Math.max(12, r.dates.length + 1)}ch + 22px)` }}
+                  <input aria-label="Dates" placeholder="Jan 2020 – Present" className={cx(quiet, ghost, 'h-[34px] min-w-0 max-w-full flex-none px-2.5 font-mono text-[13px] text-muted focus:text-ink')}
+                    style={{ width: `calc(${Math.max(isNew ? 18 : 12, r.dates.length + 1)}ch + 22px)` }}
                     value={r.dates} onChange={(e) => edit((d) => { d.roles[ri].dates = e.target.value })} />
+                  {!q && (
+                    <div className="ml-auto flex items-center gap-0.5 self-center" role="group" aria-label={`Arrange ${r.employer || 'new role'}`}>
+                      <button className="size-8 cursor-pointer rounded-md text-faint hover:bg-wash hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                        disabled={ri === 0} onClick={() => moveRole(ri, -1)} aria-label="Move role up" title="Move up">↑</button>
+                      <button className="size-8 cursor-pointer rounded-md text-faint hover:bg-wash hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                        disabled={ri === p.roles.length - 1} onClick={() => moveRole(ri, 1)} aria-label="Move role down" title="Move down">↓</button>
+                      <button className="size-8 cursor-pointer rounded-md text-faint hover:bg-wash hover:text-bad" onClick={() => deleteRole(r, ri)}
+                        aria-label={`Delete ${r.employer || 'new role'}`} title={isNew ? 'Remove this new role' : 'Delete this role and its evidence'}>✕</button>
+                    </div>
+                  )}
                 </div>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted">Title (locked on every resume, so it must match your real title)</span>
-                  <input className={cx(soft, 'h-10 border-rule px-3 text-[15px] font-semibold text-accent')} value={r.title} onChange={(e) => edit((d) => { d.roles[ri].title = e.target.value })} />
+                  <input className={cx(soft, 'h-10 border-rule px-3 text-[15px] font-semibold text-accent placeholder:font-normal placeholder:text-faint')} placeholder="e.g. Senior Security Engineer"
+                    value={r.title} onChange={(e) => edit((d) => { d.roles[ri].title = e.target.value })} />
                 </label>
               </div>
               <div className="flex flex-col px-4 pb-[18px] pt-3.5 sm:px-6">
-                <p className={cx(label, 'pb-1.5')}>Evidence · {count}</p>
+                <p className={cx(label, 'pb-1.5')}>{isNew ? `Scope and resume bullets · ${r.achievements.length} of ${MAX_BULLETS}` : `Evidence · ${count}`}</p>
                 {scope && (
-                  <EvidenceRow e={scope} scope idCol={ROLE_ROW}
+                  <EvidenceRow e={scope} scope idCol={ROLE_ROW} hideId={isNew}
+                    placeholder="Scope: the team, budget, users or systems you were responsible for"
                     onChange={(e) => edit((d) => { d.roles[ri].scope = { ...d.roles[ri].scope!, ...e } })}
                     onDelete={() => edit((d) => { delete d.roles[ri].scope })} />
                 )}
+                {!r.scope && !q && (
+                  <button className={cx(addBtn, 'mt-1')}
+                    onClick={() => edit((d) => { d.roles[ri].scope = { id: `${r.id}.scope`, text: '', source: 'interview', in_base_resume: false, italic: true } })}
+                    disabled={!isNew && ids.has(`${r.id}.scope`)}
+                    title={!isNew && ids.has(`${r.id}.scope`) ? 'This role’s scope id was used before and is retired; add it as an achievement or in YAML instead' : undefined}>
+                    + Add scope line
+                  </button>
+                )}
                 {achievements.map(({ a, ai }) => (
-                  <EvidenceRow key={a.id} e={a} idCol={ROLE_ROW}
+                  <EvidenceRow key={a.id} e={a} idCol={ROLE_ROW} hideId={isNew}
+                    placeholder={isNew ? 'A resume bullet: what you did and the result, exactly as it happened' : undefined}
                     onChange={(e) => edit((d) => { d.roles[ri].achievements[ai] = e })}
                     onDelete={() => edit((d) => { d.roles[ri].achievements.splice(ai, 1) })} />
                 ))}
                 {!q && (
-                  <button className={cx(addBtn, 'mt-2.5')}
+                  <button className={cx(addBtn, 'mt-2.5 disabled:cursor-not-allowed disabled:opacity-40')}
+                    disabled={isNew && r.achievements.length >= MAX_BULLETS}
+                    title={isNew && r.achievements.length >= MAX_BULLETS ? `A new role starts with at most ${MAX_BULLETS} bullets` : undefined}
                     onClick={() => edit((d) => { d.roles[ri].achievements.push({ id: nextId(`${r.id}.a`, ids), text: '', source: 'interview', in_base_resume: false }) })}>
-                    + Add achievement
+                    {isNew ? '+ Add bullet' : '+ Add achievement'}
                   </button>
                 )}
               {subRoles.length > 0 && (
@@ -313,7 +407,8 @@ export default function Profile() {
               )}
               </div>
             </section>
-          ))}
+            )
+          })}
 
           {view === 'summary' && !noMatches && (
             <div className="grid items-start gap-[18px] [grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr))]">
