@@ -841,8 +841,10 @@ class Store:
         profile = MasterProfile.model_validate(yaml.safe_load(p_bytes.decode("utf-8")) or {})
         return tailored, _digest(t_bytes), profile, render_fingerprint(profile, tailored)
 
-    def record_build(self, app_id: str, built_hash: str, profile_version: str, pages: int | None) -> dict:
-        return self.update_meta(app_id, built_hash=built_hash, built_profile=profile_version, pages=pages)
+    def record_build(self, app_id: str, built_hash: str, profile_version: str, pages: int | None,
+                     fill: dict | None = None) -> dict:
+        """`fill`: how full the PDF's pages are and the room left on the last one (ai.measure_pdf)."""
+        return self.update_meta(app_id, built_hash=built_hash, built_profile=profile_version, pages=pages, fill=fill)
 
     def clear_outputs(self, app_id: str) -> None:
         for f in self.app_path(app_id).iterdir():

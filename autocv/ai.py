@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from . import factcheck, paths
+from . import factcheck, fit, paths
 from .engine import Engine
 from .render import active_design, docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
@@ -29,7 +29,6 @@ TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
 MAX_TRIM_ROUNDS = 2
 WORDS_PER_LINE = 500 / 55  # rough words per line (calibrated on the Classic design)
-BASE_PAGES = 2            # a base resume (`autocv ingest`) is assumed to fill 2 pages
 PACKS = ["general", "cybersecurity"]  # domain packs: emphasis heuristics in data/config/packs/<pack>/
 
 
@@ -393,23 +392,47 @@ def _count_lines(lines: list[str]) -> int:
     return sum(max(1, -(-len(line) // chars)) for line in lines)
 
 
+def lines_per_page() -> float:
+    """Lines per page in the active design, corrected by what real PDFs of this design measured (fit.py)."""
+    theme, paper = active_design()
+    return theme.lines_per_page(paper) * fit.lines_factor(CONTEXT.get().private, theme, paper)
+
+
 def default_budget(pages: int | None = None) -> dict:
+    """What the page limit holds in the active design: lines, and words at the design's line length."""
     n = pages or CONTEXT.get().pages
     theme, paper = active_design()
-    lines = theme.lines_per_page(paper) * n
-    return {"lines": lines, "words": round(lines * WORDS_PER_LINE), "measured": False}
+    lines = round(lines_per_page() * n)
+    return {"lines": lines, "words": round(lines * WORDS_PER_LINE * theme.line_chars(paper) / 100), "measured": False}
 
 
 def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
-    """The page limit sets the budget. A base resume from `autocv ingest` (assumed to fill BASE_PAGES)
-    calibrates it to the candidate's own design, scaled to the page limit."""
+    """The page limit in the active design sets the budget (lines). A base resume from `autocv ingest` only
+    calibrates how many words the candidate's own lines carry; its length never shrinks the budget, since it
+    filled its pages in its own design, not necessarily in this one."""
+    budget = default_budget()
     if base is None:
-        return default_budget()
+        return budget
     with tempfile.TemporaryDirectory() as tmp:
         lines = docx_text(render(profile, base, Path(tmp) / "r.docx"))
-    est = _count_lines(lines)
-    scale = CONTEXT.get().pages / BASE_PAGES
-    return {"lines": round(est * scale), "words": round(len(" ".join(lines).split()) * scale), "measured": True}
+    est, words = _count_lines(lines), len(" ".join(lines).split())
+    if est:
+        budget.update(words=round(budget["lines"] * words / est), measured=True)
+    return budget
+
+
+def measure_pdf(profile: MasterProfile, tailored: TailoredResume, pdf: Path, lock=None) -> dict:
+    """After a PDF build: how full each page is (0-1), and the lines left on the last page. Also teaches
+    the active design's lines-per-page from this real PDF (fit.record), so later budgets fit better."""
+    import contextlib
+    theme, paper = active_design()
+    fills = fit.page_fill(pdf, theme)
+    private = CONTEXT.get().private
+    if private:
+        est = estimate_lines(profile, tailored)
+        with lock or contextlib.nullcontext():
+            fit.record(private, theme, paper, est, fills)
+    return {"pages": fills, "room": fit.room_lines(fills, lines_per_page())}
 
 
 def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume | None,
@@ -420,8 +443,7 @@ def _compose_prompt(profile: MasterProfile, analysis: dict, base: TailoredResume
     lens = _config("industries.yaml").get(industry, {})
     track_rules = _config("tracks.yaml").get(track, {})
     base_text = _yaml(base.model_dump(exclude_none=True)) if base else "(none)"
-    fills = (f"the base resume is {budget['words']} words and already fills {pages_text()}"
-             if budget.get("measured", base is not None) else f"about {budget['words']} words fill {pages_text()}")
+    fills = f"about {budget['words']} words fill {pages_text()} in this design"
     brief = {k: analysis.get(k) for k in ("company", "role", "industry", "track", "seniority", "summary",
                                           "requirements", "keywords")}
     return f"""TASK: compose
@@ -521,6 +543,52 @@ async def fit_to_length(engine: Engine, profile: MasterProfile, tailored: Tailor
         tailored, lines = candidate, estimate_lines(profile, candidate)
     return {"tailored": tailored, "trim_rounds": trims, "repair_rounds": rounds,
             "length": {"lines": lines, "budget": budget, "fits": lines <= budget}}
+
+
+def _fill_prompt(profile: MasterProfile, tailored: dict, room: int, analysis: dict, removed: list[str]) -> str:
+    return f"""TASK: fill
+This tailored resume fits {pages_text()} but its last page has room for about {room} more lines. Add the \
+evidence that best supports this job and isn't in the resume yet, using at most {room} lines \
+(a typical bullet is 1-2 lines). In order of preference: unused achievements that match the job's must-haves \
+(under their own role, recent roles first), then a highlight, then a project. Rephrase in the job's \
+vocabulary only where the meaning is identical; never add facts. A role's bullets may cite only that role's \
+evidence; highlights may cite any evidence. Keep every existing item exactly as it is (same text, sources \
+and order); only insert new items where they read best.
+Do NOT add back evidence the candidate removed: {", ".join(removed) or "(none)"}.
+
+JOB MUST-HAVES:
+{_yaml([r["text"] for r in analysis.get("requirements", []) if r.get("priority") == "must"])}
+PROFILE (the only source of facts):
+{_profile_text(profile)}
+TAILORED RESUME:
+{json.dumps(tailored, indent=1, ensure_ascii=False)}
+"""
+
+
+async def fill(engine: Engine, profile: MasterProfile, tailored: TailoredResume, analysis: dict, room: int,
+               ai_draft: TailoredResume | None = None) -> TailoredResume | None:
+    """A longer version of `tailored` that uses about `room` more lines with relevant, unused evidence, or
+    None when nothing valid came back. Fact-checked, never saved: the UI loads it into Review as edits."""
+    schema = tailored_schema(profile, analysis.get("track"))
+    removed: list[str] = []
+    if ai_draft:  # evidence the candidate deliberately took out of the AI's draft stays out
+        kept = {i for _, c in _claims(tailored) for i in c.sources}
+        removed = sorted({i for _, c in _claims(ai_draft) for i in c.sources} - kept)
+    before = estimate_lines(profile, tailored)
+    raw = await engine.complete(system_prompt(), _fill_prompt(profile, tailored.model_dump(exclude_none=True), room,
+                                                              analysis, removed), schema)
+    try:
+        filled, report, _ = await _validated(engine, profile, schema, raw)
+    except ValidationError:
+        return None
+    if not report.ok:
+        return None
+    if estimate_lines(profile, filled) > before + room:  # overshot: one trim back to the room available
+        filled = (await fit_to_length(engine, profile, filled, analysis, before + room, max_rounds=1))["tailored"]
+    after = estimate_lines(profile, filled)
+    if after <= before or after > before + room or not factcheck.check(profile, filled).ok:
+        return None
+    return filled
 
 
 async def compose(engine: Engine, profile: MasterProfile, analysis: dict,

@@ -8,6 +8,7 @@ import StyleCoach from './StyleCoach'
 import { btn, btnPrimary, chip, label } from './v3'
 
 const card = 'rounded-xl border border-rule bg-sheet'
+const ROOM_MIN_LINES = 5  // matches fit.ROOM_MIN_LINES on the server
 const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
 
 export default function Export({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
@@ -21,6 +22,9 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
   const settings = useSettings()
   const limit = pageLimit(settings)
   const tooLong = !stale && !!pages && pages > limit
+  const fill = !stale && !tooLong && pages ? app.meta.fill : null
+  const lastFill = fill?.pages.length ? fill.pages[fill.pages.length - 1] : null
+  const roomy = !!fill && fill.room >= ROOM_MIN_LINES
   const engine = pdfEngineName(settings)
   const via = engine ? ` with ${engine}` : ''
 
@@ -67,6 +71,28 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
       go('review')
     })
 
+  // The AI adds relevant evidence the resume doesn't use yet, up to the room measured on the last page.
+  // Like Trim, it opens in Review as unsaved edits.
+  const fillPage = () =>
+    run('Filling the last page', [
+      'Finding relevant evidence the resume doesn’t use yet…',
+      'Re-running the fact-check…',
+    ], async () => {
+      const { fill_proposal: proposal, ...next } = await api.fill(app.id)
+      setApp(next)
+      if (!proposal) {
+        throw new Error('The AI found nothing relevant to add that fits without changing the facts. You can add evidence yourself in Review (“+ add … from evidence”).')
+      }
+      setMemo((m) => ({
+        ...m,
+        review: {
+          draft: proposal.tailored, rev: (m.review?.rev ?? 0) + 1,
+          notice: `AI additions to fill the last page — about ${proposal.added_lines} more lines of the ~${proposal.room} available, all from your profile. Review them, then Save & check and rebuild. Edited lines are marked with a dot; nothing is saved until you save, and Discard keeps the current version.`,
+        },
+      }))
+      go('review')
+    })
+
   return (
     <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[320px_minmax(0,1fr)]">
       <aside className="flex min-w-0 flex-col gap-[18px]">
@@ -90,7 +116,15 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
             <div className="flex flex-wrap items-center gap-3">
               <Stamp ok={!tooLong}>{pages ? `${pages} page${pages > 1 ? 's' : ''}` : 'docx only'}</Stamp>
               {tooLong && <span className="text-[13px] text-bad">Over the {limit}-page limit</span>}
+              {lastFill !== null && (
+                <span className="text-[13px] text-muted" title="How far down the last page the text reaches">
+                  last page {Math.round(lastFill * 100)}% full{roomy ? ` · room for ~${fill!.room} more lines` : ''}
+                </span>
+              )}
             </div>
+          )}
+          {roomy && (
+            <p className="text-[13px] text-muted">There’s space left on the last page. Let the AI add the most relevant evidence your resume doesn’t use yet (facts locked), then rebuild.</p>
           )}
           {tooLong && (
             <p className="text-[13px] text-muted">Let the AI cut the least relevant content (oldest roles first, facts locked), or trim it yourself in Review. Then rebuild.</p>
@@ -116,6 +150,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
             <button className={btnPrimary} disabled={!ok || unsaved} onClick={build}
               title={unsaved ? 'Save your Review edits first' : !ok ? 'Fix the fact-check issues in Review first' : `Render the .docx and convert it to PDF${via}`}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
             {(tooLong || (overBudget && !docx)) && <button className={btn} disabled={!ok || unsaved} onClick={trim}>Trim with AI</button>}
+            {roomy && <button className={btn} disabled={!ok || unsaved} onClick={fillPage}>Fill the page with AI</button>}
             <button className={btn} onClick={() => go('review')}>Back to review</button>
           </div>
           {settings && (

@@ -11,6 +11,7 @@
 - **Setup wizard** on first run: connect Claude, upload your CV, review every line (anything not word-for-word in your file must be fixed, removed or confirmed; the server checks again), targets suggested from your CV, design, and final checks with a one-click headless-browser install. Progress and the imported draft survive a refresh.
 - Robustness: Windows Word conversions take paths via environment variables, report errors as plain text and stop the Word instance they started on a timeout; Carlito ships with AutoCV (Calibri stand-in on Linux); a re-created profile never reuses old ids; Word's lock file survives rebuilds; the CLI reports PDF failures with exit code 3 instead of a traceback; the release workflow runs the tests first, and CI covers Python 3.11.
 - **Choice of AI engine** (Settings → AI engine): Claude Code on your subscription, or an Anthropic API key (pay per use), stored in the OS keychain. Switching takes effect immediately; *Test* checks it.
+- **Resumes fill their pages better.** The length budget is what your page limit actually holds in the chosen design (it used to follow your original resume's length, which left Compact resumes a sixth short). Every PDF build is measured, and AutoCV learns how many lines each design really fits. Export shows how full the last page is, and *Fill the page with AI* proposes relevant evidence you haven't used yet, fact-checked, for you to review. Headings never end up alone at the bottom of a page.
 - Output files keep accented and non-Latin names (José → `Jose_…`, not `Jos_…`).
 
 ## 0.1.0

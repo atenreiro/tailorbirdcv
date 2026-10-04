@@ -76,6 +76,20 @@ def _trim(prompt: str) -> dict:
     return draft
 
 
+def _fill(prompt: str) -> dict:
+    """Demo fill: add the first unused achievement of the first role that has one, verbatim (no AI)."""
+    import json as _json
+    draft = _json.loads(prompt.split("TAILORED RESUME:\n", 1)[1])
+    profile = Store.default().profile()
+    used = {i for role in draft.get("experience", []) for b in role.get("bullets", []) for i in b.get("sources", [])}
+    for role in draft.get("experience", []):
+        spare = next((a for r in profile.roles if r.id == role["role"] for a in r.achievements if a.id not in used), None)
+        if spare:
+            role.setdefault("bullets", []).append({"text": spare.text, "sources": [spare.id]})
+            break
+    return draft
+
+
 def _learn(prompt: str) -> dict:
     return {"preferences": [{"text": "Demo preference: prefer plain verbs over buzzwords.",
                              "rationale": "demo (fake engine)"}]}
@@ -139,5 +153,5 @@ def _import(prompt: str) -> dict:
 
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose, "trim": _trim, "learn_preferences": _learn, "critique": _critique,
+                       "repair": _compose, "trim": _trim, "fill": _fill, "learn_preferences": _learn, "critique": _critique,
                        "import": _import})

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, oscompat, paths, pdf as pdfmod, themes
+from . import ai, ats, critique as hm, factcheck, fit, oscompat, paths, pdf as pdfmod, themes
 from .jobfetch import FetchError, fetch_job
 from .engine import DEFAULT_API_MODEL, Engine, EngineError, default_engine
 from .render import docx_text, render, use_design
@@ -762,6 +762,32 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                         "budget": budget, "trim_rounds": result["trim_rounds"]}
         return {**get_application(app_id), "trim_proposal": proposal}
 
+    @api.post("/applications/{app_id}/fill")
+    async def fill_page(app_id: str):
+        """Use the room left on the last page of the built PDF with relevant evidence the resume doesn't use
+        yet. Never saved here: the UI loads the proposal into Review as unsaved edits (like /trim)."""
+        app_id = need_app(app_id)
+        tailored, analysis, meta = store.tailored(app_id), store.analysis(app_id) or {}, store.meta(app_id)
+        if not tailored:
+            raise HTTPException(409, "Nothing to fill yet.")
+        room = (meta.get("fill") or {}).get("room", 0)
+        if store.outputs_stale(app_id) or not meta.get("pages"):
+            raise HTTPException(409, "Build the PDF first, so AutoCV can measure the room left on the last page.")
+        if room < fit.ROOM_MIN_LINES:
+            raise HTTPException(409, "The last page is already full enough.")
+        profile = need_profile()
+        if not factcheck.check(profile, tailored).ok:
+            raise HTTPException(409, "Fix the fact-check errors first.")
+        try:
+            filled = await ai.fill(engine, profile, tailored, analysis, room, store.ai_tailored(app_id))
+        except EngineError as e:
+            raise _engine_call(e)
+        proposal = None
+        if filled is not None and filled.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True):
+            proposal = {"tailored": filled.model_dump(exclude_none=True), "room": room,
+                        "added_lines": ai.estimate_lines(profile, filled) - ai.estimate_lines(profile, tailored)}
+        return {**get_application(app_id), "fill_proposal": proposal}
+
     @api.put("/applications/{app_id}/tailored")
     def put_tailored(app_id: str, data: dict):
         app_id = need_app(app_id)
@@ -792,7 +818,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             except OutputInUse as e:
                 raise HTTPException(409, str(e))
             docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
-            pages = None
+            pages, fill = None, None
             if pdf:
                 preferred = store.settings()["pdf_engine"]
                 try:
@@ -806,7 +832,11 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 except Exception as e:  # no engine / automation permission denied / timeout
                     store.record_build(app_id, built_hash, profile_version, None)
                     raise HTTPException(500, f"DOCX built, but PDF conversion via {name} failed: {e}")
-            store.record_build(app_id, built_hash, profile_version, pages)
+                try:
+                    fill = await asyncio.to_thread(ai.measure_pdf, profile, tailored, pdf_file, store.lock)
+                except Exception:  # measuring is a nicety: never fail a build over it
+                    fill = None
+            store.record_build(app_id, built_hash, profile_version, pages, fill)
             store.advance_status(app_id, "built")
             return pages
 

@@ -178,7 +178,7 @@ def cmd_build(args) -> int:
         return PDF_FAILED
     docx = render(profile, tailored, app / f"{STORE.output_stem(app_id)}.docx")
     print(f"docx: {docx}")
-    pages = None
+    pages, fill = None, None
     if not args.no_pdf:
         from .pdf import page_count, to_pdf
         try:
@@ -193,7 +193,16 @@ def cmd_build(args) -> int:
         if pages > limit:
             print(f"TOO LONG: {pages} pages > {limit} — trim lowest-relevance content and rebuild")
             return 2
-    STORE.record_build(app_id, built_hash, profile_version, pages)
+        from . import ai, fit
+        try:
+            fill = ai.measure_pdf(profile, tailored, pdf, STORE.lock)
+        except Exception:  # noqa: BLE001 — measuring never fails a build
+            fill = None
+        if fill:
+            print(f"fill: last page {fill['pages'][-1]:.0%} full" + (
+                f" — room for ~{fill['room']} more lines (Fill the page in Export)"
+                if fill["room"] >= fit.ROOM_MIN_LINES else ""))
+    STORE.record_build(app_id, built_hash, profile_version, pages, fill if pages else None)
     STORE.advance_status(app_id, "built")
     return 0
 

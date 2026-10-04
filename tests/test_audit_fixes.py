@@ -26,7 +26,7 @@ ANALYSIS = {"company": "Example Capital", "role": "Lead", "industry": "quant", "
 def long_tailored():
     """Valid but far too long: every bullet repeated many times."""
     t = copy.deepcopy(TAILORED)
-    t["experience"][0]["bullets"] = t["experience"][0]["bullets"] * 25
+    t["experience"][0]["bullets"] = t["experience"][0]["bullets"] * 70
     return t
 
 

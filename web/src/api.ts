@@ -114,6 +114,8 @@ export interface Meta {
   outcome?: Outcome | null; closed_at?: string | null
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
   guidance?: string; trim_rounds?: number; built_hash?: string
+  /** How full each PDF page is (0-1) and the lines left on the last one, measured after the build. */
+  fill?: { pages: number[]; room: number } | null
 }
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
@@ -127,6 +129,8 @@ export interface Application {
 }
 /** What "Trim with AI" proposes; nothing is saved until it's reviewed and saved in Review. */
 export interface TrimProposal { tailored: Tailored; lines: number; budget: number; trim_rounds: number }
+/** What "Fill the page" proposes: relevant unused evidence added; nothing is saved until it's saved in Review. */
+export interface FillProposal { tailored: Tailored; room: number; added_lines: number }
 export interface Progress {
   seniority?: string | null; requirements: number; gaps_open: number; drafted: boolean; verified: boolean | null
   critique: { verdict: CritiqueResult['verdict']['decision']; open: number; stale: boolean } | null
@@ -245,6 +249,7 @@ export const api = {
   saveKnowledge: ({ version, ...k }: Knowledge) =>
     req<Knowledge>('PUT', '/knowledge', k, version ? { 'If-Match': version } : {}),
   trim: (id: string) => req<Application & { trim_proposal?: TrimProposal | null }>('POST', `/applications/${id}/trim`),
+  fill: (id: string) => req<Application & { fill_proposal?: FillProposal | null }>('POST', `/applications/${id}/fill`),
   critique: (id: string) => req<Application>('POST', `/applications/${id}/critique`),
   reveal: (id: string, snapshot?: string) =>
     req<void>('POST', `/applications/${id}/reveal${snapshot ? `?snapshot=${encodeURIComponent(snapshot)}` : ''}`),
