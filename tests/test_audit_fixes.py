@@ -1,6 +1,7 @@
 """Regression tests for the pre-launch audit findings (each test reproduces the original failure)."""
 
 import copy
+import os
 import shutil
 import sys
 import threading
@@ -59,7 +60,9 @@ def test_cross_site_post_without_header_is_refused(env):
     raw = TestClient(create_app(store, engine), base_url="http://127.0.0.1")  # no X-AutoCV header
     res = raw.post("/api/applications", json={"jd": JD})
     assert res.status_code == 403 and "cross-site" in res.json()["detail"]
-    assert raw.get("/api/applications").status_code == 200          # reading is fine
+    assert raw.get("/api/applications").status_code == 401          # no access key: nothing to read either
+    raw.cookies.set("autocv_key", store.access_key())
+    assert raw.get("/api/applications").status_code == 200          # reading with the key is fine
     headers = raw.get("/api/applications").headers
     assert headers["X-Frame-Options"] == "SAMEORIGIN"                 # own PDF preview may frame…
     assert headers["Content-Security-Policy"] == "frame-ancestors 'self'"  # …other sites may not
@@ -308,3 +311,69 @@ def test_reveal_failure_is_reported(env, monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, b"", b"no file manager"))
     r = client.post(f"/api/applications/{app_id}/reveal")
     assert r.status_code == 500 and "no file manager" in r.json()["detail"]
+
+
+def test_the_api_needs_this_users_access_key(env):
+    """Other programs or accounts on the computer can't use the server; the link from `autocv serve` unlocks it."""
+    _, store, engine = env
+    app = create_app(store, engine)
+    raw = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"}, follow_redirects=False)
+    r = raw.get("/api/profile")
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "locked"
+    assert raw.get("/?key=wrong").status_code == 303 and "autocv_key" not in raw.cookies
+    r = raw.get(f"/applications?key={store.access_key()}&x=1")
+    assert r.status_code == 303 and r.headers["location"] == "/applications?x=1"  # the key leaves the address bar
+    cookie = r.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "samesite=strict" in cookie
+    assert raw.get("/api/profile").status_code == 200
+    key_file = store.private / ".access-key"
+    if os.name == "posix":
+        assert key_file.stat().st_mode & 0o077 == 0  # only the owner can read the key
+
+
+def test_the_data_folder_is_private(env):
+    _, store, engine = env
+    create_app(store, engine)
+    if os.name == "posix":
+        assert store.private.stat().st_mode & 0o077 == 0
+
+
+def test_site_local_ipv6_is_blocked():
+    from autocv.jobfetch import BlockedURL, check_addr
+    with pytest.raises(BlockedURL):
+        check_addr("fec0::1")
+
+
+def test_odd_history_files_and_word_lock_files_are_ignored(env):
+    client, store, _ = env
+    folder = store.history_dir("profile")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "notes.yaml").write_text("x: 1\n", encoding="utf-8")
+    assert client.get("/api/history/profile").status_code == 200
+    app_id = client.post("/api/applications", json={"jd": JD, "company": "Lockco", "role": "Lead"}).json()["id"]
+    (store.app_path(app_id) / "~$Resume.docx").write_bytes(b"lock")
+    (store.app_path(app_id) / "Resume.docx").write_bytes(b"doc")
+    assert store.files(app_id) == ["Resume.docx"]
+
+
+def test_a_failed_freeze_leaves_no_half_copy(env, monkeypatch):
+    client, store, _ = env
+    app_id = client.post("/api/applications", json={"jd": JD, "company": "Freezeco", "role": "Lead"}).json()["id"]
+    monkeypatch.setattr(store, "freeze_problem", lambda a: None)
+    (store.app_path(app_id) / "Resume.pdf").write_bytes(b"%PDF")
+    import shutil as sh
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(sh, "copy2", boom)
+    with pytest.raises(OSError):
+        store.freeze(app_id, "manual copy")
+    assert not any(store.sent_dir(app_id).glob("*")) if store.sent_dir(app_id).exists() else True
+
+
+def test_profile_create_ignores_fields_that_widen_the_fact_check(env):
+    from autocv import importer
+    shaped = importer.import_shape({"vocabulary": ["Kubernetes"], "synonyms": [["a", "b"]], "retired_ids": ["x"],
+                                    "summary_facts": [{"id": "s1", "text": "t", "source": "interview", "tags": ["x"]}]})
+    assert "vocabulary" not in shaped and "synonyms" not in shaped and "retired_ids" not in shaped
+    assert shaped["summary_facts"] == [{"id": "s1", "text": "t"}]

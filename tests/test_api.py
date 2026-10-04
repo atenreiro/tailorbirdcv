@@ -116,9 +116,10 @@ def test_gap_answer_becomes_evidence_only_when_approved(env):
 
 def test_profile_yaml_validation(env):
     client, _, _ = env
-    text = client.get("/api/profile/yaml").json()["yaml"]
-    bad = text.replace("id: acme-bank.a2", "id: acme-bank.a1")  # duplicate id
-    assert client.put("/api/profile/yaml", json={"yaml": bad}).status_code == 422
+    loaded = client.get("/api/profile/yaml").json()
+    bad = loaded["yaml"].replace("id: acme-bank.a2", "id: acme-bank.a1")  # duplicate id
+    assert client.put("/api/profile/yaml", json={"yaml": bad}, headers={"If-Match": loaded["version"]}).status_code == 422
+    assert client.put("/api/profile/yaml", json={"yaml": loaded["yaml"]}).status_code == 428  # no version: refused
 
 
 def test_short_jd_and_unknown_app(env):

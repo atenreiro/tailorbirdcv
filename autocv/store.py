@@ -53,6 +53,7 @@ LEGACY_CLOSED = {"rejected": "rejected", "withdrawn": "withdrew"}  # old statuse
 # One lock for every read-modify-write of private data. FastAPI runs sync endpoints in
 # a thread pool, so concurrent requests are real. Never hold it across an AI call.
 _LOCK = threading.RLock()
+_APP_LOCKS: dict[str, threading.Lock] = {}
 
 
 class IncompleteRole(ValueError):
@@ -162,7 +163,7 @@ def file_safe_name(name: str) -> str:
     """A person's name as a file name: accents dropped (José → Jose), letters of any script kept,
     everything else → "_"."""
     plain = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
-    return re.sub(r"\W+", "_", plain).strip("_") or "Resume"
+    return re.sub(r"\W+", "_", plain).strip("_")[:50].strip("_") or "Resume"  # short paths on Windows
 
 
 def slug(text: str) -> str:
@@ -170,7 +171,7 @@ def slug(text: str) -> str:
     return f"{s}-co" if s in _WINDOWS_RESERVED else s
 
 
-SLUG_MAX = 60  # per folder-name part, so long company/role names can't exceed file-name limits
+SLUG_MAX = 40  # per folder-name part: keeps sent-copy paths well under Windows' 260-character limit
 
 
 def _short_slug(text: str, fallback: str) -> str:
@@ -333,6 +334,33 @@ class Store:
     def lock(self) -> threading.RLock:
         return _LOCK
 
+    def app_lock(self, app_id: str) -> threading.Lock:
+        """One per application: a build, a freeze and a delete of the same application never overlap (taken
+        before the store lock). A plain Lock, so an async build can take it in a thread and release it later."""
+        key = str(self.app_path(app_id).resolve())
+        with _LOCK:
+            return _APP_LOCKS.setdefault(key, threading.Lock())
+
+    def access_key(self) -> str:
+        """This data folder's secret for the web UI: `autocv serve` opens the browser with it once, and the API
+        then only answers requests carrying it (as a cookie). Other programs or other users on this computer
+        can't use the server without reading this file, which only its owner can."""
+        import secrets
+        path = self.private / ".access-key"
+        with self.lock:
+            try:
+                key = oscompat.read_text(path).strip()
+                if len(key) >= 32:
+                    return key
+            except OSError:
+                pass
+            self.private.mkdir(parents=True, exist_ok=True)
+            key = secrets.token_urlsafe(32)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(key + "\n")
+            return key
+
     def profile_version(self) -> str:
         return file_version(self.profile_path)
 
@@ -455,7 +483,10 @@ class Store:
         out = []
         for f in sorted(folder.glob("*.yaml"), reverse=True):
             stamp, _, cause = f.stem.partition("__")
-            when = dt.datetime.strptime(stamp, "%Y%m%d-%H%M%S-%f")
+            try:
+                when = dt.datetime.strptime(stamp, "%Y%m%d-%H%M%S-%f")
+            except ValueError:
+                continue  # not a snapshot AutoCV made (e.g. a file dropped in by hand)
             out.append({"id": f.stem, "time": when.isoformat(timespec="seconds"),
                         "cause": cause.replace("-", " "), "size": f.stat().st_size})
         return out
@@ -699,7 +730,7 @@ class Store:
     def delete_app(self, app_id: str) -> None:
         """Delete an application folder (job description, drafts, built files, sent copies).
         Remembered answers and style preferences are kept; they just stop linking to it."""
-        with _LOCK:
+        with self.app_lock(app_id), _LOCK:
             path = self.app_path(app_id)
             canonical = self.app_id_for(path)
             oscompat.rmtree(path)  # sent copies are read-only on purpose
@@ -810,9 +841,9 @@ class Store:
         """Record the application as applied. The first time, freeze exactly what is being sent
         (raises NeedsBuild if that isn't trustworthy); re-entering 'applied' later (after an
         interview, a reopen…) never freezes another copy."""
-        with _LOCK:
+        with self.app_lock(app_id), _LOCK:
             if self.applied_copy(app_id) is None:
-                self.freeze(app_id, "applied")
+                self._freeze(app_id, "applied")
             return self.set_status(app_id, "applied")
 
     def advance_status(self, app_id: str, status: str) -> dict:
@@ -1119,6 +1150,10 @@ class Store:
     def freeze(self, app_id: str, reason: str) -> dict:
         """Copy exactly what is being sent (PDF, DOCX, job description, resume data) into a
         dated, read-only snapshot. Never overwrites an earlier snapshot."""
+        with self.app_lock(app_id), _LOCK:
+            return self._freeze(app_id, reason)
+
+    def _freeze(self, app_id: str, reason: str) -> dict:
         with _LOCK:
             problem = self.freeze_problem(app_id)
             if problem:
@@ -1130,16 +1165,20 @@ class Store:
                 dest, n = self.sent_dir(app_id) / f"{stamp}-{n}", n + 1
             dest.mkdir(parents=True)
             copied = []
-            for name in [*self.files(app_id), "jd.md", "tailored.yaml", "analysis.yaml"]:
-                if (src / name).exists():
-                    shutil.copy2(src / name, dest / name)
-                    copied.append(name)
-            meta = self.meta(app_id)
-            record = {"id": dest.name, "created": dt.datetime.now().isoformat(timespec="seconds"), "reason": reason,
-                      "company": meta.get("company"), "role": meta.get("role"), "pages": meta.get("pages"),
-                      "tailored_hash": self.tailored_hash(app_id), "profile_version": meta.get("built_profile"),
-                      "files": copied}
-            (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8", newline="\n")
+            try:
+                for name in [*self.files(app_id), "jd.md", "tailored.yaml", "analysis.yaml"]:
+                    if (src / name).exists():
+                        shutil.copy2(src / name, dest / name)
+                        copied.append(name)
+                meta = self.meta(app_id)
+                record = {"id": dest.name, "created": dt.datetime.now().isoformat(timespec="seconds"),
+                          "reason": reason, "company": meta.get("company"), "role": meta.get("role"),
+                          "pages": meta.get("pages"), "tailored_hash": self.tailored_hash(app_id),
+                          "profile_version": meta.get("built_profile"), "files": copied}
+                (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8", newline="\n")
+            except BaseException:
+                oscompat.rmtree(dest)  # never leave a half-made, writable "sent" copy behind
+                raise
             for f in dest.iterdir():
                 f.chmod(0o444)  # read-only: this is the record of what was sent
             return record
@@ -1168,8 +1207,8 @@ class Store:
         return path
 
     def files(self, app_id: str) -> list[str]:
-        path = self.app_path(app_id)
-        return sorted(p.name for p in path.iterdir() if p.suffix in (".docx", ".pdf"))
+        path = self.app_path(app_id)  # never Word's "~$" lock file or hidden files
+        return sorted(p.name for p in path.iterdir() if p.suffix in (".docx", ".pdf") and not p.name.startswith(("~$", ".")))
 
     def output_stem(self, app_id: str) -> str:
         """The file name recruiters see: the candidate's name only. Never the company —

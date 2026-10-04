@@ -265,12 +265,13 @@ def cmd_serve(args) -> int:
 
     from .api import create_app
     from .paths import web_dir
-    url = f"http://127.0.0.1:{args.port}"
+    url = f"http://127.0.0.1:{args.port}/?key={STORE.access_key()}"  # unlocks this browser (see api.guard)
     built = web_dir() is not None
     if not built:
         print("note: web UI not built — run `npm --prefix web install && npm --prefix web run build` "
               "(or use `npm --prefix web run dev` on :5173). Serving the API only.")
     print(f"AutoCV → {url}", flush=True)
+    print("  (this link unlocks AutoCV in your browser; keep it to yourself)", flush=True)
     if built and not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
     config = uvicorn.Config(create_app(), host="127.0.0.1", port=args.port,

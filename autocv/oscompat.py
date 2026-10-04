@@ -127,6 +127,17 @@ def read_text(path: str | Path) -> str:
     return read_bytes(path).decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def make_private(folder: Path) -> None:
+    """Only the owner may open the data folder (POSIX; on Windows the per-user AppData folder already is)."""
+    if IS_WINDOWS or not folder.is_dir():
+        return
+    try:
+        if folder.stat().st_mode & 0o077:
+            folder.chmod(0o700)
+    except OSError:
+        pass  # not ours to change (e.g. a shared mount): leave it
+
+
 def reveal_command(target: Path | None, folder: Path) -> list[str] | str:
     """The command that shows `target` selected in its folder (or just opens `folder`)."""
     if IS_MAC:

@@ -204,7 +204,7 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
   try {
     res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch {
-    throw new ApiError(0, 'Can’t reach the AutoCV server. Is `uv run autocv serve` still running? Your inputs are kept, so retry once it’s back.')
+    throw new ApiError(0, 'Can’t reach the AutoCV server. Is `autocv serve` still running? Your inputs are kept, so retry once it’s back.')
   }
   if (!res.ok) {
     let msg = res.statusText
@@ -222,6 +222,7 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
       } else msg = 'Request failed'
     } catch { /* not json */ }
     if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('autocv:no-profile'))
+    if (res.status === 401 && code === 'locked') window.dispatchEvent(new Event('autocv:locked'))
     throw new ApiError(res.status, msg, code, detail)
   }
   return res.status === 204 ? (undefined as T) : res.json()

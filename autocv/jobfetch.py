@@ -99,7 +99,7 @@ def check_addr(ip: str, port: int | None = None) -> None:
         candidates = embedded or [addr]
     for a in candidates:
         if not a.is_global or a.is_multicast or a.is_unspecified or a.is_loopback or a.is_link_local \
-                or a.is_reserved or a.is_private:
+                or a.is_reserved or a.is_private or getattr(a, "is_site_local", False):  # fec0::/10 (deprecated)
             raise blocked
 
 
@@ -463,12 +463,19 @@ async def render_page(url: str) -> Rendered:
 
     async with async_playwright() as p:
         try:
-            browser = await p.chromium.launch(headless=True)
-        except PWError:
-            hint = " --with-deps" if sys.platform.startswith("linux") else ""  # Linux also needs system libraries
-            raise FetchError(f"The headless browser isn't installed — run `uv run playwright install{hint} chromium`.")
+            # Untrusted pages: Chromium's own sandbox on (Playwright turns it off by default), and no WebRTC/UDP
+            # paths that bypass the request guard below.
+            browser = await p.chromium.launch(headless=True, chromium_sandbox=True, args=[
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-quic"])
+        except PWError as e:
+            if "sandbox" in str(e).lower():
+                raise FetchError("The headless browser can't start its security sandbox on this computer, so AutoCV "
+                                 "won't render job pages with it. Paste the job description instead.")
+            raise FetchError("The headless browser isn't installed — run `autocv install-browser` "
+                             "(or Settings → System check → Install).")
         try:
             context = await browser.new_context(user_agent=BROWSER_UA, service_workers="block", locale="en-US")
+            await context.add_init_script(_NO_SIDE_CHANNELS_JS)
             await context.route("**/*", guard)
             await context.route_web_socket("**/*", no_websockets)
             page = await context.new_page()
@@ -489,6 +496,14 @@ async def render_page(url: str) -> Rendered:
         finally:
             await browser.close()
             await client.aclose()
+
+
+# Network APIs that don't go through request routing: removed before any page script runs.
+_NO_SIDE_CHANNELS_JS = """
+for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'WebTransport']) {
+  try { delete window[name]; Object.defineProperty(window, name, { value: undefined, configurable: false }); } catch (e) {}
+}
+"""
 
 
 def from_rendered(r: Rendered) -> Job | None:
@@ -521,14 +536,16 @@ async def fetch_job(url: str, client: httpx.AsyncClient | None = None) -> Job:
                 return job
         try:
             page = await safe_get(client, url)
-            if job := from_json_ld(page) or from_page(page):
+            # up to 3 MB of HTML: parse in a thread so other requests aren't stalled
+            if job := await asyncio.to_thread(lambda: from_json_ld(page) or from_page(page)):
                 return job
         except (BlockedURL, NotFound):
             raise
         except (httpx.HTTPError, FetchError):
             pass  # bot protection (403/429), TLS quirks… — a real browser may still get through
         if BROWSER_FALLBACK:
-            if job := from_rendered(await render_page(url)):
+            rendered = await render_page(url)
+            if job := await asyncio.to_thread(from_rendered, rendered):
                 return job
         raise FetchError("The page returned too little text, even when rendered in a headless browser "
                          "(it probably needs a login).")

@@ -297,6 +297,27 @@ class _Source:
         return False
 
 
+def import_shape(profile: dict) -> dict:
+    """A reviewed import as the server accepts it: no approved vocabulary, synonyms or retired ids (they widen
+    what the fact-check accepts and only come from the profile editor later), and every evidence item marked
+    as coming from the resume."""
+    out = {k: v for k, v in profile.items() if k not in ("vocabulary", "synonyms", "retired_ids")}
+
+    def clean(items):
+        return [{k: v for k, v in i.items() if k not in ("source", "in_base_resume", "tags")}
+                for i in items or [] if isinstance(i, dict)]
+    for key in ("summary_facts", "highlights", "projects", "education", "extras"):
+        if key in out:
+            out[key] = clean(out[key])
+    for r in out.get("roles") or []:
+        if isinstance(r, dict):
+            r["achievements"] = clean(r.get("achievements"))
+            r["sub_roles"] = clean(r.get("sub_roles"))
+            if isinstance(r.get("scope"), dict):
+                r["scope"] = clean([r["scope"]])[0]
+    return out
+
+
 def _url_text(url: str) -> str:
     return re.sub(r"^(?:https?://)?(?:www\.)?|/+$", "", url.strip(), flags=re.I)
 

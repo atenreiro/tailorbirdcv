@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import Applications from './pages/Applications'
 import Funnel from './pages/Funnel'
@@ -75,9 +76,36 @@ function FirstTip() {
   )
 }
 
+/** This browser hasn't been unlocked: the API only answers the browser opened from `autocv serve`'s link. */
+function useLocked() {
+  const [locked, setLocked] = useState(false)
+  useEffect(() => {
+    const on = () => setLocked(true)
+    window.addEventListener('autocv:locked', on)
+    return () => window.removeEventListener('autocv:locked', on)
+  }, [])
+  return locked
+}
+
+function Locked() {
+  return (
+    <section className="animate-rise mx-auto flex max-w-[640px] flex-col gap-4 py-16 text-center">
+      <h1 className="font-display text-[44px] leading-none tracking-[-0.02em] text-ink">Open AutoCV from its link</h1>
+      <p className="text-[15px] leading-[1.6] text-body text-pretty">
+        To keep your resume data private from other programs on this computer, AutoCV only answers the browser
+        opened from the link it prints when it starts. Look in the terminal where you ran
+        <code className="mx-1 rounded bg-wash px-1.5 font-mono text-[13px]">autocv serve</code>
+        for the line starting with <span className="font-mono text-[13px]">AutoCV →</span> and open that link. You only need to do this once per browser.
+      </p>
+    </section>
+  )
+}
+
 export default function App() {
   useUnsavedGuard()
   useFirstRun()
+  const locked = useLocked()
+  if (locked) return <><Masthead /><main className={cx('mx-auto pb-24 pt-10', FRAME)}><Locked /></main></>
   return (
     <>
       <Masthead />

@@ -101,9 +101,12 @@ def test_analysis_sees_past_answers_and_ids_are_sanitised(env, tmp_path):
 
 def test_knowledge_edit_is_validated(env):
     client, store, _ = env
+    version = {"If-Match": client.get("/api/knowledge").json()["version"]}
     assert client.put("/api/knowledge", json={"answers": [{"id": "k1", "topic": "t", "question": "q",
-                                                           "kind": "maybe", "date": "2026-10-01"}]}).status_code == 422
-    ok = client.put("/api/knowledge", json={"answers": [], "preferences": []})
+                                                           "kind": "maybe", "date": "2026-10-01"}]},
+                      headers=version).status_code == 422
+    assert client.put("/api/knowledge", json={"answers": [], "preferences": []}).status_code == 428  # no version
+    ok = client.put("/api/knowledge", json={"answers": [], "preferences": []}, headers=version)
     assert ok.status_code == 200
 
 
@@ -144,7 +147,7 @@ def test_preferences_learned_only_apply_once_approved(env):
 
     knowledge = res["knowledge"]
     knowledge["preferences"][0]["status"] = "active"
-    client.put("/api/knowledge", json=knowledge)
+    client.put("/api/knowledge", json=knowledge, headers={"If-Match": client.get("/api/knowledge").json()["version"]})
     client.post(f"/api/applications/{app_id}/compose", json={})
     compose_prompt = next(p for t, p in reversed(engine.calls) if t == "compose")
     assert "- Prefer 'led' over 'spearheaded'." in compose_prompt

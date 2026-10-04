@@ -206,6 +206,9 @@ def _engine_call(exc: EngineError) -> HTTPException:
 # --------------------------------------------------------------------------- app
 
 
+ACCESS_COOKIE = "autocv_key"
+
+
 def create_app(store: Store | None = None, engine: Engine | None = None,
                allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")) -> FastAPI:
     store = store or Store.default()
@@ -222,8 +225,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         log.warning("AutoCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
     engine = engine or default_engine(store)
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
-    # DNS-rebinding guard: a malicious site can't reach this local API through a hostname it controls.
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
+    import hmac
+    app.state.access_key = access_key = store.access_key()
+    oscompat.make_private(store.private)  # resumes, profile and the key: not readable by other accounts
 
     @app.exception_handler(AppNotFound)
     async def app_not_found(request: Request, exc: AppNotFound):
@@ -236,6 +240,19 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
+        # Opening AutoCV's link (…/?key=…) turns the key into a cookie and drops it from the address bar.
+        if request.method == "GET" and "key" in request.query_params:
+            from fastapi.responses import RedirectResponse
+            given = request.query_params["key"]
+            rest = [(k, v) for k, v in request.query_params.multi_items() if k != "key"]
+            target = request.url.path + ("?" + "&".join(f"{k}={v}" for k, v in rest) if rest else "")
+            if request.url.path.startswith("/api/"):
+                target = "/"
+            response = RedirectResponse(target, status_code=303)
+            if hmac.compare_digest(given.encode(), access_key.encode()):
+                response.set_cookie(ACCESS_COOKIE, access_key, max_age=400 * 24 * 3600, httponly=True,
+                                    samesite="strict", path="/")
+            return response
         if request.url.path.startswith("/api/"):
             # Browsers label every request with where it came from. Only AutoCV's own pages
             # (same-origin) and typed URLs/bookmarks ("none") may read or change data: another
@@ -249,6 +266,11 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-autocv") != "1":
                 return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
                                     status_code=403)
+            # Only this user's browser: other programs and other accounts on this computer don't have the key.
+            if not hmac.compare_digest(request.cookies.get(ACCESS_COOKIE, "").encode(), access_key.encode()):
+                return JSONResponse({"detail": {"code": "locked", "message": "Open AutoCV from the link `autocv serve` "
+                                                "printed in your terminal (it unlocks this browser)."}},
+                                    status_code=401)
             # The candidate's targets (Settings) steer every AI prompt made while handling this request.
             settings = store.settings()
             ai.use_context(ai.Context.from_settings(settings["targets"], store.private))
@@ -260,7 +282,16 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
         return response
 
+    # DNS-rebinding guard, added last so it runs first (before the key and cross-site checks): a malicious
+    # site can't reach this local API through a hostname it controls.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
+
     api = APIRouter(prefix="/api")
+
+    def need_version(if_match: str | None) -> None:
+        """Edits must say which version they started from, so a stale page can never overwrite a newer save."""
+        if not if_match:
+            raise HTTPException(428, "Reload the page: this edit didn't say which version it started from.")
 
     def page_limit() -> int:
         return int(store.settings()["targets"]["pages"])
@@ -521,8 +552,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             if not draft or not draft.get("source"):
                 raise HTTPException(409, "Import your CV first (Setup → Upload your CV).")
             data = body.get("profile") if isinstance(body.get("profile"), dict) else {}
+            data = importer.import_shape(data)  # only what an import produces: nothing that widens the fact-check
             confirmed = {p for p in body.get("confirmed") or [] if isinstance(p, str)}
-            pending = [p for p in importer.unverified(data, draft["source"]) if p not in confirmed]
+            try:
+                pending = [p for p in importer.unverified(data, draft["source"]) if p not in confirmed]
+            except (KeyError, TypeError, AttributeError):
+                raise HTTPException(422, "The profile is missing required fields (e.g. a link without text).")
             if pending:
                 raise HTTPException(422, {"code": "unconfirmed", "paths": pending,
                                           "message": f"{len(pending)} line(s) don't match your file word-for-word. "
@@ -537,6 +572,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.put("/profile")
     def put_profile(data: dict, if_match: str | None = Header(default=None)):
+        need_version(if_match)
         need_profile()
         try:
             profile = store.save_profile(data, base_version=if_match, cause="profile editor")
@@ -554,6 +590,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.put("/profile/yaml")
     def put_profile_yaml(body: ProfileYaml, if_match: str | None = Header(default=None)):
+        need_version(if_match)
         need_profile()
         try:
             data = yaml.safe_load(body.yaml)
@@ -562,7 +599,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             store.save_profile(data, base_version=if_match, cause="yaml edit")
         except Conflict as e:
             raise HTTPException(409, str(e))
-        except (yaml.YAMLError, ValidationError, RetiredIdReused, TypeError) as e:
+        except (yaml.YAMLError, ValidationError, RetiredIdReused, IncompleteRole, TypeError) as e:
             raise HTTPException(422, str(e))
         return get_profile_yaml()
 
@@ -578,7 +615,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 profile, new_id = ai.add_evidence(current, body.target, body.text, body.skills, body.note)
             except KeyError:
                 raise HTTPException(422, f"unknown role '{body.target}'")
-            store.save_profile(profile.model_dump(exclude_none=True), cause="evidence approved")
+            try:
+                store.save_profile(profile.model_dump(exclude_none=True), cause="evidence approved")
+            except (ValidationError, RetiredIdReused, IncompleteRole) as e:
+                raise HTTPException(422, str(e))
         return {"id": new_id, "evidence": factcheck.evidence_index(profile)}
 
     # -- applications ------------------------------------------------------------------
@@ -865,47 +905,54 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         store.save_tailored(app_id, tailored)
         return get_application(app_id)
 
-    build_locks: dict[str, asyncio.Lock] = {}
-
     async def do_build(app_id: str, pdf: bool = True) -> int | None:
         need_profile()
-        lock = build_locks.setdefault(app_id, asyncio.Lock())
-        async with lock:  # one build per application at a time: files and meta always agree
-            try:  # the hashes recorded are of exactly the bytes rendered
-                tailored, built_hash, profile, profile_version = store.build_inputs(app_id)
-            except FileNotFoundError:
-                raise HTTPException(409, "Nothing to build yet.")
-            except (ValidationError, ValueError, yaml.YAMLError) as e:
-                raise HTTPException(409, f"The resume or profile can't be read: {e}")
-            report = factcheck.check(profile, tailored)
-            if not report.ok:
-                raise HTTPException(409, "Fact-check failed — fix the errors before building.")
+        lock = store.app_lock(app_id)  # one build/freeze/delete per application at a time
+        await asyncio.to_thread(lock.acquire)
+        try:
+            return await _build_locked(app_id, pdf)
+        finally:
+            lock.release()
+
+    async def _build_locked(app_id: str, pdf: bool) -> int | None:
+        try:  # the hashes recorded are of exactly the bytes rendered
+            tailored, built_hash, profile, profile_version = store.build_inputs(app_id)
+        except FileNotFoundError:
+            raise HTTPException(409, "Nothing to build yet.")
+        except (ValidationError, ValueError, yaml.YAMLError) as e:
+            raise HTTPException(409, f"The resume or profile can't be read: {e}")
+        report = factcheck.check(profile, tailored)
+        if not report.ok:
+            raise HTTPException(409, "Fact-check failed — fix the errors before building.")
+        try:
+            store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
+        except OutputInUse as e:
+            raise HTTPException(409, str(e))
+        docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
+        pages, fill = None, None
+        if pdf:
+            preferred = store.settings()["pdf_engine"]
             try:
-                store.clear_outputs(app_id)  # never leave an older .docx/.pdf around to be sent by mistake
-            except OutputInUse as e:
-                raise HTTPException(409, str(e))
-            docx = render(profile, tailored, store.app_path(app_id) / f"{store.output_stem(app_id)}.docx")
-            pages, fill = None, None
-            if pdf:
-                preferred = store.settings()["pdf_engine"]
-                try:
-                    name = pdfmod.NAMES[await asyncio.to_thread(pdfmod.resolve, preferred)]
-                except RuntimeError as e:  # neither Word nor LibreOffice
-                    store.record_build(app_id, built_hash, profile_version, None)
-                    raise HTTPException(500, f"DOCX built, but no PDF: {e}")
-                try:
-                    pdf_file = await asyncio.to_thread(pdfmod.to_pdf, docx, engine=preferred)
-                    pages = pdfmod.page_count(pdf_file)
-                except Exception as e:  # no engine / automation permission denied / timeout
-                    store.record_build(app_id, built_hash, profile_version, None)
-                    raise HTTPException(500, f"DOCX built, but PDF conversion via {name} failed: {e}")
-                try:
-                    fill = await asyncio.to_thread(ai.measure_pdf, profile, tailored, pdf_file, store.lock)
-                except Exception:  # measuring is a nicety: never fail a build over it
-                    fill = None
-            store.record_build(app_id, built_hash, profile_version, pages, fill)
-            store.advance_status(app_id, "built")
-            return pages
+                name = pdfmod.NAMES[await asyncio.to_thread(pdfmod.resolve, preferred)]
+            except RuntimeError as e:  # neither Word nor LibreOffice
+                store.record_build(app_id, built_hash, profile_version, None)
+                raise HTTPException(500, f"DOCX built, but no PDF: {e}")
+            pdf_file = None
+            try:
+                pdf_file = await asyncio.to_thread(pdfmod.to_pdf, docx, engine=preferred)
+                pages = pdfmod.page_count(pdf_file)
+            except Exception as e:  # no engine / automation permission denied / timeout / unreadable PDF
+                if pdf_file is not None:
+                    pdf_file.unlink(missing_ok=True)  # a PDF we couldn't check must not be sent or frozen
+                store.record_build(app_id, built_hash, profile_version, None)
+                raise HTTPException(500, f"DOCX built, but PDF conversion via {name} failed: {e}")
+            try:
+                fill = await asyncio.to_thread(ai.measure_pdf, profile, tailored, pdf_file, store.lock)
+            except Exception:  # measuring is a nicety: never fail a build over it
+                fill = None
+        store.record_build(app_id, built_hash, profile_version, pages, fill)
+        store.advance_status(app_id, "built")
+        return pages
 
     @api.post("/applications/{app_id}/build")
     async def build(app_id: str, pdf: bool = True):
@@ -997,6 +1044,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.put("/knowledge")
     def put_knowledge(data: dict, if_match: str | None = Header(default=None)):
+        need_version(if_match)
         data = {k: v for k, v in data.items() if k != "version"}
         try:
             return knowledge_payload(store.save_knowledge(Knowledge.model_validate(data), base_version=if_match,
