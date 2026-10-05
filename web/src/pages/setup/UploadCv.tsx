@@ -1,21 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type SetupState } from '../../api'
-import { cx } from '../../lib'
+import { cx, toBase64 } from '../../lib'
 import { ErrorNote } from '../../ui'
 
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_PASTE = 200_000
 const STAGES: [number, string][] = [[0, 'Extracting the text from your file'], [4, 'Reading your experience, role by role'],
   [20, 'Checking every line against your file'], [45, 'Almost there — long CVs take a little longer']]
-
-function toBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
-    reader.onerror = () => reject(new Error('That file could not be read.'))
-    reader.readAsDataURL(file)
-  })
-}
 
 /** Step 2: upload (or paste) the CV; the AI transcribes it into a draft the next step reviews. */
 export default function UploadCv({ onImported, onBlank }: {

@@ -79,9 +79,17 @@ export interface Preference {
 }
 export interface Knowledge { answers: KnowledgeAnswer[]; preferences: Preference[]; retired_ids?: string[]; version?: string }
 export interface Issue { where: string; message: string }
+export interface Fingerprint { sha256: string; document_id?: string | null; pdf_id?: string | null }
 export interface SentCopy {
   id: string; created: string; reason: string; company?: string; role?: string; pages?: number | null; files: string[]
+  fingerprints?: Record<string, Fingerprint>
 }
+/** Which application a PDF came from: exact file, the same PDF re-saved (its own ids), or closest text. */
+export interface PdfMatch {
+  app_id: string; company?: string; role?: string; status?: string; kind: 'sent' | 'build'
+  snapshot: string | null; created?: string; file: string; match: 'exact' | 'document' | 'text'; score: number
+}
+export interface Identified extends Fingerprint { matches: PdfMatch[] }
 export interface HistoryEntry { id: string; time: string; cause: string; size: number }
 export interface HistoryDiff { id: string; yaml: string; summary: string[]; diff: string }
 export type HistoryKind = 'profile' | 'knowledge'
@@ -258,6 +266,7 @@ export const api = {
     req<{ id: string; evidence: Record<string, string> }>('POST', '/profile/evidence', e),
 
   applications: () => req<AppSummary[]>('GET', '/applications'),
+  identifyPdf: (filename: string, data: string) => req<Identified>('POST', '/identify', { filename, data }),
   create: (b: { jd: string; url?: string; company?: string; role?: string }) =>
     req<{ id: string }>('POST', '/applications', b),
   get: (id: string) => req<Application>('GET', `/applications/${id}`),

@@ -5,6 +5,7 @@ import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, useTitle } from '../lib'
 import { ErrorNote, Spinner, StatusPill, StatusSelect } from '../ui'
 import { changeStatus, sentAsApplied } from '../status'
 import { setPendingSave } from '../unsaved'
+import { useIdentifyPdf } from './useIdentifyPdf'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
 type View = 'board' | 'table'
@@ -135,6 +136,7 @@ export default function Applications() {
   const [apps, setApps] = useState<AppSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [view, setViewState] = useState<View>(savedView)
+  const identify = useIdentifyPdf()
   const [query, setQuery] = useState('')
   const [needs, setNeeds] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
@@ -366,9 +368,15 @@ export default function Applications() {
             <span>Needs you</span>
             <span className={cx('inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px]', needs ? 'bg-[#4d6bff] text-white' : 'bg-accent-soft text-accent')}>{needsCount}</span>
           </button>
+          <button className="btn h-10 px-3.5" onClick={identify.pick}
+            title="Which application did a resume PDF come from? Compared with your sent copies; the PDF is never stored">
+            Identify a PDF
+          </button>
+          {identify.picker}
           <Link to="/new" className="btn btn-primary h-10 px-4 hover:text-white">New tailoring</Link>
         </div>
       </div>
+      {identify.panel}
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {apps === null && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>}

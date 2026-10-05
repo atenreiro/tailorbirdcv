@@ -117,7 +117,7 @@ You can change any of this later in **Settings**, and run the wizard again from 
 2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
 3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
 4. Build the Word document and PDF.
-5. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent.
+5. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent. Found one of your resumes somewhere and not sure which version it is? **Identify a PDF** in Applications tells you which application it came from, using the exact file's SHA-256 or the PDF's own document id. Nothing is ever added to your PDFs.
 
 ![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
 

@@ -185,6 +185,11 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
                   <button className={`${chip} cursor-pointer hover:bg-accent-soft hover:text-accent`} onClick={() => api.reveal(app.id, c.id).catch((e) => setRevealError((e as Error).message))}
                     title="Opens this sent copy's folder, read-only">{showInFolder(settings?.platform)}</button>
                 </div>
+                {Object.entries(c.fingerprints ?? {}).filter(([f]) => f.endsWith('.pdf')).map(([f, fp]) => (
+                  <p key={f} className="font-mono text-[11px] text-faint" title={`SHA-256 of the PDF sent: ${fp.sha256}`}>
+                    PDF SHA-256 <span className="select-all">{fp.sha256.slice(0, 16)}</span>…
+                  </p>
+                ))}
               </div>
             ))
           )}

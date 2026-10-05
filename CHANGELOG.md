@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.2.0 — unreleased
+- **Identify a PDF** (Applications): drop in any resume PDF to see which application it came from: the exact file sent (SHA-256), the same PDF re-saved by another app (its document id), or the closest text. Sent copies record each file's SHA-256, shown under *Sent copies* in Export. Nothing is added to your PDFs.
 - **Runs on macOS, Windows and Linux.** Word is driven hidden on macOS (AppleScript) and Windows (COM); LibreOffice works everywhere, with metric-compatible stand-ins (Gelasio, Carlito) when Microsoft's fonts are missing, so page breaks match Word's.
 - **Choose the PDF engine** (Word or LibreOffice) in the new Settings page; Word is the default when both are installed.
 - **One-command install:** `curl -LsSf …/install.sh | sh` on macOS and Linux, `irm …/install.ps1 | iex` on Windows: the installer sets up uv if needed, installs `autocv-app` from PyPI on a uv-managed Python 3.13 (never the system's or Homebrew's), puts `autocv` on the PATH and starts AutoCV, with no administrator rights; it trusts the system's certificates (company proxies), refuses to update or remove a running AutoCV and to run under sudo, and says when uv is too old. Running it again updates. Or directly `uv tool install autocv-app` (or `pipx install autocv-app`). The web UI ships inside the package, so Node isn't needed. User data lives in the OS's per-user data folder.

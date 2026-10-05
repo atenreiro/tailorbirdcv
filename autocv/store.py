@@ -1177,7 +1177,10 @@ class Store:
                 record = {"id": dest.name, "created": dt.datetime.now().isoformat(timespec="seconds"),
                           "reason": reason, "company": meta.get("company"), "role": meta.get("role"),
                           "pages": meta.get("pages"), "tailored_hash": self.tailored_hash(app_id),
-                          "profile_version": meta.get("built_profile"), "files": copied}
+                          "profile_version": meta.get("built_profile"), "files": copied,
+                          # what identifies these files later (Applications → Identify a PDF); nothing is added to them
+                          "fingerprints": {name: self._fingerprint(dest / name) for name in copied
+                                           if name.endswith((".pdf", ".docx"))}}
                 (dest / "sent.json").write_text(json.dumps(record, indent=2), encoding="utf-8", newline="\n")
             except BaseException:
                 oscompat.rmtree(dest)  # never leave a half-made, writable "sent" copy behind
@@ -1186,7 +1189,61 @@ class Store:
                 f.chmod(0o444)  # read-only: this is the record of what was sent
             return record
 
-    def sent_copies(self, app_id: str) -> list[dict]:
+    @staticmethod
+    def _fingerprint(path: Path) -> dict:
+        from . import identify
+        data = path.read_bytes()
+        return identify.fingerprint(data) if path.suffix == ".pdf" else {"sha256": identify.sha256(data)}
+
+    def sent_copies(self, app_id: str, fingerprints: bool = False) -> list[dict]:
+        """The sent copies, newest first. `fingerprints`: also work out those of copies frozen before
+        AutoCV recorded them (computed from the read-only files, never written back)."""
+        copies = self._sent_copies(app_id)
+        if fingerprints:
+            for c in copies:
+                prints = c.setdefault("fingerprints", {})
+                for name in c.get("files", []):
+                    path = self.sent_dir(app_id) / c["id"] / name
+                    if name.endswith((".pdf", ".docx")) and name not in prints and path.is_file():
+                        try:
+                            prints[name] = self._fingerprint(path)
+                        except OSError as e:
+                            log.warning("AutoCV: can't read %s (%s)", path, e)
+        return copies
+
+    def identify(self, data: bytes) -> dict:
+        """Which application a PDF came from: every sent copy and current build, matched by
+        identify.match (exact file, the PDF's own ids, or closest text)."""
+        from . import identify
+        candidates = []
+        for app in self.list_apps():
+            if app.get("broken"):
+                continue
+            app_id = app["id"]
+            base = {"app_id": app_id, "company": app.get("company"), "role": app.get("role"), "status": app.get("status")}
+            sent_hashes = set()
+            for c in self.sent_copies(app_id, fingerprints=True):
+                for name in c.get("files", []):
+                    if name.endswith(".pdf"):
+                        path = self.sent_dir(app_id) / c["id"] / name
+                        fp = c["fingerprints"].get(name)
+                        sent_hashes.add((fp or {}).get("sha256"))
+                        candidates.append({**base, "kind": "sent", "snapshot": c["id"], "created": c.get("created"),
+                                           "file": name, "fingerprint": fp, "read": path.read_bytes})
+            for name in self.files(app_id):
+                path = self.app_path(app_id) / name
+                if name.endswith(".pdf"):
+                    try:
+                        fp = identify.fingerprint(path.read_bytes())
+                    except OSError:
+                        continue
+                    if fp["sha256"] in sent_hashes:
+                        continue  # the same file as a sent copy of this application: that one says more
+                    candidates.append({**base, "kind": "build", "snapshot": None, "created": app.get("updated"),
+                                       "file": name, "fingerprint": fp, "read": path.read_bytes})
+        return identify.match(data, candidates)
+
+    def _sent_copies(self, app_id: str) -> list[dict]:
         folder = self.sent_dir(app_id)
         if not folder.exists():
             return []

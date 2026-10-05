@@ -54,6 +54,11 @@ class ProfileImport(BaseModel):
     text: str = Field("", max_length=200_000)      # or pasted text
 
 
+class PdfUpload(BaseModel):
+    filename: str = Field("", max_length=255)
+    data: str = Field(..., max_length=15_000_000)  # base64 file contents
+
+
 class SetupStep(BaseModel):
     step: Literal[tuple(Store.SETUP_STEPS)]  # type: ignore[valid-type]
 
@@ -709,7 +714,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
                "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
                "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id),
-               "sent": store.sent_copies(app_id)}
+               "sent": store.sent_copies(app_id, fingerprints=True)}
         fill = out["meta"].get("fill")
         if fill and fill.get("design") != ai.design_key():  # measured in another design: no longer meaningful
             out["meta"] = {**out["meta"], "fill": None}
@@ -991,6 +996,20 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except NeedsBuild as e:
             raise HTTPException(409, {"code": "needs_build", "message": str(e)})
         return get_application(app_id)
+
+    @api.post("/identify")
+    async def identify_pdf(body: PdfUpload):
+        """Which application a PDF came from (Applications → Identify a PDF). Read-only: the PDF
+        is compared with the sent copies and current builds, never stored."""
+        import base64
+        import binascii
+        try:
+            raw = base64.b64decode(body.data, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(422, "The file couldn't be read.")
+        if not raw.lstrip()[:5].startswith(b"%PDF"):
+            raise HTTPException(422, "That isn't a PDF.")
+        return await asyncio.to_thread(store.identify, raw)
 
     @api.get("/applications/{app_id}/sent/{snapshot}/{name}")
     def get_sent_file(app_id: str, snapshot: str, name: str, download: bool = False):
