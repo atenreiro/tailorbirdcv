@@ -134,6 +134,10 @@
         Write-Host "AutoCV installer: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host 'If this keeps happening, install uv yourself (https://docs.astral.sh/uv/getting-started/installation/), then run: uv tool install autocv-app'
     } finally {
-        foreach ($name in $uvSettings.Keys) { [Environment]::SetEnvironmentVariable($name, $uvSettings[$name], 'Process') }
+        # Remove-Item, not SetEnvironmentVariable($name, $null): PowerShell turns that $null into "", which uv rejects.
+        foreach ($name in $uvSettings.Keys) {
+            if ($null -eq $uvSettings[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+            else { Set-Item "Env:$name" $uvSettings[$name] }
+        }
     }
 }

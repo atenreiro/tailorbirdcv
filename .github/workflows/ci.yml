@@ -155,7 +155,11 @@ jobs:
           if ($py -notmatch '^Python 3\.13\.') { throw "AutoCV runs on $py, not Python 3.13" }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | ForEach-Object { $_.TrimEnd('\') }
           if ($userPath -notcontains (Split-Path $exe)) { throw 'the user PATH does not include autocv' }
-          if ($env:UV_MANAGED_PYTHON) { throw 'the installer left its uv settings in this window' }
+          foreach ($name in 'UV_SYSTEM_CERTS', 'UV_NATIVE_TLS', 'UV_MANAGED_PYTHON') {
+            if (Test-Path "Env:$name") { throw "the installer left $name in this window" }
+          }
+          & $uv --version   # uv still works in the window the installer ran in
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Update and uninstall with install.ps1 (PowerShell 7)
         if: runner.os == 'Windows'
         shell: pwsh
