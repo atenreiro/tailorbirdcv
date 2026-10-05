@@ -59,7 +59,11 @@ They need no administrator rights, write only inside your user folder, and use y
 - **Check your setup** (AI, PDF engine, fonts): `autocv doctor`.
 
 ### Update
-Stop AutoCV, then run the install line again. `uv tool upgrade autocv-app` also works.
+When a new version is out, AutoCV says so at the top of the page. If you installed it with the install line above, click **Upgrade**: AutoCV downloads the new version and restarts (on Windows, in a new terminal window), and the page reloads by itself. Otherwise the notice shows the command to run.
+
+To know about new versions, AutoCV asks PyPI (where it's published) for the latest version number when it opens, at most once a day. Nothing about you or your resumes is sent. Turn it off in **Settings → About AutoCV**.
+
+To update by hand: stop AutoCV, then run the install line again, or `uv tool upgrade autocv-app`.
 
 ### Uninstall
 Stop AutoCV, then run:
@@ -141,4 +145,6 @@ uv run pytest                                        # tests
 npm --prefix web run dev                             # interface with live reload (port 5173)
 AUTOCV_ENGINE=fake uv run autocv serve --port 8001   # demo mode, no AI calls
 ```
+To release a new version: change the number in [VERSION](VERSION) (and add a CHANGELOG entry), then push to `main` (automatic releases are on once the repository variable `RELEASES_ENABLED` is `true`). Once CI passes, the release workflow publishes that version to PyPI and tags it, and installed copies offer the upgrade within a day.
+
 The rules AutoCV follows and how the code is laid out are described in [CLAUDE.md](CLAUDE.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).

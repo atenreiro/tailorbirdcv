@@ -179,12 +179,12 @@ export interface Settings {
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
   text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
-  openrouter_model: string | null; openrouter_zdr: boolean
+  openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
-  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean }
+  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
@@ -192,6 +192,14 @@ export interface Proposal {
 export const STATUSES = ['draft', 'analyzed', 'composed', 'built', 'applied', 'interview', 'offer', 'closed']
 /** How a closed application ended (mirrors OUTCOMES in autocv/store.py). */
 export type Outcome = 'rejected' | 'no_response' | 'role_closed' | 'withdrew' | 'declined_offer' | 'did_not_apply' | 'accepted_offer'
+
+/** GET /api/update: the running and latest versions, and how this copy upgrades. */
+export interface UpdateStatus {
+  enabled: boolean; current: string; latest: string | null; newer: boolean
+  kind: 'uv-tool' | 'uv-tool-local' | 'checkout' | 'other'; command: string | null
+  checked_at: string | null; error: string | null; upgrading: string | null; windows: boolean; log: boolean
+  last_upgrade: { target: string; ok: boolean; at: string; error: string | null } | null
+}
 
 export class ApiError extends Error {
   status: number
@@ -252,6 +260,10 @@ export const api = {
   setupStep: (step: SetupStep) => req<SetupState>('PUT', '/setup', { step }),
   finishSetup: () => req<SetupState>('POST', '/setup/finish'),
   discardDraft: () => req<SetupState>('DELETE', '/setup/draft'),
+  updateStatus: () => req<UpdateStatus>('GET', '/update'),
+  checkUpdate: () => req<UpdateStatus>('POST', '/update/check'),
+  upgrade: () => req<UpdateStatus>('POST', '/update/upgrade'),
+  revealUpgradeLog: () => req<{ ok: boolean }>('POST', '/update/log'),
   browserStatus: () => req<{ state: 'idle' | 'running' | 'done' | 'failed'; detail: string }>('GET', '/setup/browser'),
   installBrowser: () => req<{ state: string; detail: string }>('POST', '/setup/browser'),
   importProfile: (b: { filename?: string; data?: string; text?: string }) =>

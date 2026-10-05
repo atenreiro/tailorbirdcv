@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.2.0 — unreleased
+- **Updates:** AutoCV tells you when a new version is out, and copies installed with the one-line installer upgrade with one click: it downloads the new version, restarts on the same port and the page reloads. It asks PyPI for the latest version at most once a day; Settings → About AutoCV shows the version and turns checks off. The version now lives in a `VERSION` file, and bumping it on main publishes the release automatically once CI passes.
 - The optional headless browser installs only Chromium's headless shell, the part AutoCV uses: about 200 MB instead of 550 MB. The setup wizard no longer leaves an empty `setup/` folder behind.
 - **Identify a PDF** (Applications): drop in any resume PDF to see which application it came from: the exact file sent (SHA-256), the same PDF re-saved by another app (its document id), or the closest text. Sent copies record each file's SHA-256, shown under *Sent copies* in Export. Nothing is added to your PDFs.
 - **Runs on macOS, Windows and Linux.** Word is driven hidden on macOS (AppleScript) and Windows (COM); LibreOffice works everywhere, with metric-compatible stand-ins (Gelasio, Carlito) when Microsoft's fonts are missing, so page breaks match Word's.

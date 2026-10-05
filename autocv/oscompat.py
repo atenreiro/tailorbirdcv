@@ -70,6 +70,12 @@ def group_kwargs() -> dict:
     return {"start_new_session": True}
 
 
+def spawn_new_console(cmd: list[str], env: dict) -> None:  # pragma: no cover - Windows only
+    """Start `cmd` in its own new console window that outlives this process (Windows: the self-upgrade helper)."""
+    subprocess.Popen(cmd, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE, close_fds=True,
+                     stdin=subprocess.DEVNULL)
+
+
 def kill_tree(pid: int) -> None:
     """Kill a process started with group_kwargs() and everything it started."""
     if IS_WINDOWS:  # pragma: no cover

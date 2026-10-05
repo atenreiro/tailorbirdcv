@@ -57,7 +57,6 @@ wheels = [
 
 [[package]]
 name = "autocv-app"
-version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -72,6 +71,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "pyyaml" },
+    { name = "truststore" },
     { name = "uvicorn" },
 ]
 
@@ -94,6 +94,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=4.0" },
     { name = "python-docx", specifier = ">=1.1" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "truststore", specifier = ">=0.10" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 

@@ -31,6 +31,15 @@ def memory_keyring(monkeypatch):
     return ring
 
 
+@pytest.fixture(autouse=True)
+def no_update_checks(monkeypatch):
+    """Tests never ask PyPI for the latest version; test_update.py swaps in its own answers."""
+    async def offline(transport=None):
+        raise OSError("tests are offline")
+    from autocv import update
+    monkeypatch.setattr(update, "fetch_latest", offline)
+
+
 def client_for(app) -> TestClient:
     """A client that behaves like the AutoCV UI: allowed host + the X-AutoCV header."""
     client = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"})

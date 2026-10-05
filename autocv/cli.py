@@ -20,12 +20,14 @@ import argparse
 import asyncio
 import difflib
 import logging
+import os
+import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-from . import ats, factcheck
+from . import ats, factcheck, oscompat
 from .oscompat import IS_WINDOWS
 from .ingest import ingest, merge_reingest
 from .render import docx_text, render
@@ -291,12 +293,59 @@ def cmd_serve(args) -> int:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
     config = uvicorn.Config(app, host="127.0.0.1", port=args.port, timeout_graceful_shutdown=SHUTDOWN_GRACE)
     logging.getLogger("uvicorn.error").addFilter(_QuietShutdown())
+    server = _server_class(uvicorn)(config)
+    app.state.request_exit = lambda: setattr(server, "should_exit", True)  # POST /api/update/upgrade
     try:
-        _server_class(uvicorn)(config).run(sockets=[sock])
+        server.run(sockets=[sock])
     except KeyboardInterrupt:  # uvicorn re-raises the Ctrl+C once it has shut down
         pass
+    if app.state.upgrade:
+        sock.close()
+        return restart_after_upgrade(app.state.upgrade, args.port)
     print("AutoCV stopped.", flush=True)
     return 0
+
+
+def restart_after_upgrade(plan: dict, port: int) -> int:
+    """The server has stopped for an upgrade (POST /api/update/upgrade): upgrade with uv, then start again on
+    the same port. macOS/Linux: in this terminal (exec), so Ctrl+C keeps working. Windows locks a running
+    program's files, so a helper in a new window waits for this process to end, upgrades, and starts AutoCV
+    there. Whatever happens, AutoCV starts again (the old version if the upgrade failed); the next start
+    records the outcome (update.settle)."""
+    import subprocess
+
+    from . import update
+    log_file = update.log_path(PRIVATE)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    command = update.upgrade_command(plan["uv"])
+    me = sys.argv[0] if os.path.isabs(sys.argv[0]) else (shutil.which(sys.argv[0]) or sys.argv[0])
+    if IS_WINDOWS:
+        script = log_file.parent / "upgrade.ps1"
+        script.write_text(update.WINDOWS_SCRIPT, encoding="ascii", newline="\r\n")
+        env = {**update.upgrade_env(), "AUTOCV_UPGRADE_TARGET": plan["target"], "AUTOCV_UPGRADE_UV": plan["uv"],
+               "AUTOCV_UPGRADE_PID": str(os.getpid()), "AUTOCV_UPGRADE_PPID": str(os.getppid()),
+               "AUTOCV_UPGRADE_LOG": str(log_file), "AUTOCV_UPGRADE_AUTOCV": me, "AUTOCV_UPGRADE_PORT": str(port)}
+        oscompat.spawn_new_console(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)], env)
+        print(f"Upgrading AutoCV to {plan['target']}: it continues in a new window, where it starts again.", flush=True)
+        return 0
+    print(f"\nUpgrading AutoCV to {plan['target']}…", flush=True)
+    output = []
+    with open(log_file, "w", encoding="utf-8") as log:
+        proc = subprocess.Popen(command, env=update.upgrade_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, errors="replace")
+        for line in proc.stdout:  # shown here and kept in the log
+            print(line, end="", flush=True)
+            log.write(line)
+            output.append(line)
+        code = proc.wait()
+    if code != 0:
+        print(f"The upgrade failed (exit code {code}); starting the version you had. Log: {log_file}", flush=True)
+    elif any("Nothing to upgrade" in line for line in output):
+        print("uv found nothing newer to install (it may not be published yet); starting the version you had.", flush=True)
+    else:
+        print("Upgraded. Starting AutoCV again…", flush=True)
+    os.execv(me, [me, "serve", "--port", str(port), "--no-browser"])
+    return 0  # not reached
 
 
 def cmd_doctor(args) -> int:

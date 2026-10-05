@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
-import { cx, useTitle } from '../lib'
+import { api, type UpdateStatus, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
+import { cx, fmtDate, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { setUnsaved } from '../unsaved'
 import { ErrorNote, Spinner } from '../ui'
@@ -451,6 +451,65 @@ function EngineOptions({ engine, settings, busy, apply }: {
   )
 }
 
+const KIND_LABEL: Record<UpdateStatus['kind'], string> = {
+  'uv-tool': 'Installed with the one-line installer: upgrades with one click',
+  'uv-tool-local': 'Installed with uv from a file: upgrade with the command below',
+  checkout: 'Running from a copy of the repository: upgrade with the command below',
+  other: 'Installed some other way: upgrade with the command below',
+}
+
+/** Settings → About AutoCV: the version, update checks (PyPI, at most daily) and how this copy upgrades. */
+function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+  const [status, setStatus] = useState<UpdateStatus | null>(null)
+  const [busy, setBusy] = useState<'check' | 'toggle' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { api.updateStatus().then(setStatus).catch((e) => setError((e as Error).message)) }, [])
+  const changed = (s: UpdateStatus) => { setStatus(s); window.dispatchEvent(new Event('autocv:update')) }
+  const check = () => {
+    setBusy('check'); setError(null)
+    api.checkUpdate().then(changed).catch((e) => setError((e as Error).message)).finally(() => setBusy(null))
+  }
+  const toggle = (on: boolean) => {
+    setBusy('toggle'); setError(null)
+    api.saveSettings({ update_check: on })
+      .then((s) => { onSaved(s); return api.updateStatus() }).then(changed)
+      .catch((e) => setError((e as Error).message)).finally(() => setBusy(null))
+  }
+  return (
+    <section id="about" aria-labelledby="about-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex flex-col gap-1.5">
+        <p className={cx(label, 'text-accent')}>About AutoCV</p>
+        <h2 id="about-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">
+          {status ? `Version ${status.current}` : 'Version'}
+        </h2>
+        {status && <p className="text-sm leading-[1.5] text-muted text-pretty">{KIND_LABEL[status.kind]}.</p>}
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      {status && status.enabled && (
+        <p className="text-sm text-body">
+          {status.newer ? <><strong>AutoCV {status.latest} is available.</strong> </> : status.latest ? 'You have the latest version. ' : ''}
+          {status.checked_at ? `Last checked ${fmtDate(status.checked_at)}, ${new Date(status.checked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : 'Not checked yet.'}
+          {status.error ? <span className="text-warn"> {status.error}</span> : null}
+        </p>
+      )}
+      {status?.command && <p className="text-sm text-body">To upgrade: <code className="rounded bg-wash px-1.5 py-0.5 font-mono text-[12.5px]">{status.command}</code></p>}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.update_check} disabled={!!busy}
+            onChange={(e) => toggle(e.target.checked)} />
+          <span className="flex flex-col gap-0.5">
+            <span className="font-medium text-ink">Check for updates</span>
+            <span className="text-muted text-pretty">Asks PyPI, where AutoCV is published, for the latest version: when AutoCV opens, at most once a day. It sends nothing about you or your resumes.</span>
+          </span>
+        </label>
+        {settings.update_check && (
+          <button className="btn" onClick={check} disabled={!!busy}>{busy === 'check' && <Spinner />}Check now</button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export default function Settings() {
   useTitle(['Settings'])
   const [s, setS] = useState<SettingsData | null>(null)
@@ -548,6 +607,8 @@ export default function Settings() {
       )}
 
       <SystemCheck />
+
+      {s && <AboutAutoCV settings={s} onSaved={onSaved} />}
     </div>
   )
 }

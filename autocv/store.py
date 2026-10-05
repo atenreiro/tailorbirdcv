@@ -233,6 +233,7 @@ class Store:
         "codex_model": None,         # Codex CLI model; None = Codex's own default
         "openrouter_model": None,    # OpenRouter model; None = the same Claude model as the Anthropic default
         "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
+        "update_check": True,        # ask PyPI (at most daily) whether a newer AutoCV is out; off = never
     }
 
     @property

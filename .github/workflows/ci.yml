@@ -191,3 +191,55 @@ jobs:
           Get-Content -Raw install.ps1 | Invoke-Expression
           if (Test-Path $exe) { throw 'autocv.exe is still there after uninstalling' }
           if ($env:AUTOCV_UNINSTALL) { throw 'AUTOCV_UNINSTALL was not cleared' }
+
+  self-upgrade:
+    # Applications → Upgrade, end to end: a one-line-installer copy upgrades itself to the next version and comes
+    # back on the same port (macOS: same terminal; Windows: a helper in a new console, as the files are locked).
+    name: Self-upgrade · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - uses: astral-sh/setup-uv@v6
+      - name: Build this version and the next one
+        shell: bash
+        run: |
+          set -eux
+          old=$(tr -d '[:space:]' < VERSION)
+          new=$(echo "$old" | awk -F. '{print $1"."$2"."$3+1}')
+          mkdir -p "$RUNNER_TEMP/links" "$RUNNER_TEMP/next" "$RUNNER_TEMP/data"
+          uv build --wheel -o "$RUNNER_TEMP/links"
+          echo "$new" > VERSION && uv build --wheel -o "$RUNNER_TEMP/next" && git checkout -- VERSION
+          cp tests/fixtures/profile.yaml "$RUNNER_TEMP/data/"
+          echo "OLD=$old" >> "$GITHUB_ENV"
+          echo "NEW=$new" >> "$GITHUB_ENV"
+      - name: Install the old version by name with install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: AUTOCV_PACKAGE=autocv-app UV_FIND_LINKS="$RUNNER_TEMP/links" sh -s -- --no-launch < install.sh
+      - name: Install the old version by name with install.ps1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:AUTOCV_PACKAGE = 'autocv-app'
+          $env:UV_FIND_LINKS = Join-Path $env:RUNNER_TEMP 'links'
+          $env:AUTOCV_NO_LAUNCH = '1'
+          Get-Content -Raw install.ps1 | Invoke-Expression
+      - name: Upgrade from the web API and wait for the new version
+        shell: bash
+        run: |
+          set -eux
+          cp "$RUNNER_TEMP"/next/*.whl "$RUNNER_TEMP/links/"  # the new version is now "published"
+          export UV_FIND_LINKS="$RUNNER_TEMP/links" AUTOCV_PRIVATE="$RUNNER_TEMP/data"
+          if [ "$RUNNER_OS" = Windows ]; then exe="$USERPROFILE/.local/bin/autocv.exe"; else exe="$HOME/.local/bin/autocv"; fi
+          uv run --no-project python .github/scripts/self_upgrade.py "$exe" "$AUTOCV_PRIVATE" "$OLD" "$NEW"

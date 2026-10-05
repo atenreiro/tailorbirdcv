@@ -1,32 +1,91 @@
 name: Release
 
-# Push a tag like v0.2.0 to build the web UI + package and publish it to PyPI as `autocv-app`.
-# One-time setup on PyPI: add a "trusted publisher" for this repository, workflow `release.yml`,
-# environment `pypi` (https://docs.pypi.org/trusted-publishers/).
+# Publishes `autocv-app` to PyPI. The version is the VERSION file at the repo root.
+#  - Automatic: bump VERSION on main. Once CI passes on that commit, this builds it, publishes it and tags
+#    vX.Y.Z. Commits that don't change the version find their tag already there and release nothing.
+#    Automatic releases only run once the repository variable RELEASES_ENABLED is "true" (Settings → Secrets and
+#    variables → Actions → Variables), so nothing is published before you decide to.
+#  - Manual: push a tag vX.Y.Z that matches VERSION (the tests run again first).
+# One-time setup on PyPI: a "trusted publisher" for this repository, workflow `release.yml`, environment `pypi`
+# (https://docs.pypi.org/trusted-publishers/).
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  decide:
+    # A push to main whose CI passed, or a manual tag.
+    if: >-
+      github.event_name == 'push' ||
+      (vars.RELEASES_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.v.outputs.release }}
+      version: ${{ steps.v.outputs.version }}
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0  # every tag, to compare versions
+      - id: v
+        name: Which version, and is it new?
+        run: |
+          set -eu
+          v=$(tr -d '[:space:]' < VERSION)
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION must be X.Y.Z, not '$v'"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME doesn't match VERSION $v"; exit 1; }
+          elif git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "v$v is already released: nothing to publish."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -V | tail -1)
+            if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$v" | sort -V | tail -1)" != "$v" ]; then
+              echo "::error::VERSION $v is lower than the latest release $latest"; exit 1
+            fi
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "Releasing $v"
+
   test:
+    # Only for a manual tag: the automatic path runs after CI already passed on this exact commit.
+    needs: decide
+    if: github.event_name == 'push' && needs.decide.outputs.release == 'true'
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run pytest -q
 
   build:
-    needs: test
+    needs: [decide, test]
+    if: always() && needs.decide.outputs.release == 'true' && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,11 +94,15 @@ jobs:
       - run: npm --prefix web ci
       - run: npm --prefix web run build
       - uses: astral-sh/setup-uv@v6
-      - name: Version matches the tag
-        run: test "v$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)" = "$GITHUB_REF_NAME"
       - name: Absolute image links in the PyPI description (relative ones only work on GitHub)
-        run: sed -i -E "s#(src=\"|\]\()docs/#\1https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/docs/#g" README.md
+        env:
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: sed -i -E "s#(src=\"|\]\()docs/#\1https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/v${VERSION}/docs/#g" README.md
       - run: uv build
+      - name: The packages carry the VERSION
+        env:
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: ls dist/ | grep -qx "autocv_app-${VERSION}-py3-none-any.whl"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -69,7 +132,8 @@ jobs:
           AUTOCV_PRIVATE=$PWD/smoke-data $PY -m autocv.cli doctor || true  # prints what this runner lacks; never fails the release
 
   publish:
-    needs: [build, smoke]
+    needs: [decide, build, smoke]
+    if: always() && needs.smoke.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -80,3 +144,21 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  tag:
+    # The automatic path tags what it published. (A tag pushed with GITHUB_TOKEN starts no workflow: no loop.)
+    needs: [decide, publish]
+    if: always() && needs.publish.result == 'success' && github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+      - env:
+          VERSION: ${{ needs.decide.outputs.version }}
+          SHA: ${{ needs.decide.outputs.sha }}
+        run: |
+          git tag "v${VERSION}" "${SHA}"
+          git push origin "v${VERSION}"

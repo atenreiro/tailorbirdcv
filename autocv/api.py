@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, fit, oscompat, paths, pdf as pdfmod, themes
+from . import ai, ats, critique as hm, factcheck, fit, oscompat, paths, pdf as pdfmod, themes, update
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
@@ -96,6 +96,7 @@ class SettingsPatch(BaseModel):
     codex_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
     openrouter_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
     openrouter_zdr: bool | None = None
+    update_check: bool | None = None
 
 
 class ApiKey(BaseModel):
@@ -224,6 +225,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             print(f"AutoCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
     except Exception as e:  # noqa: BLE001 — the app must always start; the UI shows what's readable
         log.warning("AutoCV: application folder migration failed (%s); starting anyway", e)
+    try:  # did the upgrade that restarted us take? (the UI says so either way)
+        update.settle(store.private)
+    except Exception as e:  # noqa: BLE001
+        log.warning("AutoCV: couldn't read the last upgrade's outcome (%s)", e)
     try:
         if store.profile_path.exists():
             store.profile()
@@ -233,6 +238,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     import hmac
     app.state.access_key = access_key = store.access_key()
+    app.state.busy = 0         # non-GET API requests still running: an upgrade waits until there are none
+    app.state.upgrade = None   # set by POST /api/update/upgrade; `autocv serve` upgrades once the server stops
+    # app.state.request_exit is set by `autocv serve`: it stops the server (for an upgrade)
     # One cookie per data folder: a second AutoCV (another folder, another port) doesn't lock this one out.
     import hashlib
     cookie = app.state.cookie_name = ACCESS_COOKIE + "_" + hashlib.sha256(str(store.private.resolve()).encode()).hexdigest()[:10]
@@ -284,7 +292,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             settings = store.settings()
             ai.use_context(ai.Context.from_settings(settings["targets"], store.private))
             use_design(settings["theme"], settings["paper"], settings["text_size"])  # every render uses the chosen design
-        response = await call_next(request)
+        counted = request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD", "OPTIONS")
+        app.state.busy += counted
+        try:
+            response = await call_next(request)
+        finally:
+            app.state.busy -= counted
         # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
         # (the Export step previews the PDF in an iframe).
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
@@ -470,6 +483,62 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return setup_payload()
 
     browser_install: dict = {"state": "idle", "detail": ""}
+
+    # -- updates ---------------------------------------------------------------------------------------
+    def update_view(cache: dict | None = None) -> dict:
+        enabled = store.settings()["update_check"]
+        return {**update.view(store.private, enabled, cache), "upgrading": (app.state.upgrade or {}).get("target"),
+                "windows": oscompat.IS_WINDOWS, "log": update.log_path(store.private).is_file()}
+
+    @api.get("/update")
+    async def update_status():
+        """The running and latest versions (PyPI, checked at most daily, never when checks are off)."""
+        enabled = store.settings()["update_check"]
+        return update_view(await update.refresh(store.private, enabled))
+
+    @api.post("/update/check")
+    async def update_check():
+        if not store.settings()["update_check"]:
+            raise HTTPException(409, "Update checks are off. Turn them on in Settings → About AutoCV.")
+        return update_view(await update.refresh(store.private, True, force=True))
+
+    @api.post("/update/upgrade", status_code=202)
+    async def upgrade():
+        """Upgrade to the latest version: the server stops, `autocv serve` runs `uv tool upgrade` and starts
+        again on the same port. Only for one-line-installer copies, and only when nothing else is running."""
+        if app.state.upgrade:
+            return update_view()
+        view = update_view(await update.refresh(store.private, store.settings()["update_check"]))
+        if view["kind"] != "uv-tool":
+            raise HTTPException(409, "This copy of AutoCV wasn't installed with the one-line installer, so it can't "
+                                     f"upgrade itself. To upgrade: {view['command']}")
+        if not view["newer"]:
+            raise HTTPException(409, "You already have the latest version.")
+        uv = update.find_uv()
+        if not uv:
+            raise HTTPException(409, "uv, which installed AutoCV, can't be found. Upgrade by running the install "
+                                     "command again.")
+        request_exit = getattr(app.state, "request_exit", None)
+        if request_exit is None:
+            raise HTTPException(409, "AutoCV can only upgrade itself when it was started with `autocv serve`.")
+        if app.state.busy > 1 or browser_install["state"] == "running":
+            raise HTTPException(409, "AutoCV is busy (an AI run, build or download is still going). Try again when "
+                                     "it has finished.")
+        app.state.upgrade = {"target": view["latest"], "uv": uv}
+        update.mark_pending(store.private, view["latest"])
+        asyncio.get_running_loop().call_later(0.5, request_exit)  # after this answer has gone out
+        return update_view()
+
+    @api.post("/update/log")
+    def reveal_upgrade_log():
+        log_file = update.log_path(store.private)
+        if not log_file.is_file():
+            raise HTTPException(404, "There's no upgrade log yet.")
+        try:
+            oscompat.reveal(log_file, log_file.parent)
+        except OSError as e:
+            raise HTTPException(500, f"Couldn't open the folder: {e}")
+        return {"ok": True}
 
     @api.get("/setup/browser")
     def browser_status():

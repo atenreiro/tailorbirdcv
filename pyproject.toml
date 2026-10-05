@@ -1,6 +1,6 @@
 [project]
 name = "autocv-app"
-version = "0.2.0"
+dynamic = ["version"]  # from the VERSION file: bump it on main and CI releases it (see release.yml)
 description = "Tailor your resume to a job description without inventing anything — a local web app"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +27,7 @@ dependencies = [
     "anthropic>=1.11",  # messages.create(output_config=…) structured outputs, as tested
     "keyring>=25",
     "openai>=3.24",  # Responses API with strict json_schema, as tested
+    "truststore>=0.10",  # update checks trust the OS certificates (company proxies that inspect HTTPS)
 ]
 
 [project.scripts]
@@ -43,6 +44,10 @@ dev = ["pytest>=8"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "VERSION"
+pattern = '^(?P<version>\d+\.\d+\.\d+)\s*$'
+
 [tool.hatch.build.targets.wheel]
 packages = ["autocv"]
 
@@ -50,8 +55,11 @@ packages = ["autocv"]
 path = "hatch_build.py"  # bundles the built web UI (web/dist) as autocv/web
 
 [tool.hatch.build.targets.sdist]
-include = ["/autocv", "/web/dist", "/README.md", "/CHANGELOG.md", "/hatch_build.py"]  # anchored: nothing from node_modules or worktrees
+include = ["/autocv", "/web/dist", "/README.md", "/CHANGELOG.md", "/hatch_build.py", "/VERSION"]  # anchored: nothing from node_modules or worktrees
 artifacts = ["/web/dist/**"]  # git-ignored, but the wheel built from the sdist needs it
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "VERSION" }]  # a VERSION bump refreshes the editable install's version
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

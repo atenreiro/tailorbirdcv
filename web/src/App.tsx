@@ -6,6 +6,7 @@ import NewApplication from './pages/NewApplication'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import SetupWizard from './pages/setup/SetupWizard'
+import UpdateBanner from './pages/UpdateBanner'
 import Workspace from './pages/Workspace'
 import { cx } from './lib'
 import { EngineBadge } from './ui'
@@ -110,6 +111,7 @@ export default function App() {
     <>
       <Masthead />
       <main className={cx('mx-auto pb-24 pt-10', FRAME)}>
+        <UpdateBanner />
         <FirstTip />
         <Routes>
           <Route path="/" element={<Applications />} />
