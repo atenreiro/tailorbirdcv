@@ -233,7 +233,7 @@ def _ingested():
     acme["achievements"] = [
         {"id": "acme-bank.a1", "text": "Shipped a new detection pipeline."},                 # new bullet first
         {"id": "acme-bank.a2", "text": acme["achievements"][0]["text"]},                      # old a1, moved
-        {"id": "acme-bank.a3", "text": "Own vendor spend across six platforms (Fastly, AWS WAF, Imperva)."}]  # reworded a2
+        {"id": "acme-bank.a3", "text": "Own vendor spend across five platforms (Fastly, AWS WAF, Imperva)."}]  # reworded a2
     p["synonyms"], p["vocabulary"] = [], []
     p["headlines"] = [p["headlines"][0]]
     base = copy.deepcopy(TAILORED)
@@ -254,7 +254,7 @@ def test_reingest_keeps_meaning_of_every_id():
     assert "acme-bank.a3" not in ach                                         # …and a retired id never is
     assert ach["acme-bank.a4"] == "Hardened Kubernetes clusters."           # interview evidence kept
     fresh = {i: t for i, t in ach.items() if i not in old_text}
-    assert sorted(fresh.values()) == ["Own vendor spend across six platforms (Fastly, AWS WAF, Imperva).",
+    assert sorted(fresh.values()) == ["Own vendor spend across five platforms (Fastly, AWS WAF, Imperva).",
                                       "Shipped a new detection pipeline."]
     assert new["retired_ids"] == ["acme-bank.a3"] and new["synonyms"] == old["synonyms"]
     assert {h["id"] for h in new["headlines"]} == {"h.leader", "h.engineer"}  # approved headlines kept

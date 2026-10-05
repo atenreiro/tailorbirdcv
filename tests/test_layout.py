@@ -93,13 +93,13 @@ def test_migration_runs_when_the_server_starts(store):
     from autocv.api import create_app
     from autocv.engine import FakeEngine
     from conftest import client_for
-    old = _old_style(store, "2026-10-03_globex_data-analyst", "Google", "Data Analyst", "built")
+    old = _old_style(store, "2026-10-03_globex_data-analyst", "Globex", "Data Analyst", "built")
     client = client_for(create_app(store, FakeEngine({})))
     (row,) = client.get("/api/applications").json()
-    assert row["id"] == "google~2026-10-03_data-analyst"
+    assert row["id"] == "globex~2026-10-03_data-analyst"
     assert client.get(f"/api/applications/{old}").status_code == 200   # old link still opens it
     assert client.delete(f"/api/applications/{row['id']}").status_code == 204
-    assert not (store.apps_dir / "google").exists()
+    assert not (store.apps_dir / "globex").exists()
 
 
 def test_old_company_named_resumes_lose_the_company(store):
@@ -125,7 +125,7 @@ def test_deleting_an_application_keeps_answers_but_drops_their_link(store):
                          "source_app": old, "date": "2026-10-01"}]}), encoding="utf-8")
     store.migrate_layout()
     store.delete_app("northwind~2026-10-01_platform-engineer")
-    assert store.list_apps() == [] and not (store.apps_dir / "binance").exists()
+    assert store.list_apps() == [] and not (store.apps_dir / "northwind").exists()
     k = store.knowledge()
     assert k.answers[0].app_id is None and k.answers[0].company == "Northwind"   # the answer is kept
     assert k.preferences[0].source_app is None

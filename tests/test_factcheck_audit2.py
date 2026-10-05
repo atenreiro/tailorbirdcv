@@ -57,7 +57,7 @@ def test_owning_the_department_needs_its_source(profile, tailored):
 def test_numbers_cannot_be_recombined_across_sources(profile, tailored):
     e = summary(profile, tailored, "Led a team of 4,500 engineers protecting 20M+ customers.",
                 ["acme-bank.scope", "telco.scope"])
-    assert any("3,000" in m and "engineers" in m for m in e), e
+    assert any("4,500" in m and "engineers" in m for m in e), e
     e = acme(profile, tailored, "Cut false positives by over 3% for 65 engineers.", ("acme-bank.a1", "acme-bank.scope"))
     assert e, "3% and 65 engineers aren't stated anywhere"
     e = acme(profile, tailored, "Cut false positives by 2022 alerts.", ("acme-bank.a1",))

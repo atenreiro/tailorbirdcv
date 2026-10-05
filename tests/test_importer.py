@@ -169,7 +169,7 @@ Vice President, Jan 2022 – Present
 • Built C++ tooling for 40 engineers.
 • Stayed ahead of security deadlines across 12M+ accounts.
 Telco Co — Leeds
-Head of Network, Jan 2012 – Dec 2021
+Head of Network, Mar 2009 – Jun 2019
 • Negotiated vendor contracts saving US$1.7M in a single year.
 """
 
@@ -180,7 +180,7 @@ def _two_roles(acme_bullets, telco_bullets, acme_title="Vice President", telco_t
         {"id": "acme", "employer": "Acme Bank", "location": "Singapore", "title": acme_title,
          "dates": "Jan 2022 – Present", "achievements": ach("acme", acme_bullets), "sub_roles": []},
         {"id": "telco", "employer": "Telco Co", "location": "Leeds", "title": telco_title,
-         "dates": "Jan 2012 – Dec 2021", "achievements": ach("telco", telco_bullets), "sub_roles": []}]}
+         "dates": "Mar 2009 – Jun 2019", "achievements": ach("telco", telco_bullets), "sub_roles": []}]}
 
 
 @pytest.mark.parametrize("bullet", ["Saved US$1.2M by consolidating vendors.", "Built C# tooling for 40 engineers.",
@@ -204,12 +204,12 @@ def test_facts_cannot_move_between_employers():
     assert importer.unverified(right, SOURCE2) == []
 
 
-@pytest.mark.parametrize("data", ["Jane Example — the user Señor, Security VP with 15 years. ".encode("utf-16") * 3,
-                                  ("Jane Example — the user, Security VP with 15 years in banking. " * 3).encode("cp1252"),
-                                  b"\xef\xbb\xbf" + ("Jane Example — the user, Security VP with 15 years. " * 3).encode()])
+@pytest.mark.parametrize("data", ["Jane Example — José Señor, Security VP with 15 years. ".encode("utf-16") * 3,
+                                  ("Jane Example — José, Security VP with 15 years in banking. " * 3).encode("cp1252"),
+                                  b"\xef\xbb\xbf" + ("Jane Example — José, Security VP with 15 years. " * 3).encode()])
 def test_text_cvs_in_any_common_encoding(data):
     text = importer.extract_text("cv.txt", data)
-    assert "the user" in text and "\x00" not in text and "�" not in text
+    assert "José" in text and "\x00" not in text and "�" not in text
 
 
 def test_binary_without_an_extension_and_pages_files_are_refused():

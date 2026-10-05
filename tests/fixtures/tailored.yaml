@@ -18,7 +18,7 @@ experience:
   bullets:
   - text: Rebuilt Splunk detection logic, cutting false positives by over 65% to roughly nine a month.
     sources: [acme-bank.a1]
-  - text: Own vendor spend across five platforms, including Fastly and AWS WAF.
+  - text: Own vendor spend across four platforms, including Fastly and AWS WAF.
     sources: [acme-bank.a2]
   sub_roles:
   - id: acme-bank.sub1

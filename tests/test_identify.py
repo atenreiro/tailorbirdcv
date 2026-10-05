@@ -37,8 +37,8 @@ def make_pdf(text: str, doc_id: str | None = None, pdf_id: str | None = None, pr
     return bytes(out)
 
 
-RESUME = ("Jane Example. Detection engineering lead at Example Capital. Cut false positives by over 80 percent. "
-          "Built the threat hunting programme. Led a team of 5 engineers protecting 50M customers")
+RESUME = ("Jane Example. Detection engineering lead at Example Capital. Cut false positives by over 65 percent. "
+          "Built the threat hunting programme. Led a team of 5 engineers protecting 20M customers")
 OTHER = "Sam Sample. Pastry chef at Example Bakery. Baked bread every morning. Ran the kitchen for ten years"
 
 

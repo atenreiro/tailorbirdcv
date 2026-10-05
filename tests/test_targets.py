@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from autocv import ai
+from autocv.factcheck import is_common_word
 from autocv.api import create_app
 from autocv.engine import FakeEngine
 from autocv.store import Store, file_safe_name
@@ -84,10 +85,25 @@ def test_config_comes_from_the_override_then_the_pack_then_the_default(tmp_path)
     ai.use_context(ai.Context())
 
 
+def _names(profile_path: Path) -> set[str]:
+    """What identifies a profile's owner: their name, employers and project names."""
+    p = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    names = {p["contact"]["name"], *(r["employer"] for r in p.get("roles", []))}
+    names |= {x["label"] for x in p.get("projects", []) if x.get("label")}
+    # a single everyday word ("Speaking") names nobody
+    return {n for n in names if n and len(n) >= 3 and not (" " not in n and is_common_word(n.lower()))}
+
+
 def test_shipped_config_has_no_personal_data():
-    shipped = "\n".join(p.read_text(encoding="utf-8") for p in (ai.paths.DATA / "config").rglob("*.yaml"))
-    for personal in ("ToolX", "mobile money", "Telco Co", "national CERT", "account-takeover", "Globex"):
-        assert personal not in shipped
+    """Shipped emphasis config never names the fixture person, nor (in a checkout with a data folder) the
+    developer's own employers and projects: they're read from the private profile, never written here."""
+    shipped = "\n".join(p.read_text(encoding="utf-8") for p in (ai.paths.DATA / "config").rglob("*.yaml")).lower()
+    names = _names(FIX / "profile.yaml")
+    mine = ai.paths.private_dir() / "profile.yaml"
+    if ai.paths.is_checkout() and mine.is_file():
+        names |= _names(mine)
+    leaked = sorted(n for n in names if n.lower() in shipped)
+    assert not leaked, f"{len(leaked)} personal name(s) in autocv/data/config"
 
 
 def test_the_page_limit_sets_the_budget_and_too_long(env):

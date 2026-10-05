@@ -223,7 +223,7 @@ def test_plural_and_possessive_of_a_cited_tool_pass(profile, tailored):
 
 
 def test_approved_synonym_lowercase_passes(profile, tailored):
-    errs = acme_bullet(profile, tailored, "Own vendor spend across five platforms, including a web application firewall.",
+    errs = acme_bullet(profile, tailored, "Own vendor spend across four platforms, including a web application firewall.",
                        sources=["acme-bank.a2"])
     assert errs == [], errs
 

@@ -54,7 +54,7 @@ def test_entity_from_another_role_is_rejected(profile, tailored):
 
 
 def test_synonym_is_accepted(profile, tailored):
-    tailored.experience[0].bullets[1].text = "Own vendor spend across five platforms, including Fastly and a Web Application Firewall."
+    tailored.experience[0].bullets[1].text = "Own vendor spend across four platforms, including Fastly and a Web Application Firewall."
     assert check(profile, tailored).ok
 
 
@@ -101,7 +101,7 @@ def test_role_order_and_omission_warn(profile, tailored):
 
 
 def test_numbers_extraction():
-    assert numbers("over 65%, roughly nine; US$1.7M; 4,500+ staff; 30M+") == {80, 6, 1.7e6, 3000, 30e6}
+    assert numbers("over 65%, roughly nine; US$1.7M; 4,500+ staff; 30M+") == {65, 9, 1.7e6, 4500, 30e6}
     assert numbers("1LoD F5 BIG-IP") == set()
 
 

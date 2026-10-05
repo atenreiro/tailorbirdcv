@@ -38,7 +38,7 @@ roles:
   - id: acme-bank.a1
     text: Cut false-positive alert volume by over 65%, to roughly nine per month, by rebuilding detection logic in Splunk.
   - id: acme-bank.a2
-    text: Own vendor spend across five platforms (Fastly, AWS WAF, Imperva).
+    text: Own vendor spend across four platforms (Fastly, AWS WAF, Imperva).
   sub_roles:
   - id: acme-bank.sub1
     label: Analyst
@@ -47,7 +47,7 @@ roles:
   employer: Telco Co
   location: Leeds, United Kingdom
   title: Head of Security
-  dates: Jan 2012 – Dec 2021
+  dates: Mar 2009 – Jun 2019
   scope:
     id: telco.scope
     text: Ran IT for a 4,500-employee operator.

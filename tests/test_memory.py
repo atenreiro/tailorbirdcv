@@ -117,11 +117,11 @@ def test_edits_are_detected_by_cited_evidence():
     edited = TailoredResume.model_validate(TAILORED)
     edited.experience[0].bullets.reverse()  # reordering alone is not an edit
     assert ai.edited_claims(draft, edited) == []
-    edited.experience[0].bullets[0].text = "Led vendor spend across five platforms."  # was index 1
+    edited.experience[0].bullets[0].text = "Led vendor spend across four platforms."  # was index 1
     edited.highlights = []
     edits = ai.edited_claims(draft, edited)
     assert {"where": "acme-bank bullet", "before": draft.experience[0].bullets[1].text,
-            "after": "Led vendor spend across five platforms."} in edits
+            "after": "Led vendor spend across four platforms."} in edits
     assert any(e["after"] == "(removed)" and e["where"] == "highlight 1" for e in edits)
 
 
