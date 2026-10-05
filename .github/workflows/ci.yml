@@ -93,3 +93,66 @@ jobs:
           if [ -x clean/Scripts/python.exe ]; then PY=clean/Scripts/python.exe; else PY=clean/bin/python; fi
           $PY -m autocv.cli --version
           $PY -c "from autocv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); print(paths.private_dir())"
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: wheel
+          path: dist/*.whl
+
+  installer:
+    # install.sh / install.ps1 exactly as users run them (piped), installing this commit's wheel instead of PyPI's.
+    name: One-line installer · ${{ matrix.os }}
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: dist/
+      - name: Lint install.sh
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh
+      - name: Install, update and uninstall with install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -eux
+          export AUTOCV_PACKAGE="$(ls "$PWD"/dist/*.whl)"
+          command -v uv || echo "no uv on this runner: the script installs it"
+          sh -s -- --no-launch < install.sh                 # as `curl … | sh -s -- --no-launch`
+          "$HOME/.local/bin/autocv" --version
+          if [ "$RUNNER_OS" = macOS ]; then zsh -ic 'autocv --version'; else bash -lc 'autocv --version'; fi  # a new terminal finds it
+          sh -s -- --no-launch < install.sh                 # running it again updates in place
+          sh -s -- --uninstall < install.sh
+          test ! -e "$HOME/.local/bin/autocv"
+      - name: Install with install.ps1 (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:AUTOCV_PACKAGE = (Resolve-Path dist\*.whl).Path
+          $env:AUTOCV_NO_LAUNCH = '1'
+          if (Get-Command uv -ErrorAction SilentlyContinue) { 'uv already on this runner' } else { 'no uv on this runner: the script installs it' }
+          Get-Content -Raw install.ps1 | Invoke-Expression   # as `irm … | iex`
+          $exe = Join-Path $env:USERPROFILE '.local\bin\autocv.exe'
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | ForEach-Object { $_.TrimEnd('\') }
+          if ($userPath -notcontains (Split-Path $exe)) { throw 'the user PATH does not include autocv' }
+      - name: Update and uninstall with install.ps1 (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:AUTOCV_PACKAGE = (Resolve-Path dist\*.whl).Path
+          $env:AUTOCV_NO_LAUNCH = '1'
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          $exe = Join-Path $env:USERPROFILE '.local\bin\autocv.exe'
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:AUTOCV_UNINSTALL = '1'
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          if (Test-Path $exe) { throw 'autocv.exe is still there after uninstalling' }

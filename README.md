@@ -17,31 +17,41 @@ AutoCV is a small web app that runs on your own computer (macOS, Windows or Linu
 ![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
 
 ## What you need
-- **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, a Python tool installer.
 - **An AI**, one of:
   - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.
   - **[Codex](https://github.com/openai/codex)**, logged in with your ChatGPT subscription (macOS: `brew install --cask codex`; Windows/Linux: `npm i -g @openai/codex`; then `codex login`). No extra cost.
   - **An API key**, billed per use: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) (which uses the same Claude model by default). Keys are stored in your system's keychain, never in AutoCV's files.
 - **Something to make PDFs**: Microsoft Word (macOS, Windows) or the free [LibreOffice](https://www.libreoffice.org/) (all systems). Without either, you still get the Word document.
 
-## Run it
-From a copy of this repository (you'll also need [Node.js](https://nodejs.org/) to build the interface once):
+## Install
+> AutoCV isn't on PyPI yet. Until the first release, use **From a copy of this repository** below.
+
+**macOS or Linux**, in Terminal:
+```bash
+curl -LsSf https://raw.githubusercontent.com/atenreiro/autocv/main/install.sh | sh
+```
+**Windows**, in PowerShell:
+```powershell
+irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex
+```
+The installer ([install.sh](https://github.com/atenreiro/autocv/blob/main/install.sh), [install.ps1](https://github.com/atenreiro/autocv/blob/main/install.ps1); short enough to read first) sets up [uv](https://docs.astral.sh/uv/), Astral's Python tool installer, if you don't have it, installs AutoCV in its own environment (uv fetches a suitable Python by itself and leaves any Python you have alone), adds the `autocv` command to your PATH, and starts AutoCV. It needs no administrator rights and writes only inside your user folder.
+
+Your browser opens AutoCV through a private link (it's also printed in the terminal, starting with `AutoCV →`): it unlocks AutoCV in that browser, so other programs on your computer can't read your data. Press **Ctrl+C** in the terminal to stop AutoCV, and run `autocv serve` to start it again.
+
+- **Update:** run the same command again (or `uv tool upgrade autocv-app`).
+- **Uninstall:** `uv tool uninstall autocv-app`. Your profile and applications stay in your data folder (see below) until you delete it.
+- **Prefer not to pipe a script?** Install uv yourself (`brew install uv` on macOS, `winget install astral-sh.uv` on Windows, or [another way](https://docs.astral.sh/uv/getting-started/installation/)), then run `uv tool install autocv-app` and `autocv serve`.
+
+**From a copy of this repository** (you'll also need [Node.js](https://nodejs.org/) to build the interface once):
 ```bash
 uv sync
 npm --prefix web install && npm --prefix web run build
 uv run autocv serve
 ```
-Your browser opens AutoCV through a private link (it's also printed in the terminal, starting with `AutoCV →`): it unlocks AutoCV in that browser, so other programs on your computer can't read your data. Press **Ctrl+C** in the terminal to stop AutoCV.
-
-Once AutoCV is published, installing will be a single command, with no Node.js needed:
-```bash
-uv tool install autocv-app
-autocv serve
-```
 
 To check that everything AutoCV needs is in place (the AI, PDF engine, fonts):
 ```bash
-uv run autocv doctor
+autocv doctor
 ```
 
 ## First run: the setup wizard
