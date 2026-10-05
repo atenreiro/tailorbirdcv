@@ -243,6 +243,17 @@ class _QuietShutdown(logging.Filter):
         return not ("graceful shutdown exceeded" in msg or msg.startswith("Waiting for"))
 
 
+class _HideKey(logging.Filter):
+    """The request log would show the private link's key (GET /?key=…): masked. The link itself is printed once,
+    on purpose, when AutoCV starts."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        import re
+        if isinstance(record.args, tuple):
+            record.args = tuple(re.sub(r"key=[^&\s]+", "key=•••", a) if isinstance(a, str) else a for a in record.args)
+        return True
+
+
 def _server_class(uvicorn):
     class Server(uvicorn.Server):
         """A single Ctrl+C often arrives twice (from the terminal and again via `uv run`), which uvicorn
@@ -293,6 +304,7 @@ def cmd_serve(args) -> int:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
     config = uvicorn.Config(app, host="127.0.0.1", port=args.port, timeout_graceful_shutdown=SHUTDOWN_GRACE)
     logging.getLogger("uvicorn.error").addFilter(_QuietShutdown())
+    logging.getLogger("uvicorn.access").addFilter(_HideKey())
     server = _server_class(uvicorn)(config)
     app.state.request_exit = lambda: setattr(server, "should_exit", True)  # POST /api/update/upgrade
     try:

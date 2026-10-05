@@ -641,8 +641,11 @@ async def compose(engine: Engine, profile: MasterProfile, analysis: dict,
     raw = await engine.complete(system_prompt(), _compose_prompt(profile, analysis, base, guidance, preferences, budget),
                                 schema)
     tailored, report, rounds = await _validated(engine, profile, schema, raw)
+    # Rendering assumes valid references: a draft that failed the fact-check may cite ids the profile
+    # doesn't have, so it gets no estimate rather than an error.
+    lines = estimate_lines(profile, tailored) if report.ok else None
     result = {"tailored": tailored, "report": report, "repair_rounds": rounds, "trim_rounds": 0,
-              "length": {"lines": estimate_lines(profile, tailored), "budget": budget["lines"]}}
+              "length": {"lines": lines, "budget": budget["lines"]}}
     if report.ok:
         fitted = await fit_to_length(engine, profile, tailored, analysis, budget["lines"])
         result.update(tailored=fitted["tailored"], trim_rounds=fitted["trim_rounds"], length=fitted["length"],

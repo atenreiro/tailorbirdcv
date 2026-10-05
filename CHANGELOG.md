@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.2.0 — unreleased
+- **Fixes from an architecture review:** marking an application applied or freezing a copy while it builds no longer hangs AutoCV (lock order and the server loop); a draft that fails the fact-check no longer makes compose fail with an error; Claude Code is checked before every AI call and never used on a pay-per-use login (Console, Bedrock, Vertex); the private link only ever redirects within AutoCV; the request log masks the link's key.
 - **Updates:** AutoCV tells you when a new version is out, and copies installed with the one-line installer upgrade with one click: it downloads the new version, restarts on the same port and the page reloads. It asks PyPI for the latest version at most once a day; Settings → About AutoCV shows the version and turns checks off. The version now lives in a `VERSION` file, and bumping it on main publishes the release automatically once CI passes.
 - The optional headless browser installs only Chromium's headless shell, the part AutoCV uses: about 200 MB instead of 550 MB. The setup wizard no longer leaves an empty `setup/` folder behind.
 - **Identify a PDF** (Applications): drop in any resume PDF to see which application it came from: the exact file sent (SHA-256), the same PDF re-saved by another app (its document id), or the closest text. Sent copies record each file's SHA-256, shown under *Sent copies* in Export. Nothing is added to your PDFs.

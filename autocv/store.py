@@ -845,11 +845,13 @@ class Store:
         applied = [c for c in self.sent_copies(app_id) if c.get("reason") == "applied"]
         return applied[-1] if applied else None
 
-    def mark_applied(self, app_id: str) -> dict:
+    def mark_applied(self, app_id: str, locked: bool = False) -> dict:
         """Record the application as applied. The first time, freeze exactly what is being sent
         (raises NeedsBuild if that isn't trustworthy); re-entering 'applied' later (after an
-        interview, a reopen…) never freezes another copy."""
-        with self.app_lock(app_id), _LOCK:
+        interview, a reopen…) never freezes another copy. `locked`: the caller already holds this
+        application's lock (it isn't reentrant)."""
+        import contextlib
+        with (contextlib.nullcontext() if locked else self.app_lock(app_id)), _LOCK:
             if self.applied_copy(app_id) is None:
                 self._freeze(app_id, "applied")
             return self.set_status(app_id, "applied")

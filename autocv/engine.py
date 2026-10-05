@@ -224,10 +224,42 @@ class ClaudeCLIEngine:
         self.model = model or os.environ.get("AUTOCV_MODEL")
         self.timeout = timeout
         self.command = command  # the argv prefix to run instead of the binary (tests)
+        self._login: tuple[float, str | None] | None = None  # (when checked, the billing problem or None)
 
     @property
     def binary(self) -> str:  # looked up each time, so a Claude Code installed after AutoCV started is found
         return self._binary or os.environ.get("AUTOCV_CLAUDE_BIN") or find_cli("claude") or "claude"
+
+    @staticmethod
+    def _login_problem(info: dict) -> str | None:
+        """Why this Claude Code login mustn't be used (it isn't the user's subscription), or None."""
+        if not info.get("loggedIn"):
+            return "Not logged in — run `claude` in a terminal and use /login"
+        method, provider = info.get("authMethod"), info.get("apiProvider")
+        if provider not in (None, "firstParty"):  # Bedrock/Vertex: billed by the cloud provider, not the subscription
+            return (f"Claude Code is set up to use {provider}, which is billed per use. Use /login with your "
+                    "Claude subscription, or choose the Anthropic API key engine.")
+        if method not in (None, "claude.ai"):  # an Anthropic Console (API) login bills per call
+            return ("Claude Code is logged in with an Anthropic Console account, which is billed per use. Run "
+                    "`claude`, then /login, and choose your Claude subscription — or use the Anthropic API key "
+                    "engine instead.")
+        return None
+
+    async def _require_subscription(self) -> None:
+        """Never run on a login that bills per use (Console, Bedrock, Vertex): checked before calls and cached
+        for a minute. If the login can't be read at all, the call goes ahead and fails on its own if it must."""
+        import time
+        if self.command:  # tests drive a fake binary
+            return
+        if not self._login or time.monotonic() - self._login[0] > 60 or self._login[1]:
+            try:
+                info = json.loads(await self._run(["auth", "status"], timeout=45))
+                problem = self._login_problem(info) if isinstance(info, dict) else None
+            except (EngineError, json.JSONDecodeError):
+                problem = None
+            self._login = (time.monotonic(), problem)
+        if self._login[1]:
+            raise EngineError(self._login[1])
 
     async def _run(self, args: list[str], stdin: str | None = None, timeout: float | None = None,
                    files: dict[str, str] | None = None) -> str:
@@ -254,22 +286,13 @@ class ClaudeCLIEngine:
         except (EngineError, json.JSONDecodeError) as e:
             return {"engine": self.name, "ready": False, "detail": str(e)}
         model = self.model or "CLI default"
-        if not info.get("loggedIn"):
-            return {"engine": self.name, "ready": False, "model": model,
-                    "detail": "Not logged in — run `claude` in a terminal and use /login"}
-        method, provider = info.get("authMethod"), info.get("apiProvider")
-        if provider not in (None, "firstParty"):  # Bedrock/Vertex: billed by the cloud provider, not the subscription
-            return {"engine": self.name, "ready": False, "model": model,
-                    "detail": f"Claude Code is set up to use {provider}, which is billed per use. Use /login with your "
-                              "Claude subscription, or choose the Anthropic API key engine."}
-        if method not in (None, "claude.ai"):  # an Anthropic Console (API) login bills per call
-            return {"engine": self.name, "ready": False, "model": model,
-                    "detail": "Claude Code is logged in with an Anthropic Console account, which is billed per use. Run "
-                              "`claude`, then /login, and choose your Claude subscription — or use the Anthropic API key "
-                              "engine instead."}
+        problem = self._login_problem(info)
+        if problem:
+            return {"engine": self.name, "ready": False, "model": model, "detail": problem}
         return {"engine": self.name, "ready": True, "model": model, "detail": "logged in"}
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        await self._require_subscription()
         args = [
             "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
             "--system-prompt-file", "{system.md}", *ISOLATION_ARGS,

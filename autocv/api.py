@@ -260,11 +260,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         # Opening AutoCV's link (…/?key=…) turns the key into a cookie and drops it from the address bar.
         if request.method == "GET" and "key" in request.query_params:
             from fastapi.responses import RedirectResponse
+            from urllib.parse import urlencode
             given = request.query_params["key"]
             rest = [(k, v) for k, v in request.query_params.multi_items() if k != "key"]
-            target = request.url.path + ("?" + "&".join(f"{k}={v}" for k, v in rest) if rest else "")
-            if request.url.path.startswith("/api/"):
-                target = "/"
+            path = "/" + request.url.path.lstrip("/\\")  # never "//other.site" or "/\\other.site": stays here
+            if path.startswith("/api/"):
+                path, rest = "/", []
+            target = path + ("?" + urlencode(rest) if rest else "")
             response = RedirectResponse(target, status_code=303)
             if hmac.compare_digest(given.encode(), access_key.encode()):
                 response.set_cookie(cookie, access_key, max_age=400 * 24 * 3600, httponly=True,
@@ -841,7 +843,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.patch("/applications/{app_id}")
     def patch_application(app_id: str, body: MetaPatch):
         app_id = need_app(app_id)
-        with store.lock:
+        # The application's lock comes before the store's (as in builds and freezes): taking them the other way
+        # round could deadlock against a build of this application.
+        with store.app_lock(app_id), store.lock:
             meta = store.meta(app_id)
             # Validate everything before changing anything (a rejected request never freezes).
             if body.outcome and body.status not in (None, "closed"):
@@ -857,7 +861,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 # Applying freezes the exact files sent (once). If they're missing or stale, the UI
                 # offers "Build & freeze" instead of recording a version that doesn't match.
                 try:
-                    store.mark_applied(app_id)
+                    store.mark_applied(app_id, locked=True)
                 except NeedsBuild as e:
                     raise HTTPException(409, {"code": "needs_build", "message": str(e)})
             elif status:
@@ -1057,14 +1061,14 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             if pages and pages > page_limit():
                 raise HTTPException(409, {"code": "too_long", "message":
                                           f"The PDF is {pages} pages — trim it before sending. Nothing was frozen."})
-        try:
+        try:  # in a worker thread: waiting for a build of this application must never stall the server
             if mark_applied:
-                store.mark_applied(app_id)  # freezes once; clears any outcome from a closed state
+                await asyncio.to_thread(store.mark_applied, app_id)  # freezes once; clears any closed outcome
             else:
-                store.freeze(app_id, "manual copy")
+                await asyncio.to_thread(store.freeze, app_id, "manual copy")
         except NeedsBuild as e:
             raise HTTPException(409, {"code": "needs_build", "message": str(e)})
-        return get_application(app_id)
+        return await asyncio.to_thread(get_application, app_id)
 
     @api.post("/identify")
     async def identify_pdf(body: PdfUpload):
