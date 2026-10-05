@@ -241,5 +241,6 @@ jobs:
           set -eux
           cp "$RUNNER_TEMP"/next/*.whl "$RUNNER_TEMP/links/"  # the new version is now "published"
           export UV_FIND_LINKS="$RUNNER_TEMP/links" AUTOCV_PRIVATE="$RUNNER_TEMP/data"
-          if [ "$RUNNER_OS" = Windows ]; then exe="$USERPROFILE/.local/bin/autocv.exe"; else exe="$HOME/.local/bin/autocv"; fi
+          bin=$(uv tool dir --bin)  # where the installer put it (setup-uv moves it out of ~/.local/bin)
+          if [ "$RUNNER_OS" = Windows ]; then exe="$bin/autocv.exe"; else exe="$bin/autocv"; fi
           uv run --no-project python .github/scripts/self_upgrade.py "$exe" "$AUTOCV_PRIVATE" "$OLD" "$NEW"
