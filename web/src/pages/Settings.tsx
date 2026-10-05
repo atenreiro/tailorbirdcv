@@ -458,6 +458,36 @@ const KIND_LABEL: Record<UpdateStatus['kind'], string> = {
   other: 'Installed some other way: upgrade with the command below',
 }
 
+/** Settings → Applications: the company icons on the application board. */
+function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const toggle = (on: boolean) => {
+    setBusy(true); setError(null)
+    api.saveSettings({ company_icons: on }).then(onSaved).catch((e) => setError((e as Error).message)).finally(() => setBusy(false))
+  }
+  return (
+    <section aria-labelledby="apps-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+      <div className="flex flex-col gap-1.5">
+        <p className={cx(label, 'text-accent')}>Applications</p>
+        <h2 id="apps-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Company icons</h2>
+      </div>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+        <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.company_icons} disabled={busy}
+          onChange={(e) => toggle(e.target.checked)} />
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium text-ink">Show company icons</span>
+          <span className="text-muted text-pretty">
+            Shows each company’s site icon on your applications. AutoCV fetches it once from the company’s own website
+            (never a job board’s logo); turn this off to show no icons and fetch none.
+          </span>
+        </span>
+      </label>
+    </section>
+  )
+}
+
 /** Settings → About AutoCV: the version, update checks (PyPI, at most daily) and how this copy upgrades. */
 function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
@@ -605,6 +635,8 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {s && <ApplicationsSettings settings={s} onSaved={onSaved} />}
 
       <SystemCheck />
 

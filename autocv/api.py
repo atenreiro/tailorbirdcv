@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, fit, oscompat, paths, pdf as pdfmod, themes, update
+from . import ai, ats, critique as hm, factcheck, favicon, fit, oscompat, paths, pdf as pdfmod, themes, update
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
@@ -97,6 +97,7 @@ class SettingsPatch(BaseModel):
     openrouter_model: str | None = Field(None, max_length=100, pattern=MODEL_ID)
     openrouter_zdr: bool | None = None
     update_check: bool | None = None
+    company_icons: bool | None = None
 
 
 class ApiKey(BaseModel):
@@ -732,8 +733,39 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return {"seniority": analysis.get("seniority"), "requirements": len(analysis.get("requirements", [])),
                 "gaps_open": gaps_open, "drafted": tailored is not None, "verified": verified, "critique": hm_summary}
 
+    # -- the company's site icon: fetched in the background, once per application (favicon.py) ----------
+    favicon_pending: set[str] = set()
+    favicon_tasks: set = set()  # keeps the running tasks referenced
+
+    async def fetch_favicons(jobs: list[tuple[str, str, list[str]]]) -> None:
+        for app_id, url, sites in jobs:  # one at a time: never a burst of requests to company sites
+            try:
+                found = await favicon.fetch(url, sites)
+                await asyncio.to_thread(store.save_favicon, app_id, found)
+            except Exception as e:  # noqa: BLE001 — an icon is never worth an error
+                log.debug("AutoCV: site icon for %s failed (%s)", app_id, e)
+            finally:
+                favicon_pending.discard(app_id)
+
+    def queue_favicons(jobs: list[tuple[str, str, list[str]]]) -> None:
+        """Fetch these applications' icons in the background, unless icons are off in Settings."""
+        jobs = [j for j in jobs if j[0] not in favicon_pending]
+        if not jobs or not store.settings()["company_icons"]:
+            return
+        favicon_pending.update(j[0] for j in jobs)
+        task = asyncio.get_running_loop().create_task(fetch_favicons(jobs))
+        favicon_tasks.add(task)
+        task.add_done_callback(favicon_tasks.discard)
+
     @api.get("/applications")
-    def list_applications():
+    async def list_applications():
+        apps = await asyncio.to_thread(list_rows)
+        # Applications from before icons existed (or made while they were off) get theirs now.
+        queue_favicons([(a["id"], a["url"], []) for a in apps
+                        if a.get("url") and "favicon" not in a and not a.get("broken")])
+        return apps
+
+    def list_rows():
         apps = store.list_apps()
         try:
             profile = store.profile() if store.profile_path.exists() else None
@@ -757,6 +789,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def create_application(body: NewApplication):
         need_profile()
         jd, company, role = body.jd.strip(), body.company, body.role
+        sites: list[str] = []  # the company's own website, when the job page names it (for its icon)
         if not jd and body.url:
             try:
                 job = await asyncio.wait_for(fetch_job(body.url.strip()), 90)
@@ -766,13 +799,15 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 raise HTTPException(422, f"{e} Paste the job description instead.")
             except ValueError:
                 raise HTTPException(422, "That URL isn't valid. Paste the job description instead.")
-            jd, company, role = job.text, company or job.company, role or job.role
+            jd, company, role, sites = job.text, company or job.company, role or job.role, job.sites
         if len(jd) < 100:
             raise HTTPException(422, "The job description looks too short — paste the full text.")
         if len(jd) > MAX_JD:
             raise HTTPException(422, f"The job description is very long ({len(jd):,} characters; the limit is "
                                      f"{MAX_JD:,}). Paste just the posting itself.")
         app_id = store.create_app(company or "company", role or "role", jd, body.url)
+        if body.url:
+            queue_favicons([(app_id, body.url.strip(), sites)])
         return {"id": app_id}
 
     @api.get("/applications/{app_id}")
@@ -1203,6 +1238,18 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             oscompat.reveal(target, path)
         except OSError as e:
             raise HTTPException(500, f"Couldn't open the folder: {e}")
+
+    @api.get("/applications/{app_id}/favicon")
+    def get_favicon(app_id: str):
+        """The company's site icon, from the application's folder (the browser never loads it from the site)."""
+        path = store.favicon_path(need_app(app_id))
+        if not path:
+            raise HTTPException(404, "no icon")
+        media = {".ico": "image/x-icon", ".png": "image/png", ".gif": "image/gif", ".jpg": "image/jpeg",
+                 ".webp": "image/webp"}[path.suffix]
+        return FileResponse(path, media_type=media, headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'"})
 
     @api.get("/applications/{app_id}/files/{name}")
     def get_file(app_id: str, name: str, download: bool = False):

@@ -119,6 +119,8 @@ export interface Ats {
 }
 export interface Meta {
   company: string; role: string; url?: string | null; status: string
+  /** The company's site icon kept with the application ("favicon.png"), "" when there is none. */
+  favicon?: string
   outcome?: Outcome | null; closed_at?: string | null
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
   guidance?: string; trim_rounds?: number; built_hash?: string
@@ -179,12 +181,12 @@ export interface Settings {
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
   text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
-  openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean
+  openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
-  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean }
+  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
@@ -310,6 +312,7 @@ export const api = {
     req<Critique>('PUT', `/applications/${id}/critique/decisions`, { decisions }),
   suggestPreferences: (id: string) =>
     req<{ edits: number; proposed: number; knowledge: Knowledge }>('POST', `/applications/${id}/preferences`),
+  faviconUrl: (id: string) => `/api/applications/${id}/favicon`,
   fileUrl: (id: string, name: string, download = false) =>
     `/api/applications/${id}/files/${encodeURIComponent(name)}${download ? '?download=true' : ''}`,
 }

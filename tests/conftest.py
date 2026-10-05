@@ -40,6 +40,15 @@ def no_update_checks(monkeypatch):
     monkeypatch.setattr(update, "fetch_latest", offline)
 
 
+@pytest.fixture(autouse=True)
+def no_favicon_fetches(monkeypatch):
+    """Tests never contact company sites for icons; test_favicon.py drives the fetcher with fake sites."""
+    async def none(job_url, sites=None, client=None):
+        return None
+    from autocv import favicon
+    monkeypatch.setattr(favicon, "fetch", none)
+
+
 def client_for(app) -> TestClient:
     """A client that behaves like the AutoCV UI: allowed host + the X-AutoCV header."""
     client = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"})

@@ -135,6 +135,8 @@ AutoCV only runs locally. There's no account, no server and no tracking. Your pr
 - Windows: `%LOCALAPPDATA%\AutoCV`
 - Linux: `~/.local/share/AutoCV`
 
+For each application made from a job link, AutoCV fetches the company's site icon once, from the company's own website (never a job board's logo), and keeps it with the application. **Settings → Applications → Show company icons** turns this off: no icons shown, none fetched.
+
 In a copy of this repository that has a `private/` folder, AutoCV uses that folder instead (it's never committed). To use any other folder, set `AUTOCV_PRIVATE` to its path.
 
 The only thing that leaves your computer is what the AI needs to read your CV and the job, and to write the resume.

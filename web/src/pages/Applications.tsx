@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type Application, type AppSummary, type Outcome, type ScoreKey } from '../api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, useTitle } from '../lib'
-import { ErrorNote, Spinner, StatusPill, StatusSelect } from '../ui'
+import { useSettings } from '../settings'
+import { ErrorNote, Favicon, Spinner, StatusPill, StatusSelect } from '../ui'
 import { changeStatus, sentAsApplied } from '../status'
 import { setPendingSave } from '../unsaved'
 import { useIdentifyPdf } from './useIdentifyPdf'
@@ -137,6 +138,9 @@ export default function Applications() {
   const [error, setError] = useState<string | null>(null)
   const [view, setViewState] = useState<View>(savedView)
   const identify = useIdentifyPdf()
+  const settings = useSettings()
+  // The company's site icon: only when it was found, and never when Settings turns icons off.
+  const icon = (x: AppSummary) => settings?.company_icons === true && !!x.favicon
   const [query, setQuery] = useState('')
   const [needs, setNeeds] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
@@ -419,8 +423,11 @@ export default function Applications() {
                         onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
                         className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#aeb7c6]',
                           on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(14_20_34/0.05)]', dim(x))}>
-                        <div className="flex items-baseline justify-between gap-2.5">
-                          <p className="min-w-0 truncate text-base font-semibold leading-[1.2] text-ink">{x.company}</p>
+                        <div className="flex items-center justify-between gap-2.5">
+                          <div className="flex min-w-0 items-center gap-2">
+                            {icon(x) && <Favicon appId={x.id} size={16} />}
+                            <p className="min-w-0 truncate text-base font-semibold leading-[1.2] text-ink">{x.company}</p>
+                          </div>
                           <span className="flex-none font-mono text-[11px] text-faint">{short(x.updated)}</span>
                         </div>
                         <p className="text-[13px] leading-[1.3] text-muted text-pretty">{x.role}</p>
@@ -477,9 +484,12 @@ export default function Applications() {
                     onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
                     className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#eef0f4] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
                       on && 'bg-[#eef1fd] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
-                    <div role="cell" className="min-w-0">
-                      <p className="truncate text-[15px] font-semibold text-ink">{x.company}</p>
-                      <p className="truncate text-[13px] text-muted">{x.role}</p>
+                    <div role="cell" className="flex min-w-0 items-start gap-2.5">
+                      {icon(x) && <Favicon appId={x.id} size={16} className="mt-[3px]" />}
+                      <div className="min-w-0">
+                        <p className="truncate text-[15px] font-semibold text-ink">{x.company}</p>
+                        <p className="truncate text-[13px] text-muted">{x.role}</p>
+                      </div>
                     </div>
                     <span role="cell" className="text-[13px] text-body">{STAGE_TITLE[STAGE[x.status] ?? 'progress']}</span>
                     <span role="cell" className="justify-self-start"><StatusPill status={x.status} outcome={x.outcome} /></span>
@@ -502,7 +512,7 @@ export default function Applications() {
         className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
           open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
         {shown && (
-          <Sheet key={shown.id} a={shown} detail={shownDetail} busy={busy} notes={(draft?.id === shown.id ? draft.text : null) ?? shown.notes ?? ''}
+          <Sheet key={shown.id} a={shown} icon={icon(shown)} detail={shownDetail} busy={busy} notes={(draft?.id === shown.id ? draft.text : null) ?? shown.notes ?? ''}
             closeRef={closeBtn} deleteRef={deleteBtn} confirming={confirming} onConfirming={setConfirming}
             onClose={() => close()} onNotes={(text) => typeNotes(shown.id, text)} onNotesBlur={flushNotes}
             onStatus={(st, o) => void setStatus(shown, st, o)} onAct={(n) => act(shown, n)} onDelete={() => void remove(shown)}
@@ -513,8 +523,8 @@ export default function Applications() {
   )
 }
 
-function Sheet({ a, detail, busy, notes, closeRef, deleteRef, confirming, onConfirming: setConfirming, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete, asking, onStopAsking }: {
-  a: AppSummary; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
+function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, onConfirming: setConfirming, onClose, onNotes, onNotesBlur, onStatus, onAct, onDelete, asking, onStopAsking }: {
+  a: AppSummary; icon: boolean; detail: Application | null; busy: { id: string; kind: Kind } | null; notes: string
   closeRef: RefObject<HTMLButtonElement | null>; deleteRef: RefObject<HTMLButtonElement | null>
   confirming: boolean; onConfirming: (on: boolean) => void
   onClose: () => void; onNotes: (v: string) => void; onNotesBlur: () => void; onStatus: (s: string, outcome?: Outcome) => void; onAct: (n: Next) => void
@@ -540,7 +550,10 @@ function Sheet({ a, detail, busy, notes, closeRef, deleteRef, confirming, onConf
             className="size-8 cursor-pointer rounded-lg border border-rule bg-sheet text-base leading-none text-muted hover:border-ink hover:text-ink">×</button>
         </div>
         <div className="flex flex-col gap-1">
-          <h2 id="app-detail-title" className="font-display text-[40px] leading-[0.95] text-ink">{a.company}</h2>
+          <div className="flex min-w-0 items-center gap-3">
+            {icon && <Favicon appId={a.id} size={28} />}
+            <h2 id="app-detail-title" className="min-w-0 font-display text-[40px] leading-[0.95] text-ink">{a.company}</h2>
+          </div>
           <p className="text-[15px] text-body">{a.role}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">

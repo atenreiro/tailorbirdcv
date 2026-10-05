@@ -234,6 +234,7 @@ class Store:
         "openrouter_model": None,    # OpenRouter model; None = the same Claude model as the Anthropic default
         "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
         "update_check": True,        # ask PyPI (at most daily) whether a newer AutoCV is out; off = never
+        "company_icons": True,       # show each company's site icon (fetched once); off = none shown or fetched
     }
 
     @property
@@ -1272,6 +1273,40 @@ class Store:
         if path.parent.parent != folder or not path.is_file() or path.suffix not in (".pdf", ".docx", ".md"):
             raise KeyError(name)
         return path
+
+    # -- the company's site icon (favicon.py) ----------------------------------------------------------
+    FAVICON_RE = re.compile(r"^favicon\.(ico|png|gif|jpg|webp)$")
+
+    def favicon_path(self, app_id: str) -> Path | None:
+        name = self.meta(app_id).get("favicon") or ""
+        if not self.FAVICON_RE.match(name):
+            return None
+        path = self.app_path(app_id) / name
+        return path if path.is_file() else None
+
+    def save_favicon(self, app_id: str, found: tuple[bytes, str] | None) -> None:
+        """Keep the company's icon with the application (or record that there is none, so it's fetched once).
+        Never part of the built or sent files (files() lists only .docx/.pdf)."""
+        try:
+            with _LOCK:
+                folder = self.app_path(app_id)
+                for old in folder.glob("favicon.*"):
+                    old.unlink(missing_ok=True)
+                name = ""
+                if found:
+                    data, ext = found
+                    name = f"favicon.{ext}"
+                    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".favicon.", suffix=".tmp")
+                    try:
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(data)
+                        oscompat.replace(tmp, folder / name)
+                    except BaseException:
+                        Path(tmp).unlink(missing_ok=True)
+                        raise
+                self.update_meta(app_id, favicon=name)
+        except AppNotFound:
+            pass  # deleted while its icon was being fetched
 
     def files(self, app_id: str) -> list[str]:
         path = self.app_path(app_id)  # never Word's "~$" lock file or hidden files

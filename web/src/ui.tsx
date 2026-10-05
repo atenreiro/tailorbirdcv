@@ -134,3 +134,15 @@ export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabe
     </div>
   )
 }
+
+/** The company's site icon, served by AutoCV from the application's folder. Decorative (the name is next to it);
+ * if it can't be shown it disappears instead of leaving a broken image. */
+export function Favicon({ appId, size = 16, className = '' }: { appId: string; size?: number; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <img src={api.faviconUrl(appId)} alt="" aria-hidden width={size} height={size} loading="lazy" decoding="async"
+      draggable={false} onError={() => setFailed(true)}
+      className={cx('flex-none rounded-[3px] object-contain', className)} style={{ width: size, height: size }} />
+  )
+}

@@ -25,7 +25,7 @@ import os
 import re
 import socket
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpcore
@@ -56,6 +56,7 @@ class Job:
     company: str = ""
     role: str = ""
     source: str = "page"  # lever | greenhouse | ashby | json-ld | page
+    sites: list[str] = field(default_factory=list)  # the hiring company's own website(s), when the page names them
 
 
 # --------------------------------------------------------------------------- safe http
@@ -161,8 +162,8 @@ def pinned_client(timeout: float = 20) -> httpx.AsyncClient:
                              headers={"User-Agent": "Mozilla/5.0 AutoCV"})
 
 
-async def safe_get(client: httpx.AsyncClient, url: str) -> str:
-    """GET with per-hop SSRF checks and a size cap."""
+async def safe_fetch(client: httpx.AsyncClient, url: str, max_bytes: int = MAX_BYTES) -> tuple[bytes, str, str]:
+    """GET with per-hop SSRF checks and a size cap: (body, content type, text encoding)."""
     for _ in range(MAX_REDIRECTS + 1):
         await check_public_url(url)
         async with client.stream("GET", url) as resp:  # connection re-validated by PinnedBackend
@@ -175,10 +176,16 @@ async def safe_get(client: httpx.AsyncClient, url: str) -> str:
             body = b""
             async for chunk in resp.aiter_bytes():
                 body += chunk
-                if len(body) > MAX_BYTES:
+                if len(body) > max_bytes:
                     raise FetchError("That page is too large.")
-            return body.decode(resp.encoding or "utf-8", errors="replace")
+            return body, resp.headers.get("content-type", ""), resp.encoding or "utf-8"
     raise FetchError("Too many redirects.")
+
+
+async def safe_get(client: httpx.AsyncClient, url: str) -> str:
+    """GET a page as text, with per-hop SSRF checks and a size cap."""
+    body, _, encoding = await safe_fetch(client, url)
+    return body.decode(encoding, errors="replace")
 
 
 # --------------------------------------------------------------------------- formatting
@@ -325,8 +332,36 @@ def _jobposting_nodes(data) -> list[dict]:
     return found
 
 
+def _ld_nodes(soup: BeautifulSoup) -> list[dict]:
+    nodes = []
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            nodes += _jobposting_nodes(json.loads(tag.string or tag.get_text() or ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return nodes
+
+
+def org_sites(page: str | BeautifulSoup) -> list[str]:
+    """The hiring company's own web addresses named in the page's JobPosting data (hiringOrganization url and
+    sameAs), in order. Used for its site icon; may include social profiles, which the caller skips."""
+    soup = page if isinstance(page, BeautifulSoup) else BeautifulSoup(page, "html.parser")
+    sites: list[str] = []
+    for node in _ld_nodes(soup):
+        org = node.get("hiringOrganization")
+        if not isinstance(org, dict):
+            continue
+        for key in ("url", "sameAs"):
+            values = org.get(key) or []
+            for v in values if isinstance(values, list) else [values]:
+                if isinstance(v, str) and v.startswith(("http://", "https://")) and v not in sites:
+                    sites.append(v.strip())
+    return sites
+
+
 def from_json_ld(page: str) -> Job | None:
     soup = BeautifulSoup(page, "html.parser")
+    sites = org_sites(soup)
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(tag.string or tag.get_text() or "")
@@ -343,7 +378,7 @@ def from_json_ld(page: str) -> Job | None:
             if len(body) >= MIN_TEXT:
                 title = node.get("title", "")
                 facts = [("Location", where), ("Employment", str(node.get("employmentType", "") or ""))]
-                return Job(_doc(title, company, facts, [("", body)]), company, title, "json-ld")
+                return Job(_doc(title, company, facts, [("", body)]), company, title, "json-ld", sites)
     return None
 
 
