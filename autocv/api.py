@@ -1246,10 +1246,11 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         if not path:
             raise HTTPException(404, "no icon")
         media = {".ico": "image/x-icon", ".png": "image/png", ".gif": "image/gif", ".jpg": "image/jpeg",
-                 ".webp": "image/webp"}[path.suffix]
+                 ".webp": "image/webp", ".svg": "image/svg+xml"}[path.suffix]
+        # Scripts are blocked even if an SVG icon is opened directly (an <img> never runs them anyway).
         return FileResponse(path, media_type=media, headers={
             "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'"})
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     @api.get("/applications/{app_id}/files/{name}")
     def get_file(app_id: str, name: str, download: bool = False):

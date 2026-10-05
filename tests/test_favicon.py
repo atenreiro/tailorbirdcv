@@ -23,6 +23,14 @@ ICO = b"\x00\x00\x01\x00" + b"\x00" * 40
 JD = "# Platform Engineer\n\n" + "We need a hands-on platform engineer to run our payment services. " * 8
 
 
+@pytest.fixture(autouse=True)
+def no_real_browser(monkeypatch):
+    """The headless-browser retry never launches Chromium here; tests that need it pass a fake render."""
+    async def unavailable(url):
+        raise FetchError("no headless browser in tests")
+    monkeypatch.setattr(jobfetch, "render_page", unavailable)
+
+
 @pytest.fixture
 def public_dns(monkeypatch):
     async def ok(url):  # no real DNS; SSRF rejection is tested in test_jobfetch/test_pinning
@@ -65,12 +73,28 @@ def test_favicon_ico_when_nothing_is_declared(public_dns):
     assert found == (ICO, "ico")
 
 
-def test_svg_and_non_images_are_never_kept(public_dns):
-    found, seen = get("https://example.com/job", {
-        "https://example.com/": page('<link rel="icon" href="/icon.svg" type="image/svg+xml">'),
-        "https://example.com/icon.svg": httpx.Response(200, content=b"<svg><script>alert(1)</script></svg>"),
-        "https://example.com/favicon.ico": httpx.Response(200, content=b"<html>not an image</html>")})
-    assert found is None and "https://example.com/icon.svg" not in seen
+SVG = b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>'
+
+
+def test_an_svg_only_site_gets_its_svg_icon(public_dns):
+    found, _ = get("https://example.com/job", {
+        "https://example.com/": page('<link rel="shortcut icon" href="/assets/logo.svg" type="image/svg+xml">'),
+        "https://example.com/assets/logo.svg": httpx.Response(200, content=SVG)})
+    assert found == (SVG, "svg")
+
+
+def test_a_raster_icon_beats_an_svg_one(public_dns):
+    found, _ = get("https://example.com/job", {
+        "https://example.com/": page('<link rel="icon" href="/i.svg" type="image/svg+xml"><link rel="icon" href="/i.png">'),
+        "https://example.com/i.svg": httpx.Response(200, content=SVG), "https://example.com/i.png": httpx.Response(200, content=PNG)})
+    assert found == (PNG, "png")
+
+
+def test_non_images_are_never_kept(public_dns):
+    found, _ = get("https://example.com/job", {
+        "https://example.com/": page('<link rel="icon" href="https://example.com/" type="image/png">'),  # a broken tag
+        "https://example.com/favicon.ico": httpx.Response(200, content=b"<html><svg></svg></html>")})
+    assert found is None
 
 
 def test_icons_over_200_kb_are_refused(public_dns):
@@ -104,6 +128,22 @@ def test_network_trouble_means_no_icon(public_dns):
         raise httpx.ConnectError("down")
     found, _ = get("https://example.com/job", {"https://example.com/": boom, "https://example.com/favicon.ico": boom})
     assert found is None
+
+
+def test_a_site_that_blocks_plain_requests_is_read_through_the_headless_browser(public_dns, monkeypatch):
+    rendered = []
+
+    async def render(url):
+        rendered.append(url)
+        return jobfetch.Rendered('<html><head><link rel="icon" href="https://static.example-cdn.net/img/favicon.ico">'
+                                 '</head></html>', "", url, [])
+    monkeypatch.setattr(jobfetch, "render_page", render)
+    found, seen = get("https://www.example.com/careers/job/9", {
+        "https://www.example.com/": httpx.Response(200, content=b""),  # bot protection: an empty page
+        "https://www.example.com/favicon.ico": httpx.Response(200, content=b""),
+        "https://static.example-cdn.net/img/favicon.ico": httpx.Response(200, content=ICO)})
+    assert found == (ICO, "ico") and rendered == ["https://www.example.com/"]
+    assert "https://static.example-cdn.net/img/favicon.ico" in seen  # fetched by AutoCV's own guarded client
 
 
 def test_private_addresses_are_refused():
@@ -155,11 +195,25 @@ def test_created_from_a_link_the_icon_is_fetched_once_stored_and_served(env):
         assert wait_for(lambda: store.meta(app_id).get("favicon") == "favicon.png")
         r = client.get(f"/api/applications/{app_id}/favicon")
         assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
-        assert r.headers["x-content-type-options"] == "nosniff" and r.headers["content-security-policy"] == "default-src 'none'"
+        assert r.headers["x-content-type-options"] == "nosniff" and "default-src 'none'" in r.headers["content-security-policy"]
         client.get("/api/applications")
         time.sleep(0.2)
     assert calls == [("https://northwind.example/careers/1", [])]  # the list doesn't fetch it again
     assert "favicon.png" not in store.files(app_id)  # never a downloadable, built or sent file
+
+
+def test_an_svg_icon_is_served_with_scripts_blocked(env, monkeypatch):
+    client, store, calls = env
+
+    async def svg(job_url, sites=None, client=None):
+        return (SVG, "svg")
+    monkeypatch.setattr(favicon, "fetch", svg)
+    with client:
+        app_id = new_app(client, "https://northwind.example/careers/7")
+        assert wait_for(lambda: store.meta(app_id).get("favicon") == "favicon.svg")
+        r = client.get(f"/api/applications/{app_id}/favicon")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert "default-src 'none'" in r.headers["content-security-policy"] and "sandbox" in r.headers["content-security-policy"]
 
 
 def test_no_icon_found_is_recorded_so_it_isnt_fetched_again(env, monkeypatch):

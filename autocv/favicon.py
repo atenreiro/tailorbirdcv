@@ -3,8 +3,11 @@
 Which site: the job link's own site, unless that's a job board (Greenhouse, Lever, Workday, LinkedIn…), whose icon
 would be the board's, not the company's. Then the company's website named in the posting's JobPosting data
 (hiringOrganization url/sameAs) is used, or no icon at all. Every request goes through jobfetch's SSRF-guarded
-client; only raster images (ICO, PNG, GIF, JPEG, WEBP) up to 200 KB are kept, never SVG. The browser only ever
-loads the icon from AutoCV (GET /api/applications/{id}/favicon), never from the company's site.
+client; only images up to 200 KB are kept (ICO, PNG, GIF, JPEG, WEBP, or SVG, which is only ever shown as an image
+and served with a policy that blocks scripts). Sites that answer plain requests with an empty page (bot protection)
+get one more try through the headless browser, when it's installed: it renders the homepage to find where the icon
+really lives. The browser only ever loads the icon from AutoCV (GET /api/applications/{id}/favicon), never from
+the company's site.
 """
 
 from __future__ import annotations
@@ -23,7 +26,8 @@ log = logging.getLogger("autocv")
 
 MAX_ICON = 200_000
 TIMEOUT = 10.0
-FILE_RE = re.compile(r"^favicon\.(ico|png|gif|jpg|webp)$")
+BROWSER_TIMEOUT = 45.0  # rendering a protected homepage in the headless browser takes a few seconds
+FILE_RE = re.compile(r"^favicon\.(ico|png|gif|jpg|webp|svg)$")
 
 BOARDS = (  # job boards and applicant-tracking systems: their favicon is their own logo
     "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "workday.com", "smartrecruiters.com",
@@ -73,19 +77,18 @@ def _size(sizes: str | None) -> int:
 
 
 def icon_links(page: str, base: str) -> list[str]:
-    """Candidate icon URLs, best first: declared raster icons nearest 32–64 px, apple-touch icons, then
-    /favicon.ico. SVG icons are skipped (only raster images are kept)."""
-    found: list[tuple[int, str]] = []
+    """Candidate icon URLs, best first: declared raster icons nearest 32–64 px, other raster icons, SVG icons,
+    apple-touch icons, then /favicon.ico."""
+    found: list[tuple[float, str]] = []
     if page:
         for link in BeautifulSoup(page, "html.parser").find_all("link", href=True):
             rel = " ".join(link.get("rel") or []).lower()
             if "icon" not in rel or "mask-icon" in rel:
                 continue
             href = link["href"].strip()
-            if link.get("type", "").lower() == "image/svg+xml" or urlparse(href).path.lower().endswith(".svg"):
-                continue
+            svg = "svg" in link.get("type", "").lower() or urlparse(href).path.lower().endswith(".svg")
             size = _size(link.get("sizes"))
-            rank = 3 if "apple-touch" in rel else 0 if 32 <= size <= 64 else 1 if size else 2
+            rank = 3 if "apple-touch" in rel else 2.5 if svg else 0 if 32 <= size <= 64 else 1 if size else 2
             found.append((rank, urljoin(base, href)))
     urls = [u for _, u in sorted(found, key=lambda x: x[0])]
     urls.append(urljoin(base, "/favicon.ico"))
@@ -104,6 +107,10 @@ def sniff(data: bytes) -> str | None:
         return "jpg"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
+    head = data[:2048].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if (head.startswith(b"<svg") or head.startswith(b"<?xml") or head.startswith(b"<!--")) \
+            and b"<svg" in head and b"<html" not in head:
+        return "svg"  # shown only as an image, served with scripts blocked (api.get_favicon)
     return None
 
 
@@ -120,7 +127,11 @@ async def find_icon(job_url: str, sites: list[str], client: httpx.AsyncClient) -
         home = await safe_get(client, site + "/")
     except (FetchError, httpx.HTTPError, ValueError):
         home = ""  # still try /favicon.ico
-    for url in icon_links(home, site + "/"):
+    return await _first_icon(icon_links(home, site + "/"), client)
+
+
+async def _first_icon(urls: list[str], client: httpx.AsyncClient) -> tuple[bytes, str] | None:
+    for url in urls:
         try:
             data, _, _ = await safe_fetch(client, url, MAX_ICON)
         except (FetchError, httpx.HTTPError, ValueError):
@@ -130,15 +141,31 @@ async def find_icon(job_url: str, sites: list[str], client: httpx.AsyncClient) -
     return None
 
 
+async def find_icon_rendered(job_url: str, sites: list[str], client: httpx.AsyncClient) -> tuple[bytes, str] | None:
+    """For sites that give plain requests an empty page: render the homepage in the headless browser (every
+    request still SSRF-checked) to find the icon's real address, often on a separate image server."""
+    from . import jobfetch
+    site = company_site(job_url, sites)
+    if not site or not jobfetch.BROWSER_FALLBACK:
+        return None
+    rendered = await jobfetch.render_page(site + "/")
+    return await _first_icon(icon_links(rendered.html, rendered.url or site + "/"), client)
+
+
 async def fetch(job_url: str, sites: list[str] | None = None, client: httpx.AsyncClient | None = None
                 ) -> tuple[bytes, str] | None:
-    """The company's icon for this job link, or None (never raises; at most TIMEOUT seconds)."""
+    """The company's icon for this job link, or None (never raises). Plain requests first (at most TIMEOUT
+    seconds), then the headless browser when they found nothing (at most BROWSER_TIMEOUT seconds)."""
     own = client is None
     client = client or pinned_client(timeout=TIMEOUT)
+    sites = list(sites or [])
     try:
-        return await asyncio.wait_for(find_icon(job_url, list(sites or []), client), TIMEOUT)
-    except Exception as e:  # noqa: BLE001 — no icon is fine; it never matters enough to show an error
-        log.debug("AutoCV: no site icon for %s (%s)", job_url, e)
+        for attempt, limit in ((find_icon, TIMEOUT), (find_icon_rendered, BROWSER_TIMEOUT)):
+            try:
+                if found := await asyncio.wait_for(attempt(job_url, sites, client), limit):
+                    return found
+            except Exception as e:  # noqa: BLE001 — no icon is fine; it never matters enough to show an error
+                log.debug("AutoCV: no site icon for %s via %s (%s)", job_url, attempt.__name__, e)
         return None
     finally:
         if own:

@@ -1275,7 +1275,7 @@ class Store:
         return path
 
     # -- the company's site icon (favicon.py) ----------------------------------------------------------
-    FAVICON_RE = re.compile(r"^favicon\.(ico|png|gif|jpg|webp)$")
+    FAVICON_RE = re.compile(r"^favicon\.(ico|png|gif|jpg|webp|svg)$")
 
     def favicon_path(self, app_id: str) -> Path | None:
         name = self.meta(app_id).get("favicon") or ""
