@@ -78,11 +78,13 @@ def test_setup_phase_lists_what_you_have_and_what_you_need(tmp_path, monkeypatch
 def test_browser_check_needs_the_exact_complete_chromium(tmp_path, monkeypatch):
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
     monkeypatch.setattr(doctor, "_chromium_revision", lambda: "1243")
-    (tmp_path / "chromium-1217").mkdir()
-    (tmp_path / "chromium-1217" / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
-    (tmp_path / "chromium-1243").mkdir()  # partial download: no marker
-    assert not doctor.browser_installed()
+    (tmp_path / "chromium_headless_shell-1217").mkdir()  # another version
+    (tmp_path / "chromium_headless_shell-1217" / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
+    (tmp_path / "chromium-1243").mkdir()  # the full browser: headless pages never use it
     (tmp_path / "chromium-1243" / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
+    (tmp_path / "chromium_headless_shell-1243").mkdir()  # partial download: no marker
+    assert not doctor.browser_installed()
+    (tmp_path / "chromium_headless_shell-1243" / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
     assert doctor.browser_installed()
 
 

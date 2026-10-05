@@ -488,7 +488,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         async def run():
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    sys.executable, "-m", "playwright", "install", "chromium",
+                    sys.executable, "-m", "playwright", "install", "--only-shell", "chromium",
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **oscompat.group_kwargs())
                 try:
                     out, _ = await asyncio.wait_for(proc.communicate(), 900)
@@ -505,7 +505,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             except Exception as e:  # noqa: BLE001
                 browser_install.update(state="failed", detail=str(e) or "Install failed.")
 
-        browser_install.update(state="running", detail="Downloading (about 100 MB)…")
+        browser_install.update(state="running", detail="Downloading (about 200 MB)…")
         asyncio.get_running_loop().create_task(run())
         return browser_install
 

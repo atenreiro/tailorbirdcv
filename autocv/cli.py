@@ -311,8 +311,8 @@ def cmd_doctor(args) -> int:
 
 def cmd_install_browser(args) -> int:
     import subprocess
-    print("Installing the headless browser for JavaScript-only job pages (about 100 MB)…", flush=True)
-    code = subprocess.call([sys.executable, "-m", "playwright", "install", "chromium"])
+    print("Installing the headless browser for JavaScript-only job pages (about 200 MB)…", flush=True)
+    code = subprocess.call([sys.executable, "-m", "playwright", "install", "--only-shell", "chromium"])
     if code == 0 and sys.platform.startswith("linux"):
         print("On Linux it may also need system libraries; if pages fail to load, run:\n"
               f"  sudo {sys.executable} -m playwright install-deps chromium")

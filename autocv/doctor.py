@@ -182,27 +182,27 @@ def _browser_caches() -> list[Path]:
 
 
 def _chromium_revision() -> str | None:
-    """The Chromium build this Playwright version runs (from its browsers.json)."""
+    """The headless Chromium build this Playwright version runs (from its browsers.json)."""
     import json
     try:
         import playwright
         manifest = Path(playwright.__file__).parent / "driver" / "package" / "browsers.json"
-        return next(b["revision"] for b in json.loads(manifest.read_text(encoding="utf-8"))["browsers"]
-                    if b["name"] == "chromium")
+        browsers = {b["name"]: b["revision"] for b in json.loads(manifest.read_text(encoding="utf-8"))["browsers"]}
+        return browsers.get("chromium-headless-shell") or browsers["chromium"]
     except (ImportError, OSError, ValueError, StopIteration, KeyError):
         return None
 
 
 def browser_installed() -> bool:
-    """The exact Chromium this Playwright version needs is fully installed (a partial download or another
-    version doesn't count)."""
+    """The exact headless Chromium this Playwright version runs is fully installed (a partial download,
+    another version, or only the full Chromium, which headless pages never use, doesn't count)."""
     revision = _chromium_revision()
-    names = [f"chromium-{revision}", f"chromium_headless_shell-{revision}"] if revision else []
+    names = [f"chromium_headless_shell-{revision}"] if revision else []
     for cache in _browser_caches():
         if not cache.is_dir():
             continue
         if not names:  # unknown Playwright layout: any complete Chromium will do
-            if any((d / "INSTALLATION_COMPLETE").exists() for d in cache.glob("chromium*")):
+            if any((d / "INSTALLATION_COMPLETE").exists() for d in cache.glob("chromium_headless_shell*")):
                 return True
         elif any((cache / n / "INSTALLATION_COMPLETE").exists() for n in names):
             return True
@@ -218,7 +218,7 @@ def _browser() -> dict:
                                                  f"sudo {sys.executable} -m playwright install-deps chromium")
     return _check("browser", "Headless browser", "warn",
                   "Not installed: job pages that only render with JavaScript can't be fetched (paste the text instead).",
-                  "Install it (about 100 MB), or run `autocv install-browser`." + linux, level="optional",
+                  "Install it (about 200 MB), or run `autocv install-browser`." + linux, level="optional",
                   action=action)
 
 

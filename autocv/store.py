@@ -328,6 +328,10 @@ class Store:
     def clear_setup_draft(self) -> None:
         with self.lock:
             self.setup_draft_path.unlink(missing_ok=True)
+            try:
+                self.setup_draft_path.parent.rmdir()  # leave no empty setup/ folder behind
+            except OSError:
+                pass
 
     # -- profile -------------------------------------------------------------------
     def profile(self) -> MasterProfile:
