@@ -5,9 +5,9 @@
 #
 # What it does, and nothing else:
 #   1. installs uv (Astral's Python tool installer) into ~/.local/bin, unless you already have it;
-#   2. installs or upgrades AutoCV from PyPI (`autocv-app`) in its own environment: uv fetches a suitable
-#      Python by itself and never touches your system's Python;
-#   3. makes sure the `autocv` command is on your PATH for new terminals;
+#   2. installs or upgrades AutoCV from PyPI (`autocv-app`) in its own environment, on a Python that uv
+#      downloads and manages itself: your system's Python (and Homebrew's) is never used or changed;
+#   3. makes sure the `autocv` command is on your PATH, in this terminal and new ones;
 #   4. starts AutoCV, which opens in your browser.
 # No sudo, nothing outside your home folder. Run it again to update.
 #
@@ -20,6 +20,9 @@ set -eu
 
 # Everything runs from main(), called on the last line: when this script is piped into sh, nothing
 # happens until the whole file has arrived.
+
+# The Python AutoCV runs on: one CI tests, so every dependency has a ready-made wheel for it.
+PYTHON_VERSION=3.13
 
 say() { printf '%s\n' "$*"; }
 fail() { printf 'AutoCV installer: %s\n' "$*" >&2; exit 1; }
@@ -46,6 +49,14 @@ install_uv() {
   rm -f "$tmp"
 }
 
+# An update or uninstall under a running AutoCV would swap its files out from under it.
+refuse_if_running() {
+  command -v pgrep >/dev/null 2>&1 || return 0
+  if pgrep -f "$1/autocv-app/" >/dev/null 2>&1; then
+    fail "AutoCV is running. Stop it first (press Ctrl+C in the terminal window where it runs), then run this again."
+  fi
+}
+
 main() {
   launch=1
   uninstall=0
@@ -62,10 +73,20 @@ main() {
     Darwin|Linux) ;;
     *) fail "this script is for macOS and Linux. On Windows, run in PowerShell: irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex" ;;
   esac
+  if [ "$(id -u)" = 0 ]; then
+    fail "don't run this with sudo or as root: AutoCV installs into your own user folder. Run it again without sudo."
+  fi
+
+  # Use the system's certificate store (works behind company proxies that inspect HTTPS), and only
+  # uv-managed Pythons (probing macOS's /usr/bin/python3 stub would pop up an Xcode tools prompt, and a
+  # Homebrew Python upgrade would break AutoCV's environment).
+  UV_SYSTEM_CERTS=${UV_SYSTEM_CERTS:-1}; UV_NATIVE_TLS=${UV_NATIVE_TLS:-1}; UV_MANAGED_PYTHON=1
+  export UV_SYSTEM_CERTS UV_NATIVE_TLS UV_MANAGED_PYTHON
 
   uv=$(find_uv)
   if [ "$uninstall" = 1 ]; then
     [ -n "$uv" ] || fail "uv isn't installed, so AutoCV isn't either."
+    refuse_if_running "$("$uv" tool dir)"
     "$uv" tool uninstall autocv-app </dev/null
     say ""
     say "AutoCV is removed. Your profile and applications are still in your data folder:"
@@ -82,7 +103,8 @@ main() {
     say "Using uv at $uv"
   fi
 
-  bindir=$("$uv" tool dir --bin)
+  bindir=$("$uv" tool dir --bin 2>/dev/null) || fail "your uv ($("$uv" --version)) is too old. Update it (\`uv self update\`, or \`brew upgrade uv\` if you installed it with Homebrew), then run this again."
+  refuse_if_running "$("$uv" tool dir)"
   case ":$PATH:" in
     *":$bindir:"*) ;;
     *) "$uv" tool update-shell </dev/null >/dev/null 2>&1 || true  # new terminals find `autocv`
@@ -91,7 +113,7 @@ main() {
 
   package=${AUTOCV_PACKAGE:-autocv-app}
   say "Installing AutoCV ($package)…"
-  "$uv" tool install --upgrade "$package" </dev/null
+  "$uv" tool install --upgrade --python "$PYTHON_VERSION" "$package" </dev/null
   autocv="$bindir/autocv"
   [ -x "$autocv" ] || fail "AutoCV was installed but $autocv is missing."
 

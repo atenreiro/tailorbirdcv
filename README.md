@@ -26,32 +26,77 @@ AutoCV is a small web app that runs on your own computer (macOS, Windows or Linu
 ## Install
 > AutoCV isn't on PyPI yet. Until the first release, use **From a copy of this repository** below.
 
-**macOS or Linux**, in Terminal:
+### macOS
+1. Open **Terminal** (press ⌘ Space and type *Terminal*).
+2. Paste this line and press Return:
+   ```bash
+   curl -LsSf https://raw.githubusercontent.com/atenreiro/autocv/main/install.sh | sh
+   ```
+3. AutoCV opens in your browser after a minute or two. Leave the Terminal window open while you use it.
+
+### Windows
+1. Open **PowerShell** (Start menu, type *PowerShell*). A normal window: no need to run it as administrator.
+2. Paste this line and press Enter:
+   ```powershell
+   irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex
+   ```
+3. AutoCV opens in your browser after a minute or two. Leave the PowerShell window open while you use it.
+
+On Linux, the macOS command works too.
+
+### What the installer does
+The scripts are short enough to read before you run them: [install.sh](https://github.com/atenreiro/autocv/blob/main/install.sh) (macOS, Linux) and [install.ps1](https://github.com/atenreiro/autocv/blob/main/install.ps1) (Windows). They:
+- install [uv](https://docs.astral.sh/uv/), Astral's open-source Python tool installer, if you don't already have it;
+- install AutoCV from PyPI in its own environment, on a Python 3.13 that uv downloads for AutoCV alone. Any Python already on your computer is left alone;
+- add the `autocv` command to your PATH;
+- start AutoCV.
+
+They need no administrator rights, write only inside your user folder, and use your computer's own certificate store, so they also work on company networks that inspect HTTPS.
+
+### Using AutoCV
+- **Start:** open Terminal or PowerShell and run `autocv serve`. Your browser opens AutoCV through a private link (it's also printed in the terminal, starting with `AutoCV →`). The link unlocks AutoCV in that browser only, so other programs on your computer can't read your data.
+- **Stop:** press **Ctrl+C** in that window, or close it.
+- **Check your setup** (AI, PDF engine, fonts): `autocv doctor`.
+
+### Update
+Stop AutoCV, then run the install line again. `uv tool upgrade autocv-app` also works.
+
+### Uninstall
+Stop AutoCV, then run:
+- macOS or Linux:
+  ```bash
+  curl -LsSf https://raw.githubusercontent.com/atenreiro/autocv/main/install.sh | sh -s -- --uninstall
+  ```
+- Windows:
+  ```powershell
+  $env:AUTOCV_UNINSTALL = "1"; irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex
+  ```
+
+`uv tool uninstall autocv-app` does the same. Your profile and applications stay in your data folder (see [Your data stays on your computer](#your-data-stays-on-your-computer)) until you delete it. uv stays installed; [Astral's instructions](https://docs.astral.sh/uv/getting-started/installation/#uninstallation) explain how to remove it.
+
+### Install without the script
+Install uv yourself (`brew install uv` on macOS, `winget install astral-sh.uv` on Windows, or [another way](https://docs.astral.sh/uv/getting-started/installation/)), open a new terminal, then:
 ```bash
-curl -LsSf https://raw.githubusercontent.com/atenreiro/autocv/main/install.sh | sh
+uv tool install --python 3.13 autocv-app
+autocv serve
 ```
-**Windows**, in PowerShell:
-```powershell
-irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex
-```
-The installer ([install.sh](https://github.com/atenreiro/autocv/blob/main/install.sh), [install.ps1](https://github.com/atenreiro/autocv/blob/main/install.ps1); short enough to read first) sets up [uv](https://docs.astral.sh/uv/), Astral's Python tool installer, if you don't have it, installs AutoCV in its own environment (uv fetches a suitable Python by itself and leaves any Python you have alone), adds the `autocv` command to your PATH, and starts AutoCV. It needs no administrator rights and writes only inside your user folder.
 
-Your browser opens AutoCV through a private link (it's also printed in the terminal, starting with `AutoCV →`): it unlocks AutoCV in that browser, so other programs on your computer can't read your data. Press **Ctrl+C** in the terminal to stop AutoCV, and run `autocv serve` to start it again.
+### If something goes wrong
+| What you see | What to do |
+|---|---|
+| `command not found: autocv`, or *autocv is not recognized* | Open a new Terminal or PowerShell window. If it's still not found, run `uv tool update-shell`, then open another new window. |
+| *AutoCV is running. Stop it first* | Press Ctrl+C in the window where AutoCV runs (or close it), then run the installer again. |
+| *Port 8000 is already in use* | AutoCV is already running: use the link in its window, or start another copy with `autocv serve --port 8001`. |
+| *Running scripts is disabled on this system* (Windows) | That happens when running a downloaded `install.ps1` file. Use the `irm … \| iex` line above instead. |
+| *Don't run this with sudo* (macOS, Linux) | Run the install line again without `sudo`: AutoCV installs for your user only. |
+| Downloads fail or time out | Your network may block astral.sh, GitHub or PyPI. Try another network, or ask your IT team to allow them. |
 
-- **Update:** run the same command again (or `uv tool upgrade autocv-app`).
-- **Uninstall:** `uv tool uninstall autocv-app`. Your profile and applications stay in your data folder (see below) until you delete it.
-- **Prefer not to pipe a script?** Install uv yourself (`brew install uv` on macOS, `winget install astral-sh.uv` on Windows, or [another way](https://docs.astral.sh/uv/getting-started/installation/)), then run `uv tool install autocv-app` and `autocv serve`.
-
-**From a copy of this repository** (you'll also need [Node.js](https://nodejs.org/) to build the interface once):
+### From a copy of this repository
+You'll also need [Node.js](https://nodejs.org/) to build the interface once:
 ```bash
 uv sync
 npm --prefix web install && npm --prefix web run build
 uv run autocv serve
-```
-
-To check that everything AutoCV needs is in place (the AI, PDF engine, fonts):
-```bash
-autocv doctor
 ```
 
 ## First run: the setup wizard
