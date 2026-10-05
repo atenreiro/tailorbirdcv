@@ -216,6 +216,16 @@ def test_an_svg_icon_is_served_with_scripts_blocked(env, monkeypatch):
     assert "default-src 'none'" in r.headers["content-security-policy"] and "sandbox" in r.headers["content-security-policy"]
 
 
+def test_saving_an_icon_never_changes_the_boards_order(tmp_path):
+    store = Store(tmp_path)
+    app_id = store.create_app("Northwind", "Engineer", JD, "https://northwind.example/careers/8")
+    before = store.meta(app_id)["updated"]
+    time.sleep(1.1)  # "updated" has one-second resolution
+    store.save_favicon(app_id, (PNG, "png"))
+    meta = store.meta(app_id)
+    assert meta["favicon"] == "favicon.png" and meta["updated"] == before
+
+
 def test_no_icon_found_is_recorded_so_it_isnt_fetched_again(env, monkeypatch):
     client, store, calls = env
 

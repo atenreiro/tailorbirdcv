@@ -1304,7 +1304,8 @@ class Store:
                     except BaseException:
                         Path(tmp).unlink(missing_ok=True)
                         raise
-                self.update_meta(app_id, favicon=name)
+                # Bookkeeping, not activity: the application's "updated" time (the board's order) stays as it was.
+                _write_json_atomic(folder / "meta.json", {**self.meta(app_id), "favicon": name})
         except AppNotFound:
             pass  # deleted while its icon was being fetched
 
