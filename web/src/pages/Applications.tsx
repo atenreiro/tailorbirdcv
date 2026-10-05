@@ -146,7 +146,9 @@ export default function Applications() {
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null)  // notes as typed (saved debounced)
   const [drag, setDrag] = useState<string | null>(null)
   const [over, setOver] = useState<Stage | null>(null)
-  const [expanded, setExpanded] = useState<Partial<Record<Stage, boolean>>>({})
+  // how many cards each lane shows: the newest LANE_LIMIT, then LANE_LIMIT more per "Show more"
+  const [shownIn, setShownIn] = useState<Partial<Record<Stage, number>>>({})
+  const laneLimit = (k: Stage) => shownIn[k] ?? LANE_LIMIT
   const [asking, setAsking] = useState<string | null>(null)  // the application whose closing outcome we're asking for
   const [confirming, setConfirming] = useState(false)  // the delete confirmation is showing
   // What the panel keeps showing while it slides out after a delete (the application is gone).
@@ -194,8 +196,8 @@ export default function Applications() {
   // What ↑/↓ walk through: the table order, or the board's visible cards column by column.
   const visible = useMemo(() => view === 'table' ? list : COLS.flatMap(([k]) => {
     const rows = list.filter((a) => STAGE[a.status] === k)
-    return expanded[k] ? rows : rows.slice(0, LANE_LIMIT)
-  }), [list, view, expanded])
+    return rows.slice(0, shownIn[k] ?? LANE_LIMIT)
+  }), [list, view, shownIn])
   const a = (apps ?? []).find((x) => x.id === sel) ?? null
 
   // Full details (scores, keyword coverage) for the open application. State is tagged with the
@@ -394,7 +396,8 @@ export default function Applications() {
           <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(272px,1fr))]">
             {COLS.map(([k, title]) => {
               const rows = list.filter((x) => STAGE[x.status] === k)
-              const shown = expanded[k] ? rows : rows.slice(0, LANE_LIMIT)
+              const limit = laneLimit(k)
+              const shown = rows.slice(0, limit)
               return (
                 <section key={k} aria-label={title}
                   onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (over !== k) setOver(k) }}
@@ -433,11 +436,22 @@ export default function Applications() {
                       {query ? 'No matches' : 'Drop a card here'}
                     </div>
                   )}
-                  {rows.length > LANE_LIMIT && (
-                    <button onClick={() => setExpanded((s) => ({ ...s, [k]: !s[k] }))}
-                      className="h-9 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
-                      {expanded[k] ? 'Show fewer' : `Show ${rows.length - LANE_LIMIT} more`}
-                    </button>
+                  {(rows.length > limit || limit > LANE_LIMIT) && (
+                    <div className="flex gap-2">
+                      {rows.length > limit && (
+                        <button onClick={() => setShownIn((s) => ({ ...s, [k]: limit + LANE_LIMIT }))}
+                          title={`${rows.length - limit} more in ${title}`}
+                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
+                          Show {Math.min(LANE_LIMIT, rows.length - limit)} more
+                        </button>
+                      )}
+                      {limit > LANE_LIMIT && (
+                        <button onClick={() => setShownIn((s) => ({ ...s, [k]: LANE_LIMIT }))}
+                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
+                          Show fewer
+                        </button>
+                      )}
+                    </div>
                   )}
                 </section>
               )
