@@ -195,6 +195,36 @@ class TailoredResume(_Model):
     extras: list[str] = Field(default_factory=list)  # ids, verbatim
 
 
+# --------------------------------------------------------------------------- cover letter
+#
+# The AI writes the body only, sentence by sentence, each with a kind that decides how it is checked
+# (factcheck.check_letter): "evidence" states something about the candidate and cites profile evidence;
+# "posting" restates what the job posting says about the company or role; "link" is a short joining sentence
+# with no facts. The header, date, recipient, greeting, closing line and sign-off come from TailorbirdCV.
+
+LETTER_TONES = ("formal", "warm", "direct")
+LETTER_KINDS = ("evidence", "posting", "link")
+
+
+class LetterSentence(_Model):
+    text: str
+    kind: Literal["evidence", "posting", "link"] = "evidence"
+    sources: list[str] = Field(default_factory=list)  # evidence ids (evidence sentences only)
+
+
+class LetterParagraph(_Model):
+    sentences: list[LetterSentence] = Field(default_factory=list)
+
+
+class CoverLetter(_Model):
+    tone: Literal["formal", "warm", "direct"] = "formal"
+    recipient: str = ""   # the hiring manager's name, typed by the user (never from the AI)
+    paragraphs: list[LetterParagraph] = Field(default_factory=list)
+
+    def text(self) -> str:
+        return "\n\n".join(" ".join(s.text.strip() for s in p.sentences) for p in self.paragraphs)
+
+
 # --------------------------------------------------------------------------- memory
 #
 # What TailorbirdCV remembers across applications. None of this is citable evidence: a
@@ -290,3 +320,7 @@ def load_profile(path: Path) -> MasterProfile:
 
 def load_tailored(path: Path) -> TailoredResume:
     return TailoredResume.model_validate(load_yaml(path))
+
+
+def load_letter(path: Path) -> CoverLetter:
+    return CoverLetter.model_validate(load_yaml(path))

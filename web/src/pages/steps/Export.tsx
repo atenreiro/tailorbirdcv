@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type Profile, type Tailored } from '../../api'
+import { api, ApiError, isLetterFile, type Profile, type Tailored } from '../../api'
 import { cx, fmtDate } from '../../lib'
 import { fileManager, pageLimit, pagesText, pdfEngineName, showInFolder, useSettings } from '../../settings'
 import { ErrorNote, Stamp } from '../../ui'
@@ -13,8 +13,10 @@ const ROOM_MIN_LINES = 5  // matches fit.ROOM_MIN_LINES on the server
 const fileLink = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-rule bg-sheet px-3.5 py-2 font-medium text-ink transition-colors hover:border-ink'
 
 export default function Export({ app, profile, setApp, go, run, memo, setMemo }: StepProps) {
-  const pdf = app.files.find((f) => f.endsWith('.pdf'))
-  const docx = app.files.find((f) => f.endsWith('.docx'))
+  const resume = app.files.filter((f) => !isLetterFile(f))
+  const pdf = resume.find((f) => f.endsWith('.pdf'))
+  const docx = resume.find((f) => f.endsWith('.docx'))
+  const letterFiles = app.files.filter(isLetterFile)
   const pages = app.build?.pages ?? app.meta.pages
   const stale = app.outputs_stale
   const ok = !!app.report?.ok
@@ -149,6 +151,22 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
               <p className="text-xs text-faint">Tip: upload from {fileManager(settings?.platform)}. Repeated downloads get “(1)” added to the name.</p>
             </>
           )}
+          {letterFiles.length > 0 ? (
+            <div className={cx('flex flex-col gap-2', app.letter_stale && 'opacity-60')}>
+              <p className={label}>Cover letter{app.letter_stale ? ' · outdated' : ''}</p>
+              {letterFiles.map((f) => (
+                <a key={f} href={api.fileUrl(app.id, f, true)} className={fileLink} title={f}>
+                  <span>{f.endsWith('.pdf') ? 'Cover letter PDF' : 'Cover letter, Word'} <span className="font-mono text-xs text-muted">.{f.split('.').pop()}</span></span>
+                  <span aria-hidden>↓</span>
+                </a>
+              ))}
+              {app.letter_stale && <p className="text-[13px] text-warn">Rebuild it in the Cover letter step before sending (Build &amp; freeze rebuilds it too).</p>}
+            </div>
+          ) : app.letter ? (
+            <p className="text-[13px] text-muted">
+              Your cover letter isn’t built, so it won’t be sent. <button className="text-accent hover:text-accent-strong" onClick={() => go('letter')}>Build it in Cover letter</button>
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <button className={btnPrimary} disabled={!ok || unsaved} onClick={build}
               title={unsaved ? 'Save your Review edits first' : !ok ? 'Fix the fact-check issues in Review first' : `Render the .docx and convert it to PDF${via}`}>{docx ? 'Rebuild' : 'Build .docx + .pdf'}</button>
@@ -180,14 +198,14 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
                 <p className="text-xs text-muted">{fmtDate(c.created)} · {c.reason}{c.pages ? ` · ${c.pages} page${c.pages > 1 ? 's' : ''}` : ''}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {c.files.filter((f) => /\.(pdf|docx)$/.test(f)).map((f) => (
-                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className={`${chip} hover:bg-accent-soft hover:text-accent`}>↓ {f.split('.').pop()}</a>
+                    <a key={f} href={api.sentFileUrl(app.id, c.id, f, true)} className={`${chip} hover:bg-accent-soft hover:text-accent`}>↓ {isLetterFile(f) ? 'letter ' : ''}{f.split('.').pop()}</a>
                   ))}
                   <button className={`${chip} cursor-pointer hover:bg-accent-soft hover:text-accent`} onClick={() => api.reveal(app.id, c.id).catch((e) => setRevealError((e as Error).message))}
                     title="Opens this sent copy's folder, read-only">{showInFolder(settings?.platform)}</button>
                 </div>
                 {Object.entries(c.fingerprints ?? {}).filter(([f]) => f.endsWith('.pdf')).map(([f, fp]) => (
                   <p key={f} className="font-mono text-[11px] text-faint" title={`SHA-256 of the PDF sent: ${fp.sha256}`}>
-                    PDF SHA-256 <span className="select-all">{fp.sha256.slice(0, 16)}</span>…
+                    {isLetterFile(f) ? 'Letter' : 'PDF'} SHA-256 <span className="select-all">{fp.sha256.slice(0, 16)}</span>…
                   </p>
                 ))}
               </div>

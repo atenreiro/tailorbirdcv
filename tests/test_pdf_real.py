@@ -61,3 +61,21 @@ def test_a_resume_at_its_length_budget_fits_the_page_limit(tmp_path, monkeypatch
     out = pdf.to_pdf(render(profile, tailored, tmp_path / "r.docx"), engine="libreoffice", timeout=240)
     fills = fit.page_fill(out, themes.CLASSIC)
     assert len(fills) == pages and fills[-1] > 0.8, fills
+
+
+@pytest.mark.parametrize("theme", ["classic", "compact"])
+def test_a_cover_letter_at_its_length_limit_is_one_page(tmp_path, monkeypatch, theme):
+    from tailorbirdcv import factcheck, themes
+    from tailorbirdcv.render import render_letter
+    from tailorbirdcv.schema import CoverLetter
+    monkeypatch.setenv("TAILORBIRDCV_WORD_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("TAILORBIRDCV_LO_PROFILE", str(tmp_path / "lo-profile"))
+    sentence = "I cut false-positive alert volume by over 65%, to roughly nine per month, by rebuilding detection logic. "
+    per = len(sentence.split())
+    paragraphs = [{"sentences": [{"text": sentence.strip(), "kind": "evidence", "sources": ["acme-bank.a1"]}]
+                   * (factcheck.LETTER_MAX_WORDS // per // 3)}] * 3
+    letter = CoverLetter.model_validate({"tone": "formal", "recipient": "Alex Morgan", "paragraphs": paragraphs})
+    docx = render_letter(load_profile(FIX / "profile.yaml"), letter, tmp_path / "Cover_Letter.docx",
+                         headline_id="h.engineer", company="Example Capital", role="Detection Lead",
+                         location="Singapore", theme=themes.get(theme, "comfortable"), paper="letter")
+    assert pdf.page_count(pdf.to_pdf(docx, engine="libreoffice", timeout=240)) == 1

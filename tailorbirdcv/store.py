@@ -28,8 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import oscompat, paths
-from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
-                     load_profile, load_tailored, load_yaml)
+from .schema import (AppAnswer, CoverLetter, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
+                     load_letter, load_profile, load_tailored, load_yaml)
 
 log = logging.getLogger("tailorbirdcv")
 
@@ -190,6 +190,7 @@ def _reused(live: set[str], *retired: list[str]) -> list[str]:
 # Applications live in applications/<company>/<yyyy-mm-dd>_<role>/. Their id (used in URLs and
 # the API) is "<company>~<yyyy-mm-dd>_<role>": one URL segment, and "~" never occurs in a slug.
 APP_SEP = "~"
+LETTER_SUFFIX = "_Cover_Letter"  # <Name>_Cover_Letter.docx/.pdf (the resume is <Name>_Resume)
 LEGACY_IDS = ".moved.json"  # old flat-layout ids → new ids, so old links keep working
 
 
@@ -913,9 +914,11 @@ class Store:
         """`fill`: how full the PDF's pages are and the room left on the last one (ai.measure_pdf)."""
         return self.update_meta(app_id, built_hash=built_hash, built_profile=profile_version, pages=pages, fill=fill)
 
-    def clear_outputs(self, app_id: str) -> None:
+    def clear_outputs(self, app_id: str, letter: bool = False) -> None:
+        """Delete the resume's built files (or, with `letter`, the cover letter's); never the other's."""
         for f in self.app_path(app_id).iterdir():
-            if f.suffix in (".docx", ".pdf") and not f.name.startswith(("~$", ".")):  # never Word's lock file
+            if f.suffix in (".docx", ".pdf") and not f.name.startswith(("~$", ".")) \
+                    and self.is_letter_file(f.name) == letter:  # never Word's lock file
                 try:
                     f.unlink()
                 except PermissionError as e:  # Windows locks files that are open in another app
@@ -923,7 +926,7 @@ class Store:
 
     def outputs_stale(self, app_id: str) -> bool:
         """Built files exist but the tailored resume or the profile changed after they were built."""
-        if not self.files(app_id):
+        if not self.resume_files(app_id):
             return False
         meta = self.meta(app_id)
         return meta.get("built_hash") != self.tailored_hash(app_id) or self._profile_moved_on(app_id, meta)
@@ -991,6 +994,44 @@ class Store:
 
     def save_ai_tailored(self, app_id: str, tailored: TailoredResume) -> None:
         dump_yaml(tailored.model_dump(exclude_none=True), self.app_path(app_id) / "tailored.ai.yaml")
+
+    # -- cover letter (per application) --------------------------------------------------
+    def letter(self, app_id: str) -> CoverLetter | None:
+        p = self.app_path(app_id) / "letter.yaml"
+        return load_letter(p) if p.exists() else None
+
+    def save_letter(self, app_id: str, letter: CoverLetter) -> None:
+        with _LOCK:  # a freeze (which holds the lock) copies exactly the letter it verified
+            dump_yaml(letter.model_dump(), self.app_path(app_id) / "letter.yaml")
+
+    def ai_letter(self, app_id: str) -> CoverLetter | None:
+        p = self.app_path(app_id) / "letter.ai.yaml"
+        return load_letter(p) if p.exists() else None
+
+    def save_ai_letter(self, app_id: str, letter: CoverLetter) -> None:
+        dump_yaml(letter.model_dump(), self.app_path(app_id) / "letter.ai.yaml")
+
+    def delete_letter(self, app_id: str) -> None:
+        with self.app_lock(app_id), _LOCK:
+            self.clear_outputs(app_id, letter=True)
+            for name in ("letter.yaml", "letter.ai.yaml"):
+                (self.app_path(app_id) / name).unlink(missing_ok=True)
+            self.update_meta(app_id, letter_built_hash=None, letter_built_profile=None, letter_pages=None)
+
+    def letter_hash(self, app_id: str) -> str:
+        return file_version(self.app_path(app_id) / "letter.yaml")
+
+    def letter_stale(self, app_id: str) -> bool:
+        """Letter files exist but the letter or the profile changed after they were built."""
+        if not self.letter_files(app_id):
+            return False
+        meta = self.meta(app_id)
+        return meta.get("letter_built_hash") != self.letter_hash(app_id) \
+            or meta.get("letter_built_profile") != file_version(self.profile_path)
+
+    def record_letter_build(self, app_id: str, built_hash: str, profile_version: str, pages: int | None) -> dict:
+        return self.update_meta(app_id, letter_built_hash=built_hash, letter_built_profile=profile_version,
+                                letter_pages=pages)
 
     # -- hiring-manager review (per application) ---------------------------------------
     def critique(self, app_id: str) -> dict:
@@ -1144,7 +1185,7 @@ class Store:
         built from the current draft and the current profile, and that draft must pass the
         fact-check against the current profile."""
         from . import factcheck
-        if not any(f.endswith(".pdf") for f in self.files(app_id)):
+        if not any(f.endswith(".pdf") for f in self.resume_files(app_id)):
             return "There's no PDF for this application yet."
         meta = self.meta(app_id)
         if meta.get("built_hash") != self.tailored_hash(app_id):
@@ -1158,7 +1199,23 @@ class Store:
             ok = False
         if not ok:
             return "The resume doesn't pass the fact-check against your current profile. Fix it, then rebuild."
-        return None
+        return self.letter_problem(app_id)
+
+    def letter_problem(self, app_id: str) -> str | None:
+        """A built cover letter is sent with the resume, so it must be current and pass its fact-check too
+        (a letter that was written but never built isn't part of what's sent)."""
+        from . import ai, factcheck
+        if not self.letter_files(app_id):
+            return None
+        if self.letter_stale(app_id):
+            return "The cover letter is out of date: it changed after it was built. Rebuild it (Cover letter step)."
+        try:
+            letter, profile = self.letter(app_id), self.profile()
+            ok = letter is not None and factcheck.check_letter(
+                profile, letter, self.jd(app_id), ai.letter_names(self.analysis(app_id))).ok
+        except Exception:  # noqa: BLE001 — unreadable: certainly not verified
+            ok = False
+        return None if ok else "The cover letter doesn't pass the fact-check against your current profile. Fix it, then rebuild it."
 
     def freeze(self, app_id: str, reason: str) -> dict:
         """Copy exactly what is being sent (PDF, DOCX, job description, resume data) into a
@@ -1179,7 +1236,8 @@ class Store:
             dest.mkdir(parents=True)
             copied = []
             try:
-                for name in [*self.files(app_id), "jd.md", "tailored.yaml", "analysis.yaml"]:
+                letter = ["letter.yaml"] if self.letter_files(app_id) else []  # only a built letter is sent
+                for name in [*self.files(app_id), "jd.md", "tailored.yaml", "analysis.yaml", *letter]:
                     if (src / name).exists():
                         shutil.copy2(src / name, dest / name)
                         copied.append(name)
@@ -1312,8 +1370,22 @@ class Store:
             pass  # deleted while its icon was being fetched
 
     def files(self, app_id: str) -> list[str]:
+        """Every built document (resume and cover letter)."""
         path = self.app_path(app_id)  # never Word's "~$" lock file or hidden files
         return sorted(p.name for p in path.iterdir() if p.suffix in (".docx", ".pdf") and not p.name.startswith(("~$", ".")))
+
+    @staticmethod
+    def is_letter_file(name: str) -> bool:
+        return Path(name).stem.endswith(LETTER_SUFFIX)
+
+    def resume_files(self, app_id: str) -> list[str]:
+        return [f for f in self.files(app_id) if not self.is_letter_file(f)]
+
+    def letter_files(self, app_id: str) -> list[str]:
+        return [f for f in self.files(app_id) if self.is_letter_file(f)]
+
+    def letter_stem(self, app_id: str) -> str:
+        return f"{file_safe_name(self.profile().contact.name)}{LETTER_SUFFIX}"
 
     def output_stem(self, app_id: str) -> str:
         """The file name recruiters see: the candidate's name only. Never the company —

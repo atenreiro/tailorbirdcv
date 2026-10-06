@@ -27,8 +27,8 @@ from . import ai, ats, backup, critique as hm, factcheck, favicon, fit, oscompat
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, PrivateEngine, default_engine
-from .render import docx_text, render, use_design
-from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
+from .render import docx_text, render, render_letter, use_design
+from .schema import AppAnswer, CoverLetter, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, IncompleteRole, NeedsBuild, OutputInUse,
                     RetiredIdReused, Store, next_id)
 
@@ -133,6 +133,13 @@ class EvidenceIn(BaseModel):
 
 class ComposeIn(BaseModel):
     guidance: str = ""
+
+
+class LetterIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    tone: Literal["formal", "warm", "direct"] = "formal"
+    recipient: str = Field("", max_length=120)   # the hiring manager's name, if known
+    notes: list[str] = Field(default_factory=list, max_length=20)  # review issue ids marked "for the cover letter"
 
 
 class ProfileYaml(BaseModel):
@@ -884,7 +891,15 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
                "answers": [a.model_dump(exclude_none=True) for a in store.answers(app_id)],
                "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id),
-               "sent": store.sent_copies(app_id, fingerprints=True)}
+               "sent": store.sent_copies(app_id, fingerprints=True),
+               "letter": None, "letter_report": None, "letter_stale": store.letter_stale(app_id),
+               "letter_notes": letter_notes(app_id)}
+        letter = store.letter(app_id)
+        if letter:
+            out["letter"] = letter.model_dump()
+            if store.profile_path.exists():
+                out["letter_report"] = _report_json(factcheck.check_letter(
+                    store.profile(), letter, out["jd"] or "", ai.letter_names(out["analysis"])))
         fill = out["meta"].get("fill")
         if fill and fill.get("design") != ai.design_key():  # measured in another design: no longer meaningful
             out["meta"] = {**out["meta"], "fill": None}
@@ -903,6 +918,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 except Exception:
                     pass
         return out
+
+    def letter_notes(app_id: str) -> list[dict]:
+        """The latest hiring-manager review's issues marked "note for the cover letter"."""
+        runs = store.critique(app_id)["runs"]
+        issues = runs[-1]["result"].get("issues", []) if runs else []
+        return [{"id": i["id"], "text": i.get("problem", "")} for i in issues
+                if i.get("note_for") == "cover_letter" and i.get("id")]
 
     def critique_payload(app_id: str) -> dict | None:
         data = store.critique(app_id)
@@ -1150,12 +1172,107 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         out["build"] = {"pages": pages, "too_long": bool(pages and pages > page_limit())}
         return out
 
+    # -- cover letter ---------------------------------------------------------------------------------------
+    @api.post("/applications/{app_id}/letter")
+    async def write_letter(app_id: str, body: LetterIn):
+        """Draft the cover letter with the AI (fact-checked sentence by sentence, repaired up to 3 times)."""
+        app_id = need_app(app_id)
+        analysis, tailored, profile = store.analysis(app_id), store.tailored(app_id), need_profile()
+        if not analysis or not tailored:
+            raise HTTPException(409, "Write the tailored resume first: the letter tells the same story.")
+        if not factcheck.check(profile, tailored).ok:
+            raise HTTPException(409, "The resume doesn't pass the fact-check yet. Fix it first.")
+        wanted = {n["id"]: n["text"] for n in letter_notes(app_id)}
+        notes = [wanted[i] for i in body.notes if i in wanted]
+        try:
+            result = await ai.compose_letter(engine, profile, tailored, analysis, store.jd(app_id) or "", body.tone,
+                                             body.recipient, notes, store.knowledge().active_preferences())
+        except EngineError as e:
+            raise _engine_call(e)
+        except ValidationError as e:
+            raise HTTPException(502, f"The model returned an invalid letter: {e}")
+        store.save_letter(app_id, result["letter"])
+        store.save_ai_letter(app_id, result["letter"])
+        store.update_meta(app_id, letter_repair_rounds=result["repair_rounds"])
+        return get_application(app_id)
+
+    @api.put("/applications/{app_id}/letter")
+    def save_letter(app_id: str, letter: CoverLetter):
+        """Save edits (the response's letter_report is the fact-check of what was saved)."""
+        app_id = need_app(app_id)
+        store.save_letter(app_id, letter)
+        return get_application(app_id)
+
+    @api.delete("/applications/{app_id}/letter")
+    def delete_letter(app_id: str):
+        """Remove the cover letter (draft and built files): this application is sent without one."""
+        app_id = need_app(app_id)
+        try:
+            store.delete_letter(app_id)
+        except OutputInUse as e:
+            raise HTTPException(409, str(e))
+        return get_application(app_id)
+
+    async def do_build_letter(app_id: str) -> int | None:
+        lock = store.app_lock(app_id)
+        await asyncio.to_thread(lock.acquire)
+        try:
+            return await _build_letter_locked(app_id)
+        finally:
+            lock.release()
+
+    async def _build_letter_locked(app_id: str) -> int | None:
+        path = store.app_path(app_id) / "letter.yaml"
+        if not path.exists():
+            raise HTTPException(409, "Write the cover letter first.")
+        from .store import file_version
+        need_profile()
+        with store.lock:  # the hashes recorded are of what is rendered
+            built_hash, profile_version = store.letter_hash(app_id), file_version(store.profile_path)
+            letter, profile, tailored = store.letter(app_id), store.profile(), store.tailored(app_id)
+        analysis = store.analysis(app_id) or {}
+        if tailored is None:
+            raise HTTPException(409, "Write the tailored resume first.")
+        if not factcheck.check_letter(profile, letter, store.jd(app_id) or "", ai.letter_names(analysis)).ok:
+            raise HTTPException(409, "Fact-check failed — fix the letter's errors before building.")
+        try:
+            store.clear_outputs(app_id, letter=True)
+        except OutputInUse as e:
+            raise HTTPException(409, str(e))
+        docx = render_letter(profile, letter, store.app_path(app_id) / f"{store.letter_stem(app_id)}.docx",
+                             headline_id=tailored.headline, company=analysis.get("company") or "",
+                             role=analysis.get("role") or "", location=analysis.get("location") or "",
+                             spelling=store.settings()["targets"].get("spelling", "US"))
+        preferred = store.settings()["pdf_engine"]
+        pdf_file = None
+        try:
+            pdf_file = await asyncio.to_thread(pdfmod.to_pdf, docx, engine=preferred)
+            pages = pdfmod.page_count(pdf_file)
+        except Exception as e:  # noqa: BLE001
+            if pdf_file is not None:
+                pdf_file.unlink(missing_ok=True)
+            store.record_letter_build(app_id, built_hash, profile_version, None)
+            raise HTTPException(500, f"DOCX built, but the PDF conversion failed: {e}")
+        if pages > 1:
+            store.clear_outputs(app_id, letter=True)  # a cover letter is one page: never send a longer one
+            raise HTTPException(409, f"The letter came out at {pages} pages. Shorten it to one page, then build again.")
+        store.record_letter_build(app_id, built_hash, profile_version, pages)
+        return pages
+
+    @api.post("/applications/{app_id}/letter/build")
+    async def build_letter(app_id: str):
+        app_id = need_app(app_id)
+        await do_build_letter(app_id)
+        return get_application(app_id)
+
     @api.post("/applications/{app_id}/freeze")
     async def freeze(app_id: str, build: bool = False, mark_applied: bool = False):
         """Freeze a read-only copy of what's being sent. `build=true` rebuilds first
         ("Build & freeze"); `mark_applied=true` then records the application as applied."""
         app_id = need_app(app_id)
         if build:
+            if store.letter_files(app_id):  # a built cover letter goes with the resume: rebuild it too
+                await do_build_letter(app_id)
             pages = await do_build(app_id, pdf=True)
             if pages and pages > page_limit():
                 raise HTTPException(409, {"code": "too_long", "message":
@@ -1296,6 +1413,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             files = sent["files"]
         else:
             files = store.files(app_id)
+        files = sorted(files, key=store.is_letter_file)  # the resume first, then the cover letter
         pdf = next((path / f for f in files if f.endswith(".pdf")), None)
         target = pdf or next((path / f for f in files if f.endswith(".docx")), None)
         try:

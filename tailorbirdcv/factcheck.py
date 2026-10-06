@@ -1109,3 +1109,127 @@ class FactChecker:
 
 def check(profile: MasterProfile, tailored: TailoredResume) -> Report:
     return FactChecker(profile).check(tailored)
+
+
+# --------------------------------------------------------------------------- cover letter
+LETTER_MAX_WORDS = 330          # the AI-written body; the closing line and sign-off add ~25
+LINK_MAX_WORDS = 20
+# Wording a "posting" sentence may add around what the posting says: interest, not facts or feelings.
+MOTIVATION_WORDS = """
+drawn draw drew excited excite exciting interested interest interests eager keen appeal appeals appealing
+attracted attract attracts opportunity opportunities chance contribute contributing contribution join joining
+role position team mission focus focused emphasis especially particularly what why how help helping bring
+bringing apply applying fit fits match matches align aligns aligned value values work working build building
+solve solving challenge challenges impact meaningful energized motivated motivates inspire inspires curious
+""".split()
+_PRONOUN_I = re.compile(r"\bI(?:'m|’m|'ve|’ve|'d|’d|'ll|’ll)?\b")
+# A sentence about the posting that slips in the candidate's experience (that must be an evidence sentence).
+_EXPERIENCE_CLAIM = re.compile(
+    r"\b(?:I|we)\s+(?:have|'ve|’ve|had|led|built|managed|delivered|ran|run|worked|spent|was|were|grew|cut|drove|"
+    r"designed|created|launched|owned|scaled)\b|\byears?\s+of\b|\bmy\s+(?:experience|career|background|track\s+record|work)\b",
+    re.I)
+# Personal history or feelings nobody gave TailorbirdCV.
+_INVENTED_FEELING = re.compile(r"\b(?:have|'ve|’ve)\s+(?:always|long)\b|\bdream(?:s|ed|t)?\b|\bsince\s+(?:I\s+was|childhood|"
+                               r"my\s+(?:first|early|youth|school|university))\b|\blifelong\b|\bpassion(?:ate)?\b", re.I)
+
+
+def _neutral(text: str, names: list[str]) -> str:
+    """The sentence as the checks see it: the company and role names (from the analysis) and the pronoun "I"
+    taken out, so "At Example Capital, I would…" isn't an unknown entity."""
+    for name in sorted((n for n in names if n and n.strip()), key=len, reverse=True):
+        text = re.sub(r"(?<!\w)" + re.escape(name.strip()) + r"(?:'s|’s)?(?!\w)", " ", text, flags=re.I)
+    return re.sub(r"\s+", " ", _PRONOUN_I.sub("you", text)).strip()
+
+
+def check_letter(profile: MasterProfile, letter, jd: str, names: list[str] | None = None) -> Report:
+    """Every sentence of a cover letter, by its kind (schema.LetterSentence):
+    - evidence: checked like a resume highlight (cited evidence, numbers, names, scope, overlap, injection);
+    - posting: only what the job description says (its words, numbers and names), plus interest wording
+      (MOTIVATION_WORDS); never the candidate's experience or invented feelings;
+    - link: a short joining sentence with no facts at all.
+    `names`: the company and role from the analysis, which any sentence may mention."""
+    names = names or []
+    report, checker = Report(), FactChecker(profile)
+    jd_n = normalize(jd or "")
+    words = 0
+    if not letter.paragraphs:
+        report.error("letter", "the letter has no paragraphs")
+    for p_i, paragraph in enumerate(letter.paragraphs):
+        links = 0
+        for s_i, sentence in enumerate(paragraph.sentences):
+            where = f"paragraphs[{p_i}].sentences[{s_i}]"
+            text = sentence.text.strip()
+            words += len(text.split())
+            if not text:
+                report.error(where, "empty sentence")
+                continue
+            injected = INJECTION_RE.search(text)
+            if injected and not INJECTION_RE.search(jd or ""):
+                report.error(where, f'"{injected.group(0)}" reads like an instruction to a reader or an AI — remove it')
+            plain = _neutral(text, names)
+            if sentence.kind == "evidence":
+                if not sentence.sources:
+                    report.error(where, "a sentence about your experience must cite the evidence it states")
+                    continue
+                checker.check_claim(Claim(text=plain, sources=sentence.sources), where, report)
+            elif sentence.kind == "posting":
+                if sentence.sources:
+                    report.error(where, "a sentence about the posting cites no evidence — make it an evidence "
+                                        "sentence if it states your experience")
+                _check_posting(plain, jd or "", jd_n, where, report)
+            else:
+                links += 1
+                if links > 1:
+                    report.error(where, "only one joining sentence per paragraph")
+                if len(text.split()) > LINK_MAX_WORDS:
+                    report.error(where, f"a joining sentence has at most {LINK_MAX_WORDS} words")
+                _check_link(plain, where, report)
+    if words > LETTER_MAX_WORDS:
+        report.error("letter", f"{words} words — keep the letter to about {LETTER_MAX_WORDS} so it fits one page")
+    return report
+
+
+def _no_facts(plain: str, where: str, report: Report, allowed: str = "") -> None:
+    """Numbers, names, scope/leadership words and unusual terms are facts: only from `allowed` text."""
+    allowed_n = normalize(allowed)
+    for value in sorted(numbers(plain)):
+        if not _contains_number(numbers(allowed_n), value):
+            report.error(where, f"number {_shown(value)} isn't in the job posting")
+    for term, initial in entity_terms(plain):
+        if allowed and has(normalize(term), allowed_n):
+            continue
+        if initial and _is_capitalized_word(term) and is_common_word(term):
+            continue
+        report.error(where, f'"{term}" isn\'t in the job posting — a sentence like this can\'t introduce names')
+    flat = normalize(plain).replace("-", " ")
+    for word in sorted(RISKY_WORDS):
+        if has(word.replace("-", " "), flat) and not (allowed and has(word.replace("-", " "), allowed_n.replace("-", " "))):
+            report.error(where, f'"{word}" states scope or credentials — only evidence sentences may')
+    for group in sorted(_stem_groups(flat)):
+        if not (allowed and group in _stem_groups(allowed_n)):
+            report.error(where, f'"{_STEM_RE[group].search(flat).group(0)}" is a claim about you — only evidence '
+                                "sentences may make it")
+    if _system_words():
+        for word in lowercase_words(plain):
+            if not is_common_word(word) and not (allowed and has(normalize(word), allowed_n)):
+                report.error(where, f'"{word}" isn\'t an ordinary word or in the posting')
+                break
+
+
+def _check_posting(plain: str, jd: str, jd_n: str, where: str, report: Report) -> None:
+    if _EXPERIENCE_CLAIM.search(plain):
+        report.error(where, "this states your experience — make it an evidence sentence citing it, or remove it")
+    if feeling := _INVENTED_FEELING.search(plain):
+        report.error(where, f'"{feeling.group(0)}" claims a feeling or history you haven\'t given — keep to what '
+                            "the posting says")
+    share, count = evidence_overlap(plain, jd + "\n" + " ".join(MOTIVATION_WORDS))
+    if count >= OVERLAP_MIN_WORDS and share < OVERLAP_MIN:
+        report.error(where, f"most of this isn't in the job posting (only {round(share * 100)}% of its words are) — "
+                            "say only what the posting says about the company or role")
+    _no_facts(plain, where, report, allowed=jd)
+
+
+def _check_link(plain: str, where: str, report: Report) -> None:
+    if _EXPERIENCE_CLAIM.search(plain) or _INVENTED_FEELING.search(plain):
+        report.error(where, "a joining sentence makes no claims — state experience in an evidence sentence")
+    _no_facts(plain, where, report)

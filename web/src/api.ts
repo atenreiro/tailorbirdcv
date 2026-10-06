@@ -127,8 +127,17 @@ export interface Meta {
   /** How full each PDF page is (0-1) and the lines left on the last one, measured after the build. */
   fill?: { pages: number[]; room: number } | null
 }
+/** A cover letter's body, sentence by sentence; each kind is checked differently (factcheck.check_letter). */
+export type LetterKind = 'evidence' | 'posting' | 'link'
+export type LetterTone = 'formal' | 'warm' | 'direct'
+export interface LetterSentence { text: string; kind: LetterKind; sources: string[] }
+export interface CoverLetter { tone: LetterTone; recipient: string; paragraphs: { sentences: LetterSentence[] }[] }
+export const isLetterFile = (name: string) => /_Cover_Letter\.[a-z]+$/i.test(name)
+
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
+  letter: CoverLetter | null; letter_report: Report | null; letter_stale: boolean
+  letter_notes: { id: string; text: string }[]
   tailored: Tailored | null; report: Report | null; ats: Ats | null
   answers: AppAnswer[]; edits: number
   outputs_stale: boolean
@@ -289,6 +298,11 @@ async function restoreBackup(file: File): Promise<RestoreResult> {
 }
 
 export const api = {
+  writeLetter: (id: string, b: { tone: LetterTone; recipient: string; notes: string[] }) =>
+    req<Application>('POST', `/applications/${id}/letter`, b),
+  saveLetter: (id: string, letter: CoverLetter) => req<Application>('PUT', `/applications/${id}/letter`, letter),
+  buildLetter: (id: string) => req<Application>('POST', `/applications/${id}/letter/build`),
+  deleteLetter: (id: string) => req<Application>('DELETE', `/applications/${id}/letter`),
   privacyPreview: () => req<{ on: boolean; text: string; hidden: Record<string, string> }>('GET', '/privacy/preview'),
   downloadBackup,
   restoreBackup,

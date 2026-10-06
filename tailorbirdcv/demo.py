@@ -51,8 +51,14 @@ def _gap_questions() -> dict:
             "known_gaps": []}
 
 
+def _fenced(prompt: str, label: str) -> str:
+    """The data inside one of the prompt's <<LABEL-tag>> … <<END LABEL-tag>> fences (ai.untrusted)."""
+    m = re.search(rf"<<({label}-[0-9a-f]+)>>\n(.*?)\n<<END \1>>", prompt, re.S)
+    return m.group(2) if m else ""
+
+
 def _propose(prompt: str) -> dict:
-    answers = yaml.safe_load(prompt.split("ANSWERS:\n", 1)[1]) or []
+    answers = yaml.safe_load(_fenced(prompt, "ANSWERS")) or []
     role = Store.default().profile().roles[0].id
     return {"proposals": [{"question_id": a["question_id"], "target": role, "text": a["answer"].strip(),
                            "skills": []} for a in answers]}
@@ -151,7 +157,24 @@ def _import(prompt: str) -> dict:
                                   "region": "", "spelling": "US"}}
 
 
+def _letter(prompt: str) -> dict:
+    """A letter from the profile's own words: the strongest evidence verbatim, one sentence the posting says."""
+    brief = yaml.safe_load(_fenced(prompt, "JOB_ANALYSIS")) or {}
+    jd = _fenced(prompt, "JOB_DESCRIPTION")
+    profile = Store.default().profile()
+    facts = [(h.text, h.id) for h in profile.highlights] + [(a.text, a.id) for r in profile.roles for a in r.achievements]
+    evidence = [{"text": t, "kind": "evidence", "sources": [i]} for t, i in facts[:3]]
+    lines = [ln.strip("-•# ").strip() for ln in jd.splitlines()]
+    posting = next((ln for ln in lines if 6 <= len(ln.split()) <= 25 and ln.endswith(".")), "")
+    role, company = brief.get("role") or "this role", brief.get("company") or "your team"
+    opening = [{"text": f"I am writing to apply for the {role} role at {company}.", "kind": "link", "sources": []}]
+    why = [{"text": f"What draws me to the role is this: {posting}", "kind": "posting", "sources": []}] if posting else []
+    paragraphs = [{"sentences": opening + evidence[:1]}, {"sentences": evidence[1:]}]
+    return {"paragraphs": paragraphs + ([{"sentences": why}] if why else [])}
+
+
 def demo_engine() -> FakeEngine:
     return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
                        "repair": _compose, "trim": _trim, "fill": _fill, "learn_preferences": _learn, "critique": _critique,
+                       "letter": _letter, "letter_repair": _letter,
                        "import": _import})

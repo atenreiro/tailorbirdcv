@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, type Application, type Outcome, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
+import { api, isLetterFile, type Application, type CoverLetter, type Outcome, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
 import { NO_GUARD, setUnsaved } from '../unsaved'
 import { changeStatus, sentAsApplied } from '../status'
 import { cx, fmtDate, useTitle } from '../lib'
 import { engineRuns, useSettings } from '../settings'
 import { ErrorNote, Spinner, StatusSelect, Stitching } from '../ui'
 import Brief from './steps/Brief'
+import CoverLetterStep from './steps/CoverLetter'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
 import Review from './steps/Review'
@@ -17,6 +18,7 @@ const STEPS = [
   { key: 'brief', label: 'Brief' },
   { key: 'gaps', label: 'Gaps' },
   { key: 'review', label: 'Review' },
+  { key: 'letter', label: 'Cover letter' },
   { key: 'export', label: 'Export' },
 ] as const
 type Step = (typeof STEPS)[number]['key']
@@ -28,6 +30,7 @@ interface StepMemo {
   review: { draft: Tailored; rev: number; notice?: string } | null
   gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
   gapFocus: string | null  // the gap question open in Gaps (Brief and Review can point at one)
+  letter: { draft: CoverLetter; rev: number } | null  // unsaved cover-letter edits
 }
 
 export interface StepProps {
@@ -45,6 +48,7 @@ const enabledSteps = (a: Application): Record<Step, boolean> => ({
   brief: true,
   gaps: !!a.analysis,
   review: !!a.tailored,
+  letter: !!a.tailored && !!a.report?.ok,
   export: !!a.tailored,
 })
 
@@ -61,7 +65,10 @@ function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone
   const fixes = openIssues(c).length
   const verdict = c ? { interview: 'would interview', borderline: 'borderline', pass: 'would pass' }[c.latest.verdict.decision] : ''
   const errors = app.report?.errors.length ?? 0
-  const exts = app.files.map((f) => f.split('.').pop()!.toUpperCase()).sort().reverse()
+  const resumeFiles = app.files.filter((f) => !isLetterFile(f))
+  const exts = resumeFiles.map((f) => f.split('.').pop()!.toUpperCase()).sort().reverse()
+  const letterErrors = app.letter_report?.errors.length ?? 0
+  const letterBuilt = app.files.some(isLetterFile)
   return {
     brief: a ? [`${a.requirements.length} requirement${a.requirements.length === 1 ? '' : 's'}`, 'ok'] : ['not analyzed', 'none'],
     gaps: !a ? ['after analysis', 'none'] : !questions.length ? ['none to ask', 'ok'] : open ? [`${open} open`, 'warn'] : ['answered', 'ok'],
@@ -70,7 +77,12 @@ function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone
       : errors ? [`${errors} to fix`, 'bad']
       : c ? [`${verdict}${fixes ? ` · ${fixes} fix${fixes > 1 ? 'es' : ''}` : ''}`, fixes ? 'accent' : 'ok']
       : ['verified', 'ok'],
-    export: !app.files.length ? [app.tailored ? 'not built' : 'not yet', 'none']
+    letter: !app.letter ? [app.report?.ok ? 'not written' : 'after review', 'none']
+      : memo.letter ? ['unsaved edits', 'warn']
+      : letterErrors ? [`${letterErrors} to fix`, 'bad']
+      : !letterBuilt ? ['draft · not built', 'accent']
+      : app.letter_stale ? ['outdated', 'warn'] : ['built', 'ok'],
+    export: !resumeFiles.length ? [app.tailored ? 'not built' : 'not yet', 'none']
       : app.outputs_stale ? ['outdated', 'warn']
       : [exts.join(' · '), 'ok'],
   }
@@ -87,7 +99,7 @@ export default function Workspace() {
   const [step, setStep] = useState<Step>('brief')
   const [working, setWorking] = useState<{ title: string; lines: string[]; ai: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null, gapFocus: null })
+  const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null, gapFocus: null, letter: null })
   const autoRan = useRef(false)
   useTitle([app?.meta.company, app ? STEPS.find((s) => s.key === step)?.label : undefined])
 
@@ -97,8 +109,9 @@ export default function Workspace() {
   // navigation away from the workspace and closing the tab: both live only in this page's memory.
   const pendingProposals = !!memo.gaps?.proposals.some((d) => d.state === 'pending')
   useEffect(() => { setUnsaved('review', !!memo.review) }, [memo.review])
+  useEffect(() => { setUnsaved('letter', !!memo.letter) }, [memo.letter])
   useEffect(() => { setUnsaved('proposals', pendingProposals) }, [pendingProposals])
-  useEffect(() => () => { setUnsaved('review', false); setUnsaved('proposals', false) }, [])
+  useEffect(() => () => { setUnsaved('review', false); setUnsaved('proposals', false); setUnsaved('letter', false) }, [])
 
   // A new analysis renumbers the gap questions: re-seed the Gaps step from the server.
   const questionsKey = useMemo(() => JSON.stringify(app?.analysis?.questions ?? []), [app?.analysis])
@@ -124,7 +137,7 @@ export default function Workspace() {
 
   useEffect(() => {
     if (app?.id === id) return  // already loaded (e.g. after a folder rename)
-    if (app) setMemoState({ review: null, gaps: null, gapFocus: null })  // another application: drop the old one's work
+    if (app) setMemoState({ review: null, gaps: null, gapFocus: null, letter: null })  // another application: drop the old one's work
     const want = params.get('step')  // e.g. /a/<id>?step=review from the Applications list
     let current = true  // a quick switch to another application: this (slower) answer must not win
     Promise.all([api.get(id), api.profile()])
@@ -249,6 +262,7 @@ export default function Workspace() {
           {step === 'brief' && <Brief {...props} />}
           {step === 'gaps' && <Gaps {...props} />}
           {step === 'review' && <Review {...props} />}
+          {step === 'letter' && <CoverLetterStep {...props} />}
           {step === 'export' && <Export {...props} />}
         </div>
       )}

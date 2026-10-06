@@ -19,7 +19,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
 
 from . import themes
-from .schema import MasterProfile, TailoredResume
+from .schema import CoverLetter, MasterProfile, TailoredResume
 from .themes import Theme
 
 TEMPLATE = Path(__file__).resolve().parent / "data" / "templates" / "base.docx"
@@ -137,6 +137,12 @@ class _Builder:
     def title(self, text, keep_next=True):
         self.add(self._para(self._run(text, self.t.accent, self.t.body_size, bold=True), keep_next=keep_next))
 
+    def plain(self, text, *, bold=False, before=0, after=None, keep_next=False):
+        """A plain body paragraph (the cover letter's lines and paragraphs)."""
+        t = self.t
+        self.add(self._para(self._run(text, t.ink if bold else t.body, t.body_size, bold=bold), before=before,
+                            after=after, keep_next=keep_next))
+
     def scope(self, text, italic=True, keep_next=True):
         t = self.t
         self.add(self._para(self._run(text, t.scope if italic else t.body, t.body_size, italic=italic),
@@ -168,6 +174,29 @@ def _lead_text(text: str) -> str:
     return " " + text if text and not text.startswith((" ", ",", ":")) else text
 
 
+def _design(theme: Theme | str | None, paper: str | None) -> tuple[Theme, str | None]:
+    active_theme, active_paper = _DESIGN.get()
+    if theme is None:
+        theme = active_theme or themes.CLASSIC
+    elif isinstance(theme, str):
+        theme = themes.get(theme)
+    return theme, paper or active_paper
+
+
+def _header(b: "_Builder", profile: MasterProfile, headline_id: str) -> None:
+    """Name, headline and contact line: the same on the resume and the cover letter, always from the profile."""
+    c = profile.contact
+    b.name(c.name)
+    b.headline(profile.headline(headline_id).text)
+    parts: list[tuple[str, str | None]] = [(c.location, None)]
+    if c.phone:
+        parts.append((c.phone, None))
+    if c.email:
+        parts.append((c.email, f"mailto:{c.email}"))
+    parts += [(link.text, link.url) for link in c.links]
+    b.contact(parts)
+
+
 def render(profile: MasterProfile, tailored: TailoredResume, out: Path,
            template: Path = TEMPLATE, theme: Theme | str | None = None, paper: str | None = None) -> Path:
     """Render with a theme (default: the active one, see `use_design`) on Letter or A4."""
@@ -180,16 +209,7 @@ def render(profile: MasterProfile, tailored: TailoredResume, out: Path,
     titles = theme.titles
     b = _Builder(template, theme, paper)
     c = profile.contact
-
-    b.name(c.name)
-    b.headline(profile.headline(tailored.headline).text)
-    parts: list[tuple[str, str | None]] = [(c.location, None)]
-    if c.phone:
-        parts.append((c.phone, None))
-    if c.email:
-        parts.append((c.email, f"mailto:{c.email}"))
-    parts += [(link.text, link.url) for link in c.links]
-    b.contact(parts)
+    _header(b, profile, tailored.headline)
 
     if tailored.summary:
         b.section(titles["summary"])
@@ -258,3 +278,57 @@ def docx_text(path: Path) -> list[str]:
         )
         lines.append(text.replace("\u00a0", " "))
     return [line for line in lines if line.strip()]
+
+
+# --------------------------------------------------------------------------- cover letter
+# Written by TailorbirdCV, never by the AI: the greeting, the closing line and the sign-off, by tone.
+LETTER_CLOSINGS = {
+    "formal": ("Thank you for your time and consideration. I would welcome the opportunity to discuss how I could "
+               "contribute to {company}.", "Sincerely,"),
+    "warm": ("Thank you for reading. I'd love to talk about how I could help {company} with this work.", "Kind regards,"),
+    "direct": ("I'd welcome a conversation about the role. Thank you for your time.", "Best regards,"),
+}
+
+
+def letter_greeting(recipient: str, company: str) -> str:
+    return f"Dear {recipient.strip()}," if recipient.strip() else (
+        f"Dear {company} hiring team," if company else "Dear hiring team,")
+
+
+def letter_date(spelling: str = "US", today: dt.date | None = None) -> str:
+    d = today or dt.date.today()
+    return f"{d.day} {d:%B %Y}" if spelling.upper() == "UK" else f"{d:%B} {d.day}, {d.year}"
+
+
+def render_letter(profile: MasterProfile, letter: CoverLetter, out: Path, *, headline_id: str, company: str = "",
+                  role: str = "", location: str = "", spelling: str = "US", today: dt.date | None = None,
+                  template: Path = TEMPLATE, theme: Theme | str | None = None, paper: str | None = None) -> Path:
+    """The cover letter in the resume's design: header, date, recipient, greeting, the checked body, the closing
+    line and sign-off."""
+    theme, paper = _design(theme, paper)
+    b = _Builder(template, theme, paper)
+    c = profile.contact
+    _header(b, profile, headline_id)
+    gap = 160  # twips between blocks and paragraphs (8 pt)
+    b.plain(letter_date(spelling, today), after=gap)
+    lines = [x for x in (letter.recipient.strip(), company, location) if x]
+    for i, line in enumerate(lines):
+        b.plain(line, after=gap if i == len(lines) - 1 else 0)
+    if role:
+        b.plain(f"Re: {role}", bold=True, after=gap)
+    b.plain(letter_greeting(letter.recipient, company), after=gap)
+    for paragraph in letter.paragraphs:
+        text = " ".join(s.text.strip() for s in paragraph.sentences if s.text.strip())
+        if text:
+            b.plain(text, after=gap)
+    closing, sign = LETTER_CLOSINGS.get(letter.tone, LETTER_CLOSINGS["formal"])
+    b.plain(closing.format(company=company or "your team"), after=gap * 2)
+    b.plain(sign, after=0, keep_next=True)
+    b.plain(c.name, bold=True, after=0)
+    props = b.doc.core_properties
+    props.author = props.last_modified_by = c.name
+    props.title = f"{c.name} — Cover letter"
+    props.created = props.modified = dt.datetime.now(dt.UTC).replace(tzinfo=None)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    b.doc.save(str(out))
+    return out

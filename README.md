@@ -120,8 +120,9 @@ You can change any of this later in **Settings**, and run the wizard again from 
 1. Open **New tailoring** and paste the job posting's URL (or its text).
 2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
 3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
-4. Build the Word document and PDF.
-5. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent. Found one of your resumes somewhere and not sure which version it is? **Identify a PDF** in Applications tells you which application it came from, using the exact file's SHA-256 or the PDF's own document id. Nothing is ever added to your PDFs.
+4. Optionally write a **cover letter** (its own step): one page in the same design, in a Formal, Warm or Direct tone. Every sentence is checked like your resume: what it says about you must cite your evidence, what it says about the company must come from the posting, and the greeting, closing line and sign-off are written by TailorbirdCV. Click any sentence to edit it.
+5. Build the Word document and PDF.
+6. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent (the cover letter too, when you built one). Found one of your resumes somewhere and not sure which version it is? **Identify a PDF** in Applications tells you which application it came from, using the exact file's SHA-256 or the PDF's own document id. Nothing is ever added to your PDFs.
 
 ![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
 
