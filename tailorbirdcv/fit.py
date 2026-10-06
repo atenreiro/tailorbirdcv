@@ -1,10 +1,10 @@
 """How full the built PDF really is, and learning from it.
 
-`ai.estimate_lines` counts wrapped lines with a fixed characters-per-line and lines-per-page for each
-theme; Word (or LibreOffice) is the truth. After every PDF build we measure how far down each page the
-text reaches, and keep a correction factor per design (theme + paper) in `<data folder>/calibration.json`,
-so length budgets converge on what the PDF engine really fits. The same measurement tells the UI how much
-room the last page has left ("Fill the page").
+`ai.estimate_lines` lays the resume out from the .docx with the fonts' real metrics (layout.py), which
+predicts the PDF to within a few percent; Word (or LibreOffice) is the truth. After every PDF build we
+measure how far down each page the text reaches, and keep a correction factor per design (theme, text size
+and paper) in `<data folder>/calibration.json`, so length budgets converge on what the PDF engine really
+fits. The same measurement tells the UI how much room the last page has left ("Fill the page").
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ FILL_GOAL = 0.92     # "Fill the page" aims the last page at this share of its u
 ROOM_MIN_LINES = 5   # offer "Fill the page" only with at least this many free lines
 _FACTOR_RANGE = (0.8, 1.3)
 _WEIGHT = 0.4        # how much each new build moves the factor (moving average)
+MODEL = 2            # factors learned against this estimate; ones learned by the old line count are ignored
 
 
 def page_fill(pdf: Path, theme: Theme) -> list[float]:
@@ -59,13 +60,14 @@ def _load(private: Path | None) -> dict | None:
 def lines_factor(private: Path | None, theme: Theme, paper: str | None) -> float:
     """Measured lines-per-page ÷ the theme's nominal figure for this design (1.0 until a PDF was measured)."""
     entry = (_load(private) or {}).get(design_key(theme, paper), {})
-    factor = entry.get("factor") if isinstance(entry, dict) else None
+    factor = entry.get("factor") if isinstance(entry, dict) and entry.get("model") == MODEL else None
     return float(factor) if isinstance(factor, (int, float)) else 1.0
 
 
 def record(private: Path, theme: Theme, paper: str | None, est_lines: int, fills: list[float]) -> None:
-    """Learn from a real build: `est_lines` estimated lines took `sum(fills)` pages in the PDF."""
-    used = sum(fills)
+    """Learn from a real build: `est_lines` estimated lines (page breaks included) took the PDF's full pages
+    plus `fills[-1]` of its last one."""
+    used = len(fills) - 1 + fills[-1] if fills else 0.0
     if used < 0.5 or est_lines <= 0:  # too little text to learn anything
         return
     nominal = theme.lines_per_page(paper)
@@ -74,9 +76,9 @@ def record(private: Path, theme: Theme, paper: str | None, est_lines: int, fills
     if data is None:
         return
     key = design_key(theme, paper)
-    old = data.get(key) if isinstance(data.get(key), dict) else {}
+    old = data.get(key) if isinstance(data.get(key), dict) and data[key].get("model") == MODEL else {}
     factor = sample if "factor" not in old else (1 - _WEIGHT) * float(old["factor"]) + _WEIGHT * sample
-    data[key] = {"factor": round(factor, 4), "builds": int(old.get("builds", 0)) + 1}
+    data[key] = {"factor": round(factor, 4), "builds": int(old.get("builds", 0)) + 1, "model": MODEL}
     from .store import _write_json_atomic  # callers hold store.lock
     _write_json_atomic(_path(private), data)
 

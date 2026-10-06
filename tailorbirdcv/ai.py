@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from . import factcheck, fit, paths
+from . import factcheck, fit, layout, paths
 from .engine import Engine, EngineError
 from .render import active_design, docx_text, render
 from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
@@ -28,7 +28,8 @@ from .schema import Claim, Knowledge, MasterProfile, Preference, TailoredResume
 TRACKS = ["manager", "ic", "hybrid"]
 MAX_REPAIR_ROUNDS = 3
 MAX_TRIM_ROUNDS = 2
-WORDS_PER_LINE = 500 / 55  # rough words per line (calibrated on the Classic design)
+WORDS_PER_LINE = 7.0  # words per budget line, per 100 characters of line width (measured across the designs)
+FIT = 0.97  # drafts aim at this share of the page limit, leaving room for the estimate's small error
 PACKS = ["general", "cybersecurity"]  # domain packs: emphasis heuristics in data/config/packs/<pack>/
 
 
@@ -379,17 +380,11 @@ def default_layout(profile: MasterProfile) -> TailoredResume:
 
 
 def estimate_lines(profile: MasterProfile, tailored: TailoredResume) -> int:
-    """Approximate rendered line count — a fast proxy for page count (Word is the truth)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        lines = docx_text(render(profile, tailored, Path(tmp) / "r.docx"))
-    return _count_lines(lines)
-
-
-def _count_lines(lines: list[str]) -> int:
-    """Rendered lines, wrapping at the active theme's characters per line."""
+    """How long the resume is in the active design, in body lines (page breaks included): laid out from the
+    rendered .docx with the fonts' real metrics (layout.py). Word is the final check."""
     theme, paper = active_design()
-    chars = theme.line_chars(paper)
-    return sum(max(1, -(-len(line) // chars)) for line in lines)
+    with tempfile.TemporaryDirectory() as tmp:
+        return round(layout.measure(render(profile, tailored, Path(tmp) / "r.docx"), theme, paper).lines)
 
 
 def lines_per_page() -> float:
@@ -402,7 +397,7 @@ def default_budget(pages: int | None = None) -> dict:
     """What the page limit holds in the active design: lines, and words at the design's line length."""
     n = pages or CONTEXT.get().pages
     theme, paper = active_design()
-    lines = round(lines_per_page() * n)
+    lines = round(lines_per_page() * n * FIT)
     return {"lines": lines, "words": round(lines * WORDS_PER_LINE * theme.line_chars(paper) / 100), "measured": False}
 
 
@@ -413,9 +408,10 @@ def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
     budget = default_budget()
     if base is None:
         return budget
+    theme, paper = active_design()
     with tempfile.TemporaryDirectory() as tmp:
-        lines = docx_text(render(profile, base, Path(tmp) / "r.docx"))
-    est, words = _count_lines(lines), len(" ".join(lines).split())
+        docx = render(profile, base, Path(tmp) / "r.docx")
+        est, words = layout.measure(docx, theme, paper).lines, len(" ".join(docx_text(docx)).split())
     if est:
         budget.update(words=round(budget["lines"] * words / est), measured=True)
     return budget

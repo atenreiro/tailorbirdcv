@@ -39,3 +39,25 @@ def test_libreoffice_converts_the_fixture_resume(tmp_path, monkeypatch):
             assert f"{stand_in}-Regular.ttf" in fonts
             assert any(stand_in in f for f in embedded), (family, embedded)
     assert [p.name for p in (tmp_path / "work").iterdir()] == [".lock"]
+
+
+@pytest.mark.parametrize("pages", [1, 2])
+def test_a_resume_at_its_length_budget_fits_the_page_limit(tmp_path, monkeypatch, pages):
+    """The length budget (what the AI is told, and what trims aim at) really fits: grown to its budget, the
+    resume converts to exactly the page limit, with its last page well filled."""
+    from tailorbirdcv import ai, fit, themes
+    from tailorbirdcv.schema import Claim
+    monkeypatch.setenv("TAILORBIRDCV_WORD_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("TAILORBIRDCV_LO_PROFILE", str(tmp_path / "lo-profile"))
+    profile, tailored = load_profile(FIX / "profile.yaml"), load_tailored(FIX / "tailored.yaml")
+    budget = ai.default_budget(pages)["lines"]
+    text = "Rebuilt the alerting pipeline and its runbooks with the platform team, cutting false positives by over 65%."
+    while True:
+        grown = tailored.model_copy(deep=True)
+        grown.experience[0].bullets.append(Claim(text=text, sources=["acme-bank.a1"]))
+        if ai.estimate_lines(profile, grown) > budget:
+            break
+        tailored = grown
+    out = pdf.to_pdf(render(profile, tailored, tmp_path / "r.docx"), engine="libreoffice", timeout=240)
+    fills = fit.page_fill(out, themes.CLASSIC)
+    assert len(fills) == pages and fills[-1] > 0.8, fills

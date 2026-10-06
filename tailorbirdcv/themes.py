@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+MIN_SIZE = 19  # half-points: no text smaller than 9.5 pt, except Classic as originally drawn (Standard size)
+
 # Paper sizes (twips): width, height.
 PAPER = {"letter": (12240, 15840), "a4": (11906, 16838)}
 
@@ -73,13 +75,14 @@ class Theme:
         return self.page(paper)[0] - left - right
 
     def line_chars(self, paper: str | None = None) -> int:
-        """Rough characters per line, scaled from the Classic design (100 at 9.5 pt on Letter)."""
-        return round(100 * self.text_width(paper) / 10080 * 19 / self.body_size)
+        """Characters of typical body text per line (measured with the fonts' real widths, see layout.py)."""
+        from .layout import line_chars
+        return line_chars(self, paper)
 
-    def lines_per_page(self, paper: str | None = None) -> int:
-        top, right, bottom, left = self.margins
-        height = self.page(paper)[1] - top - bottom
-        return round(55 * height / (15840 - 1700) * 19 / self.body_size)
+    def lines_per_page(self, paper: str | None = None) -> float:
+        """Body lines that fit inside the margins (the unit of the length budget, see layout.py)."""
+        from .layout import lines_per_page
+        return lines_per_page(self, paper)
 
     def fonts(self) -> list[str]:
         return sorted({self.name_font, self.body_font})
@@ -91,11 +94,13 @@ MODERN = Theme(
     "modern", "Modern", "One clean sans-serif throughout, navy accent, slightly larger name.",
     name_font="Calibri", accent="1F3A68", ink="111827", body="273142", muted="5B6475", scope="3E4757",
     date="5B6475", rule="C9D3E3", name_size=50, headline_size=22,
+    contact_size=MIN_SIZE, section_size=MIN_SIZE, date_size=MIN_SIZE,
 )
 
 COMPACT = Theme(
-    "compact", "Compact", "The Classic look with smaller type and tighter spacing, for 1-page resumes.",
-    name_size=40, headline_size=20, contact_size=16, section_size=17, body_size=18, company_size=19, date_size=16,
+    "compact", "Compact", "The Classic look with tighter spacing and margins, for 1-page resumes.",
+    name_size=40, headline_size=20, contact_size=MIN_SIZE, section_size=MIN_SIZE, body_size=MIN_SIZE,
+    company_size=MIN_SIZE, date_size=MIN_SIZE,
     after=20, name_after=30, contact_after=80, section_before=110, section_after=40, company_before=70,
     company_after=10, scope_after=30, hang=260, margins=(720, 900, 720, 900),
 )
@@ -104,8 +109,10 @@ THEMES = {t.id: t for t in (CLASSIC, MODERN, COMPACT)}
 
 
 # Text size (Settings → Resume design), applied on top of any theme. "standard" is each theme as designed
-# (Classic byte-for-byte); "comfortable" makes the body 1 pt larger (9.5 → 10.5 pt in Classic and Modern) and
-# dates, section titles and company names 1 pt larger too — easier to read, a little less per page.
+# (Classic byte-for-byte); "comfortable" makes the body 1 pt larger (9.5 → 10.5 pt) and dates, section titles
+# and company names 1 pt larger too — easier to read, a little less per page. Nothing is smaller than 9.5 pt
+# (MIN_SIZE) except in Classic at the Standard size, which keeps the original design's 8.5 pt contact line
+# and dates.
 TEXT_SIZES = ("standard", "comfortable")
 DEFAULT_TEXT_SIZE = "comfortable"
 
@@ -113,10 +120,10 @@ DEFAULT_TEXT_SIZE = "comfortable"
 def sized(theme: Theme, text_size: str | None) -> Theme:
     if text_size != "comfortable" or theme.text_size == "comfortable":
         return theme
-    # The contact line keeps its size: it's one line of links that would otherwise wrap onto a second line.
+    # The contact line stays as small as the minimum allows: it's one line of links that would otherwise wrap.
     return replace(theme, text_size="comfortable", body_size=theme.body_size + 2, company_size=theme.company_size + 2,
                    section_size=theme.section_size + 2, date_size=theme.date_size + 2,
-                   headline_size=theme.headline_size + 1)
+                   headline_size=theme.headline_size + 1, contact_size=max(theme.contact_size, MIN_SIZE))
 
 
 def get(theme_id: str | None, text_size: str | None = None) -> Theme:

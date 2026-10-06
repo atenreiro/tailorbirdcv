@@ -96,9 +96,14 @@ class _Builder:
 
     def contact(self, parts: list[tuple[str, str | None]]):
         t, runs = self.t, []
+        # At 9.5 pt a long contact line wraps: it may only break between items (never inside a phone number
+        # or a place), and the separator stays at the end of the first line. Classic as drawn keeps its bytes.
+        glue = (t.id, t.text_size) != ("classic", "standard")
+        sep = "\u00a0" + t.separator.lstrip(" ") if glue and t.separator.startswith(" ") else t.separator
         for i, (text, url) in enumerate(parts):
             if i:
-                runs.append(self._run(t.separator, t.muted, t.contact_size))
+                runs.append(self._run(sep, t.muted, t.contact_size))
+            text = text.replace(" ", "\u00a0") if glue else text
             runs.append(self.hyperlink(text, url) if url else self._run(text, t.muted, t.contact_size))
         self.add(self._para("".join(runs), after=t.contact_after))
 
@@ -242,7 +247,7 @@ def render(profile: MasterProfile, tailored: TailoredResume, out: Path,
 
 
 def docx_text(path: Path) -> list[str]:
-    """Paragraph texts of a .docx (tabs kept), for fidelity comparisons."""
+    """Paragraph texts of a .docx (tabs kept; no-break spaces read as spaces), for fidelity comparisons."""
     doc = Document(str(path))
     lines = []
     for p in doc.paragraphs:
@@ -251,5 +256,5 @@ def docx_text(path: Path) -> list[str]:
             for node in p._p.iter()
             if node.tag.endswith("}t") or node.tag.endswith("}tab") and node.getparent().tag.endswith("}r")
         )
-        lines.append(text)
+        lines.append(text.replace("\u00a0", " "))
     return [line for line in lines if line.strip()]

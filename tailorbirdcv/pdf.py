@@ -135,6 +135,12 @@ try {
 
 
 # -- locations ------------------------------------------------------------------------
+def _word_hiccup(error: Exception) -> bool:
+    """Word sometimes answers an AppleScript call with "Message not understood" (-1708) while it is still
+    starting up; the same conversion works when asked again."""
+    return IS_MAC and "(-1708)" in str(error)
+
+
 def _private() -> Path:
     return paths.private_dir()
 
@@ -294,10 +300,15 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
             if engine == "word":
                 shutil.copyfile(docx, src)
                 pidfile = work / f"tailorbirdcv-{tag}.pid"
+                env = {**os.environ, "TAILORBIRDCV_SRC": str(src), "TAILORBIRDCV_DST": str(dst),
+                       "TAILORBIRDCV_PIDFILE": str(pidfile)}
                 try:
-                    _run(_command(src, dst), timeout, dst, engine, work,
-                         env={**os.environ, "TAILORBIRDCV_SRC": str(src), "TAILORBIRDCV_DST": str(dst), "TAILORBIRDCV_PIDFILE": str(pidfile)},
-                         pidfile=pidfile)
+                    try:
+                        _run(_command(src, dst), timeout, dst, engine, work, env=env, pidfile=pidfile)
+                    except RuntimeError as e:
+                        if not _word_hiccup(e):
+                            raise
+                        _run(_command(src, dst), timeout, dst, engine, work, env=env, pidfile=pidfile)  # once more
                 finally:
                     pidfile.unlink(missing_ok=True)
                     Path(str(pidfile) + ".before").unlink(missing_ok=True)

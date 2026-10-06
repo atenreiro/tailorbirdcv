@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tailorbirdcv import ai
+from tailorbirdcv import ai, themes
 from tailorbirdcv.factcheck import is_common_word
 from tailorbirdcv.api import create_app
 from tailorbirdcv.engine import FakeEngine
@@ -109,9 +109,10 @@ def test_shipped_config_has_no_personal_data():
 def test_the_page_limit_sets_the_budget_and_too_long(env):
     client, store, _ = env
     ai.use_context(ai.Context(pages=1))
-    assert ai.default_budget() == {"lines": 55, "words": 500, "measured": False}
+    per_page = themes.CLASSIC.lines_per_page("letter")
+    assert ai.default_budget()["lines"] == round(per_page * ai.FIT) and ai.default_budget()["words"] > 0
     ai.use_context(ai.Context(pages=3))
-    assert ai.pages_text() == "3 pages" and ai.default_budget()["lines"] == 165
+    assert ai.pages_text() == "3 pages" and ai.default_budget()["lines"] == round(per_page * 3 * ai.FIT)
     ai.use_context(ai.Context())
     client.put("/api/settings", json={"targets": {"pages": 1}})
     assert store.settings()["targets"]["pages"] == 1

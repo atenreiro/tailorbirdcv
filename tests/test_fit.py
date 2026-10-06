@@ -58,8 +58,8 @@ def test_each_design_learns_its_own_lines_per_page(tmp_path):
     fit.record(tmp_path, classic, "a4", 110, [1.0, 0.76])  # 110 estimated lines took 1.76 pages
     first = 110 / 1.76 / nominal
     assert fit.lines_factor(tmp_path, classic, "a4") == pytest.approx(first, abs=1e-3)
-    fit.record(tmp_path, classic, "a4", 100, [1.0, 1.0])  # a second build moves it part of the way
-    assert fit.lines_factor(tmp_path, classic, "a4") == pytest.approx(0.6 * first + 0.4 * (50 / nominal), abs=1e-3)
+    fit.record(tmp_path, classic, "a4", 120, [1.0, 1.0])  # a second build moves it part of the way
+    assert fit.lines_factor(tmp_path, classic, "a4") == pytest.approx(0.6 * first + 0.4 * (60 / nominal), abs=1e-3)
     assert fit.lines_factor(tmp_path, classic, "letter") == 1.0          # other designs are untouched
     assert fit.lines_factor(tmp_path, themes.COMPACT, "a4") == 1.0
     fit.record(tmp_path, themes.COMPACT, "a4", 10, [0.2])                # too little text to learn from
@@ -68,6 +68,16 @@ def test_each_design_learns_its_own_lines_per_page(tmp_path):
     assert fit.lines_factor(tmp_path, themes.COMPACT, "a4") == 1.3
     data = json.loads((tmp_path / "calibration.json").read_text(encoding="utf-8"))
     assert data["classic/a4"]["builds"] == 2
+
+
+def test_factors_learned_by_the_old_line_count_are_ignored(tmp_path):
+    """Calibration learned against the old estimate (no "model") would skew the new one: it starts over."""
+    (tmp_path / "calibration.json").write_text(json.dumps({"classic/a4": {"factor": 1.19, "builds": 4}}))
+    assert fit.lines_factor(tmp_path, themes.CLASSIC, "a4") == 1.0
+    fit.record(tmp_path, themes.CLASSIC, "a4", 120, [1.0, 1.0])
+    data = json.loads((tmp_path / "calibration.json").read_text(encoding="utf-8"))["classic/a4"]
+    assert data["builds"] == 1 and data["model"] == fit.MODEL
+    assert fit.lines_factor(tmp_path, themes.CLASSIC, "a4") == pytest.approx(60 / themes.CLASSIC.lines_per_page("a4"), abs=1e-3)
 
 
 def test_room_on_the_last_page():
@@ -83,7 +93,7 @@ def test_the_budget_is_what_the_design_holds_not_the_base_resume_length(tmp_path
     use_design("compact", "a4")
     try:
         budget = ai.length_budget(profile, base)
-        assert budget["lines"] == ai.default_budget()["lines"] == themes.COMPACT.lines_per_page("a4") * 2
+        assert budget["lines"] == ai.default_budget()["lines"] == round(themes.COMPACT.lines_per_page("a4") * 2 * ai.FIT)
         assert budget["measured"] and budget["words"] > 0
         fit.record(tmp_path, themes.COMPACT, "a4", 151, [1.0, 1.0])  # Word fits ~20% more than estimated
         assert ai.length_budget(profile, base)["lines"] > budget["lines"]

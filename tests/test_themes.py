@@ -52,10 +52,10 @@ def test_the_active_design_drives_renders_and_length_estimates(tmp_path):
     use_design("compact", "a4")
     try:
         assert 'w:pgSz w:w="11906"' in xml(render(PROFILE, TAILORED, tmp_path / "x.docx"))
-        assert ai.default_budget(1)["lines"] == themes.COMPACT.lines_per_page("a4")
+        assert ai.default_budget(1)["lines"] == round(themes.COMPACT.lines_per_page("a4") * ai.FIT)
     finally:
         use_design(None, None)
-    assert ai.default_budget(2) == {"lines": 110, "words": 1000, "measured": False}  # Classic on Letter
+    assert ai.default_budget(2)["lines"] == round(themes.CLASSIC.lines_per_page("letter") * 2 * ai.FIT)  # Classic on Letter
 
 
 def test_theme_and_paper_are_settings(tmp_path):
@@ -96,7 +96,7 @@ def test_a_role_without_bullets_does_not_glue_itself_to_the_next_role(tmp_path):
 def test_comfortable_text_is_one_point_larger_and_standard_is_untouched(tmp_path):
     comfy = themes.get("classic", "comfortable")
     assert (comfy.body_size, comfy.date_size) == (21, 19)  # 10.5 pt body, 9.5 pt dates
-    assert comfy.contact_size == themes.CLASSIC.contact_size  # the contact line stays on one line
+    assert comfy.contact_size == themes.MIN_SIZE  # the contact line: as small as allowed, so it stays on one line
     assert themes.get("classic", "standard") is themes.CLASSIC and themes.get("classic") is themes.CLASSIC
     assert comfy.lines_per_page("a4") < themes.CLASSIC.lines_per_page("a4")  # estimates follow the size
     use_design("classic", "a4", "comfortable")
