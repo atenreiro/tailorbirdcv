@@ -21,6 +21,7 @@ import asyncio
 import html as htmllib
 import ipaddress
 import json
+import logging
 import os
 import re
 import socket
@@ -31,6 +32,8 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import httpcore
 import httpx
 from bs4 import BeautifulSoup
+
+log = logging.getLogger("tailorbirdcv")
 
 MAX_REDIRECTS = 5
 MAX_BYTES = 3_000_000
@@ -191,10 +194,35 @@ async def safe_get(client: httpx.AsyncClient, url: str) -> str:
 # --------------------------------------------------------------------------- formatting
 
 
+# Text styled to be invisible to people but still read by machines (zero-size or transparent text, screen-reader-
+# only and off-screen blocks): the way a posting would hide instructions aimed at an AI. Collapsed tabs and
+# accordions (display:none) are ordinary page content and stay.
+_HIDDEN_STYLE = re.compile(r"font-size\s*:\s*(?:0|0?\.\d+|1)(?:px|pt|em|rem|%)?\s*(?:;|!|$)"
+                           r"|color\s*:\s*(?:transparent|rgba\([^)]*,\s*0(?:\.0+)?\s*\))"
+                           r"|(?:left|top|text-indent)\s*:\s*-\d{3,}(?:px|em|rem)?"
+                           r"|clip\s*:\s*rect\(\s*0", re.I)
+_HIDDEN_CLASSES = {"sr-only", "visually-hidden", "visuallyhidden", "screen-reader-text", "screenreader-only",
+                   "a11y-hidden", "offscreen"}
+
+
+def _drop_hidden(soup: BeautifulSoup) -> int:
+    """Remove text hidden from people (see _HIDDEN_STYLE); returns how many elements were removed."""
+    hidden = [t for t in soup.find_all(True) if t.attrs is not None and (
+        _HIDDEN_STYLE.search(t.get("style") or "") or _HIDDEN_CLASSES & set(t.get("class") or [])
+        or t.get("aria-hidden") == "true")]
+    for tag in hidden:
+        if not tag.decomposed:
+            tag.decompose()
+    if hidden:
+        log.info("TailorbirdCV: left out %d hidden element(s) from a job page", len(hidden))
+    return len(hidden)
+
+
 def html_to_text(fragment: str) -> str:
     soup = BeautifulSoup(fragment or "", "html.parser")
-    for tag in soup(["script", "style", "noscript", "svg"]):
+    for tag in soup(["script", "style", "noscript", "svg", "template"]):
         tag.decompose()
+    _drop_hidden(soup)
     for br in soup.find_all("br"):
         br.replace_with("\n")
     # One line per bullet ("<li><p>text</p></li>" would otherwise split across lines).
@@ -384,8 +412,9 @@ def from_json_ld(page: str) -> Job | None:
 
 def from_page(page: str) -> Job | None:
     soup = BeautifulSoup(page, "html.parser")
-    for tag in soup(["script", "style", "nav", "header", "footer", "noscript", "svg"]):
+    for tag in soup(["script", "style", "nav", "header", "footer", "noscript", "svg", "template"]):
         tag.decompose()
+    _drop_hidden(soup)
     text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
     if len(text) < MIN_TEXT or (len(text) < 1500 and re.search(r"enable javascript|javascript (is )?required", text, re.I)):
         return None
@@ -400,6 +429,16 @@ RENDER_TIMEOUT_MS = 30_000
 BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
 _VISIBLE_TEXT_JS = """() => {
+  // First (while the page's CSS still applies): text people can't see but machines read. innerText already
+  // skips display:none and visibility:hidden.
+  const hidden = [...document.querySelectorAll('body *')].filter(e => {
+    const s = getComputedStyle(e), r = e.getBoundingClientRect();
+    const tiny = parseFloat(s.fontSize) < 2, clear = s.color === 'rgba(0, 0, 0, 0)' || s.color === 'transparent';
+    const clipped = (s.position === 'absolute' || s.position === 'fixed')
+      && ((r.width <= 1 && r.height <= 1) || r.right < -500 || r.bottom < -500);
+    return (tiny || clear || clipped) && e.textContent.trim();
+  });
+  hidden.forEach(e => e.remove());
   document.querySelectorAll('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], '
     + '[id*="cookie" i], [class*="cookie" i]').forEach(e => e.remove());
   return document.body ? document.body.innerText : '';
