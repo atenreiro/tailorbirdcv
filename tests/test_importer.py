@@ -16,6 +16,7 @@ from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
 
+NAME = "Jordan Rivera"  # typed in the wizard before the upload, hidden from the AI
 RESUME = """Jordan Rivera
 Senior Product Designer
 Lisbon, Portugal · +351 900 000 000 · jordan@example.com · jordanrivera.design
@@ -104,7 +105,7 @@ def new_user(tmp_path):
 def test_import_returns_a_draft_and_saves_nothing(new_user):
     client, private, engine = new_user
     assert client.get("/api/setup").json()["has_profile"] is False
-    r = client.post("/api/profile/import", json={"filename": "cv.txt", "data": base64.b64encode(RESUME.encode()).decode()})
+    r = client.post("/api/profile/import", json={"filename": "cv.txt", "name": NAME, "data": base64.b64encode(RESUME.encode()).decode()})
     assert r.status_code == 200
     body = r.json()
     assert body["profile"]["contact"]["name"] == "Jordan Rivera" and body["unverified"] == ["northwind-bank.a2"]
@@ -114,7 +115,7 @@ def test_import_returns_a_draft_and_saves_nothing(new_user):
 
 def test_the_reviewed_draft_becomes_the_profile(new_user):
     client, private, _ = new_user
-    draft = client.post("/api/profile/import", json={"text": RESUME}).json()["profile"]
+    draft = client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).json()["profile"]
     refused = client.post("/api/profile/create", json={"profile": draft})  # a2 says "40%", the CV doesn't
     assert refused.status_code == 422 and refused.json()["detail"]["paths"] == ["northwind-bank.a2"]
     assert not (private / "profile.yaml").exists()
@@ -122,7 +123,7 @@ def test_the_reviewed_draft_becomes_the_profile(new_user):
     assert saved.status_code == 200 and (private / "profile.yaml").exists()
     assert client.get("/api/setup").json()["has_profile"] is True
     assert client.post("/api/profile/create", json={"profile": draft}).status_code == 409   # never overwrites
-    assert client.post("/api/profile/import", json={"text": RESUME}).status_code == 409
+    assert client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).status_code == 409
 
 
 def test_a_blank_profile_can_be_started(new_user):
@@ -138,7 +139,7 @@ def test_an_existing_profile_is_never_replaced_by_an_import(tmp_path):
     private = tmp_path / "private"
     shutil.copytree(FIX, private, ignore=shutil.ignore_patterns("tailored.yaml"))
     client = client_for(create_app(Store(private), FakeEngine({"import": TRANSCRIPTION})))
-    assert client.post("/api/profile/import", json={"text": RESUME}).status_code == 409
+    assert client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).status_code == 409
 
 
 def test_without_a_headline_line_the_latest_title_is_used():
@@ -150,7 +151,7 @@ def test_the_demo_engine_works_for_a_brand_new_user(tmp_path, monkeypatch):
     from tailorbirdcv.demo import demo_engine
     monkeypatch.setenv("TAILORBIRDCV_PRIVATE", str(tmp_path / "private"))
     client = client_for(create_app(Store(tmp_path / "private"), demo_engine()))
-    draft = client.post("/api/profile/import", json={"text": RESUME}).json()
+    draft = client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).json()
     assert draft["profile"]["contact"]["name"] == "Jordan Rivera"
     saved = client.post("/api/profile/create", json={"profile": draft["profile"], "confirmed": draft["unverified"]})
     assert saved.status_code == 200

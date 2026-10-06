@@ -988,6 +988,35 @@ class SwitchingEngine:
         return await self.current().complete(system, prompt, schema)
 
 
+class PrivateEngine:
+    """Every AI call goes through here (api.create_app and the CLI wrap whatever engine they use). With
+    Settings → Privacy on (the default), the user's contact details are replaced by placeholders before the
+    prompt leaves this computer and put back into the answer (privacy.py); the AI never needs them."""
+
+    def __init__(self, inner, store):
+        self.inner, self.store = inner, store
+
+    def __getattr__(self, attr):  # name, status, current, calls… are the wrapped engine's
+        return getattr(self.inner, attr)
+
+    def vault(self):
+        from . import privacy
+        settings = self.store.settings()
+        if not settings.get("hide_personal", True):
+            return None
+        try:
+            contact = self.store.profile().contact.model_dump()
+        except Exception:  # noqa: BLE001 — no profile yet (the CV import), or one that doesn't load
+            contact = None
+        return privacy.vault_for(contact, settings.get("private_address") or "", privacy.EXTRA.get())
+
+    async def complete(self, system: str, prompt: str, schema: dict) -> Any:
+        vault = self.vault()
+        if vault is None:
+            return await self.inner.complete(system, prompt, schema)
+        return vault.restore(await self.inner.complete(vault.redact(system), vault.redact(prompt), schema))
+
+
 class FakeEngine:
     """Deterministic stand-in. `responses` maps a task name (first line of the
     prompt, e.g. "TASK: analyze") to a value or a callable(prompt) -> value."""

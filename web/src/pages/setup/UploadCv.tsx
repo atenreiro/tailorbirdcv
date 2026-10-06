@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type SetupState } from '../../api'
 import { cx, toBase64 } from '../../lib'
+import { useSettings } from '../../settings'
 import { ErrorNote, Stitching } from '../../ui'
 
 const MAX_BYTES = 10 * 1024 * 1024
@@ -19,6 +20,10 @@ export default function UploadCv({ onImported, onBlank }: {
   const [error, setError] = useState<string | null>(null)
   const [started, setStarted] = useState<number | null>(null)
   const [now, setNow] = useState(0)
+  const settings = useSettings()
+  const hide = settings?.hide_personal ?? true
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
 
   useEffect(() => {
     if (started === null) return
@@ -38,7 +43,8 @@ export default function UploadCv({ onImported, onBlank }: {
     setStarted(Date.now())
     setNow(Date.now())
     try {
-      const body = mode === 'paste' ? { text } : { filename: file!.name, data: await toBase64(file!) }
+      const who = { name: name.trim(), address: address.trim() }
+      const body = mode === 'paste' ? { text, ...who } : { filename: file!.name, data: await toBase64(file!), ...who }
       const r = await api.importProfile(body)
       onImported({ profile: r.profile, unverified: r.unverified })
     } catch (e) {
@@ -46,7 +52,7 @@ export default function UploadCv({ onImported, onBlank }: {
       setStarted(null)
     }
   }
-  const ready = mode === 'paste' ? text.trim().length >= 80 : !!file
+  const ready = (mode === 'paste' ? text.trim().length >= 80 : !!file) && (!hide || name.trim().length >= 2)
   const elapsed = started ? Math.max(0, Math.round((now - started) / 1000)) : 0
   const stage = STAGES.filter(([t]) => elapsed >= t).at(-1)![1]
 
@@ -92,6 +98,26 @@ export default function UploadCv({ onImported, onBlank }: {
       )}
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {error && mode === 'file' && <button className="w-fit text-[13px] text-accent hover:text-accent-strong" onClick={() => { setMode('paste'); setError(null) }}>Paste the text instead →</button>}
+      {hide && (
+        <fieldset className="flex max-w-[680px] flex-col gap-3 rounded-xl border border-rule bg-sheet px-4 py-3.5">
+          <legend className="flex items-center gap-2 px-1 text-[13px] font-semibold text-ink">
+            Privacy mode <span className="rounded bg-warn-soft px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.08em] text-warn">Experimental</span>
+          </legend>
+          <p className="text-[13px] leading-[1.5] text-muted text-pretty">
+            Your name, email, phone, street address and personal links are replaced by placeholders before your CV goes to
+            the AI, and put back afterwards. Type your name so it’s hidden from this very first step. It’s experimental:
+            check what was read in the next step, and use it with care.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-[13px] font-medium text-ink"><span>Your full name</span>
+              <input className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="As on your CV" />
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium text-ink"><span>Street address <span className="font-normal text-muted">(optional)</span></span>
+              <input className="field" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" placeholder="If your CV shows one" />
+            </label>
+          </div>
+        </fieldset>
+      )}
       <p className="max-w-[680px] text-[13px] leading-[1.5] text-muted text-pretty">
         The AI copies your CV into structured sections word-for-word; it doesn’t rewrite anything. You check the result
         in the next step before anything is saved.

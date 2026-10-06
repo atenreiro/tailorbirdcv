@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from . import ai, ats, backup, critique as hm, factcheck, favicon, fit, oscompat, paths, pdf as pdfmod, themes, update
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
-from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
+from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, PrivateEngine, default_engine
 from .render import docx_text, render, use_design
 from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredResume
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, IncompleteRole, NeedsBuild, OutputInUse,
@@ -53,6 +53,8 @@ class ProfileImport(BaseModel):
     filename: str = Field("", max_length=255)
     data: str = Field("", max_length=15_000_000)   # base64 file contents
     text: str = Field("", max_length=200_000)      # or pasted text
+    name: str = Field("", max_length=200)          # hidden from the AI (Settings → Privacy) from the first call
+    address: str = Field("", max_length=300)       # optional street address, hidden too
 
 
 class PdfUpload(BaseModel):
@@ -99,6 +101,8 @@ class SettingsPatch(BaseModel):
     openrouter_zdr: bool | None = None
     update_check: bool | None = None
     company_icons: bool | None = None
+    hide_personal: bool | None = None
+    private_address: str | None = Field(None, max_length=300)
 
 
 class ApiKey(BaseModel):
@@ -236,7 +240,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             store.profile()
     except Exception as e:  # noqa: BLE001
         log.warning("TailorbirdCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
-    engine = engine or default_engine(store)
+    engine = PrivateEngine(engine or default_engine(store), store)  # every AI call: contact details hidden
     app = FastAPI(title="TailorbirdCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     import hmac
     app.state.access_key = access_key = store.access_key()
@@ -488,6 +492,16 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     browser_install: dict = {"state": "idle", "detail": ""}
 
+    # -- privacy -----------------------------------------------------------------------------------------
+    @api.get("/privacy/preview")
+    def privacy_preview():
+        """Your profile exactly as AI prompts carry it, and the values hidden from it (Settings → Privacy)."""
+        profile = need_profile()
+        vault = engine.vault()
+        text = ai.profile_text(profile)
+        shown = vault.redact(text) if vault else text
+        return {"on": vault is not None, "text": shown, "hidden": vault.tokens if vault else {}}
+
     # -- backup and restore --------------------------------------------------------------------------------
     MAX_UPLOAD = 600_000_000  # a backup .zip (a real one is a few MB)
 
@@ -637,8 +651,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         import base64
         import binascii
 
-        from . import importer
+        from . import importer, privacy
         no_profile_yet()
+        if store.settings()["hide_personal"] and not body.name.strip():
+            raise HTTPException(422, "Enter your full name first, so it can be hidden from the AI.")
+        if body.address.strip():
+            store.save_settings({"private_address": body.address.strip()})
+        privacy.use(body.name, body.address)
         try:
             if body.text.strip():
                 filename, raw = "pasted.txt", body.text.encode("utf-8")

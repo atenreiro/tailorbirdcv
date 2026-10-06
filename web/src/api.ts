@@ -182,11 +182,12 @@ export interface Settings {
   text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
   openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean
+  hide_personal: boolean; private_address: string
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
-  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean }
+  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean; hide_personal?: boolean; private_address?: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }
@@ -288,6 +289,7 @@ async function restoreBackup(file: File): Promise<RestoreResult> {
 }
 
 export const api = {
+  privacyPreview: () => req<{ on: boolean; text: string; hidden: Record<string, string> }>('GET', '/privacy/preview'),
   downloadBackup,
   restoreBackup,
   engine: () => req<EngineStatus>('GET', '/engine'),
@@ -310,7 +312,7 @@ export const api = {
   revealUpgradeLog: () => req<{ ok: boolean }>('POST', '/update/log'),
   browserStatus: () => req<{ state: 'idle' | 'running' | 'done' | 'failed'; detail: string }>('GET', '/setup/browser'),
   installBrowser: () => req<{ state: string; detail: string }>('POST', '/setup/browser'),
-  importProfile: (b: { filename?: string; data?: string; text?: string }) =>
+  importProfile: (b: { filename?: string; data?: string; text?: string; name?: string; address?: string }) =>
     req<ImportDraft & { suggested_targets: SetupState['suggested_targets']; pages: number | null }>('POST', '/profile/import', b),
   createProfile: (b: { profile: Profile; confirmed: string[] } | { blank: { name: string; location: string; headline: string } }) =>
     req<ProfileResponse>('POST', '/profile/create', b),

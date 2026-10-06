@@ -235,6 +235,8 @@ class Store:
         "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
         "update_check": True,        # ask PyPI (at most daily) whether a newer TailorbirdCV is out; off = never
         "company_icons": True,       # show each company's site icon (fetched once); off = none shown or fetched
+        "hide_personal": True,       # replace contact details with placeholders in everything sent to the AI
+        "private_address": "",       # the user's street address, hidden from the AI too (never printed by us)
     }
 
     @property

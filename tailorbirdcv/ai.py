@@ -103,8 +103,13 @@ def industries() -> list[str]:
     return list(_config("industries.yaml")) or ["general"]
 
 
-def _profile_text(profile: MasterProfile) -> str:
-    return _yaml(profile.model_dump(exclude_none=True))
+def profile_text(profile: MasterProfile) -> str:
+    """The profile as prompts carry it: everything but the contact details, which no AI task needs (the resume
+    prints them from the profile itself)."""
+    return _yaml(profile.model_dump(exclude_none=True, exclude={"contact"}))
+
+
+_profile_text = profile_text
 
 
 # --------------------------------------------------------------------------- analyze

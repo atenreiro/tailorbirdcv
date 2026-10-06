@@ -13,7 +13,7 @@ from tailorbirdcv.api import create_app
 from tailorbirdcv.engine import FakeEngine
 from tailorbirdcv.store import Store
 from conftest import client_for
-from test_importer import RESUME, TRANSCRIPTION
+from test_importer import NAME, RESUME, TRANSCRIPTION
 
 FIX = Path(__file__).parent / "fixtures"
 TRANSCRIPTION = {**TRANSCRIPTION, "suggested_targets": {"field": "product design", "seniority": "senior",
@@ -41,7 +41,7 @@ def test_progress_and_the_draft_survive_a_refresh(wizard):
     client, store = wizard
     assert client.put("/api/setup", json={"step": "upload"}).json()["step"] == "upload"
     assert client.put("/api/setup", json={"step": "nowhere"}).status_code == 422
-    imported = client.post("/api/profile/import", json={"text": RESUME}).json()
+    imported = client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).json()
     assert imported["suggested_targets"]["field"] == "product design" and imported["pages"] is None
     s = client.get("/api/setup").json()  # "refresh"
     assert s["step"] == "review" and s["draft"]["profile"] == imported["profile"]
@@ -51,7 +51,7 @@ def test_progress_and_the_draft_survive_a_refresh(wizard):
 
 def test_flagged_lines_must_be_fixed_removed_or_confirmed(wizard):
     client, store = wizard
-    draft = client.post("/api/profile/import", json={"text": RESUME}).json()["profile"]
+    draft = client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).json()["profile"]
     bullet = draft["roles"][0]["achievements"][1]
     assert client.post("/api/profile/create", json={"profile": draft}).status_code == 422
 
@@ -110,7 +110,7 @@ def test_long_items_split_at_pdf_line_ends_still_match():
 
 def test_finishing_marks_setup_done_and_forgets_the_draft(wizard):
     client, store = wizard
-    draft = client.post("/api/profile/import", json={"text": RESUME}).json()
+    draft = client.post("/api/profile/import", json={"text": RESUME, "name": NAME}).json()
     client.post("/api/profile/create", json={"profile": draft["profile"], "confirmed": draft["unverified"]})
     client.put("/api/settings", json={"theme": "modern"})  # saving settings keeps the wizard's progress
     assert client.get("/api/setup").json()["step"] == "targets"
@@ -121,14 +121,14 @@ def test_finishing_marks_setup_done_and_forgets_the_draft(wizard):
 
 def test_starting_over_forgets_the_draft(wizard):
     client, store = wizard
-    client.post("/api/profile/import", json={"text": RESUME})
+    client.post("/api/profile/import", json={"text": RESUME, "name": NAME})
     assert "draft" not in client.delete("/api/setup/draft").json()
 
 
 def test_encrypted_or_broken_pdfs_get_a_friendly_error(wizard):
     import base64
     client, _ = wizard
-    r = client.post("/api/profile/import", json={"filename": "cv.pdf", "data": base64.b64encode(b"%PDF-1.7 broken").decode()})
+    r = client.post("/api/profile/import", json={"filename": "cv.pdf", "name": NAME, "data": base64.b64encode(b"%PDF-1.7 broken").decode()})
     assert r.status_code == 422 and "Paste the text" in r.json()["detail"]
 
 

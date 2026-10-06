@@ -140,6 +140,8 @@ TailorbirdCV only runs locally. There's no account, no server and no tracking. Y
 
 For each application made from a job link, TailorbirdCV fetches the company's site icon once, from the company's own website (never a job board's logo), and keeps it with the application. **Settings → Applications → Show company icons** turns this off: no icons shown, none fetched.
 
+**Privacy mode** (Settings → Privacy, on by default, **experimental**): your name, email, phone, street address and personal links (LinkedIn, GitHub, your own website), and any other email address or phone number in what you type, are replaced by placeholders like `[NAME]` before anything is sent to the AI, and put back in its answers. Your resume still shows them: TailorbirdCV prints them itself. The setup wizard asks for your name before reading your CV, so it's hidden from the first step. It matches your details as written and common formats, so an unusual spelling can slip through; your career history is still sent and can identify you, and other people's names aren't detected. Use it with care, and check **See what the AI receives** in Settings.
+
 In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
 
 ### Backup and restore
