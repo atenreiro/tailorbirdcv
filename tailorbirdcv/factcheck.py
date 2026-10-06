@@ -1133,9 +1133,18 @@ _INVENTED_FEELING = re.compile(r"\b(?:have|'ve|’ve)\s+(?:always|long)\b|\bdrea
                                r"my\s+(?:first|early|youth|school|university))\b|\blifelong\b|\bpassion(?:ate)?\b", re.I)
 
 
+def _safe_names(names: list[str], jd: str) -> list[str]:
+    """The company and role names a letter sentence may use without them being checked as facts. They come from
+    the AI's reading of the posting, which a hostile posting can steer, so only names written word-for-word in
+    the posting, with no digits and at most 8 words, ever count ("Led a team of 200" as a "role" doesn't)."""
+    jd_n = normalize(jd or "")
+    return [n.strip() for n in names if n and n.strip() and len(n.split()) <= 8 and not re.search(r"\d", n)
+            and has(normalize(n.strip()), jd_n)]
+
+
 def _neutral(text: str, names: list[str]) -> str:
-    """The sentence as the checks see it: the company and role names (from the analysis) and the pronoun "I"
-    taken out, so "At Example Capital, I would…" isn't an unknown entity."""
+    """The sentence as the checks see it: the company and role names (_safe_names) and the pronoun "I" taken
+    out, so "At Example Capital, I would…" isn't an unknown entity."""
     for name in sorted((n for n in names if n and n.strip()), key=len, reverse=True):
         text = re.sub(r"(?<!\w)" + re.escape(name.strip()) + r"(?:'s|’s)?(?!\w)", " ", text, flags=re.I)
     return re.sub(r"\s+", " ", _PRONOUN_I.sub("you", text)).strip()
@@ -1148,7 +1157,7 @@ def check_letter(profile: MasterProfile, letter, jd: str, names: list[str] | Non
       (MOTIVATION_WORDS); never the candidate's experience or invented feelings;
     - link: a short joining sentence with no facts at all.
     `names`: the company and role from the analysis, which any sentence may mention."""
-    names = names or []
+    names = _safe_names(names or [], jd)
     report, checker = Report(), FactChecker(profile)
     jd_n = normalize(jd or "")
     words = 0
@@ -1163,16 +1172,19 @@ def check_letter(profile: MasterProfile, letter, jd: str, names: list[str] | Non
             if not text:
                 report.error(where, "empty sentence")
                 continue
-            injected = INJECTION_RE.search(text)
-            if injected and not INJECTION_RE.search(jd or ""):
-                report.error(where, f'"{injected.group(0)}" reads like an instruction to a reader or an AI — remove it')
-            plain = _neutral(text, names)
             if sentence.kind == "evidence":
                 if not sentence.sources:
                     report.error(where, "a sentence about your experience must cite the evidence it states")
                     continue
-                checker.check_claim(Claim(text=plain, sources=sentence.sources), where, report)
-            elif sentence.kind == "posting":
+                # Checked exactly as written (names included): it may state only the cited evidence. Its
+                # injection check is check_claim's, where only the user's own evidence can excuse a phrase.
+                checker.check_claim(Claim(text=_PRONOUN_I.sub("you", text), sources=sentence.sources), where, report)
+                continue
+            # Never excused by the posting: a hostile posting could carry the very phrase it wants planted.
+            if injected := INJECTION_RE.search(text):
+                report.error(where, f'"{injected.group(0)}" reads like an instruction to a reader or an AI — remove it')
+            plain = _neutral(text, names)
+            if sentence.kind == "posting":
                 if sentence.sources:
                     report.error(where, "a sentence about the posting cites no evidence — make it an evidence "
                                         "sentence if it states your experience")

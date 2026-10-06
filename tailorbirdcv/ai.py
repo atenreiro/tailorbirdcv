@@ -778,7 +778,8 @@ Write the body of a cover letter for this job, as JSON: 3 paragraphs (4 at most)
 
 Each sentence has a kind:
 - evidence: something about the candidate. Cite the profile evidence ids it states (all numbers, tools and \
-names in it). Same rules as resume claims: rephrase, never add or strengthen.
+names in it). Same rules as resume claims: rephrase, never add or strengthen. Don't name the company or the \
+role in it (say "this role" or "your team"): it may contain only what its evidence states.
 - posting: what the job posting says about the company or the role (its mission, product, the team's \
 challenge), framed as interest ("The role's focus on … is what draws me"). Only the posting's facts. No \
 experience of the candidate, and no feelings or history beyond interest ("always", "dream", "passion" are \
