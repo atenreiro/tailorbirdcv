@@ -26,7 +26,7 @@ TIMEOUT = 5.0
 COMMANDS = {  # how to upgrade by hand, per install kind (None: the Upgrade button does it)
     "uv-tool": None,
     "uv-tool-local": "uv tool install --upgrade tailorbirdcv",  # installed from a file: switch to PyPI's
-    "checkout": "git pull --ff-only && uv sync && npm --prefix web run build, then restart tailorbirdcv serve",
+    "checkout": "git pull --ff-only && uv sync && npm --prefix web install && npm --prefix web run build, then restart tailorbirdcv serve",
     "other": "Upgrade it the way you installed it, e.g. uv tool upgrade tailorbirdcv or pipx upgrade tailorbirdcv",
 }
 
