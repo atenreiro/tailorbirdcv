@@ -130,6 +130,9 @@ You can change any of this later in **Settings**, and run the wizard again from 
 The screenshots use a fictional profile and job posting.
 
 ## Your data stays on your computer
+> [!IMPORTANT]
+> **The only thing that leaves your computer is what the AI needs to read your CV and the job, and to write the resume.**
+
 TailorbirdCV only runs locally. There's no account, no server and no tracking. Your profile, applications and settings are kept in:
 - macOS: `~/Library/Application Support/TailorbirdCV`
 - Windows: `%LOCALAPPDATA%\TailorbirdCV`
@@ -138,8 +141,6 @@ TailorbirdCV only runs locally. There's no account, no server and no tracking. Y
 For each application made from a job link, TailorbirdCV fetches the company's site icon once, from the company's own website (never a job board's logo), and keeps it with the application. **Settings → Applications → Show company icons** turns this off: no icons shown, none fetched.
 
 In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
-
-The only thing that leaves your computer is what the AI needs to read your CV and the job, and to write the resume.
 
 ## For developers
 ```bash
