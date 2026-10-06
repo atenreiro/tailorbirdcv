@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, STATUSES, type EngineStatus, type Outcome } from './api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, statusStyle } from './lib'
@@ -10,6 +10,55 @@ export function Spinner({ className = '' }: { className?: string }) {
       className={cx('inline-block size-3.5 rounded-full border-2 border-current border-r-transparent animate-spin', className)}
       aria-hidden
     />
+  )
+}
+
+const SEW = { animation: 'stitch-sew 2.6s linear infinite' }
+
+/** The waiting animation, from the brand mark: the tailorbird hops along its leaf sewing the stitch while the AI
+ *  works ("ai"), or the stitch runs around a page while documents are built ("build"). With "reduce motion" on it
+ *  shows the finished stitch, still. */
+export function Stitching({ mode, className }: { mode: 'ai' | 'build'; className?: string }) {
+  const mask = useId()
+  return (
+    <svg aria-hidden="true" viewBox="0 0 120 92" className={cx('h-[104px] w-[136px]', className)}>
+      {mode === 'ai' ? (
+        <>
+          <mask id={mask}>
+            <path d="M22 80 C44 78 72 80 96 74" pathLength={100} fill="none" stroke="#fff" strokeWidth="6" strokeDasharray="100" style={SEW} />
+          </mask>
+          <path d="M12 76 C28 62 66 62 104 72 C88 98 40 102 12 76 Z" fill="#8CCB7A" />
+          <path d="M22 80 C44 78 72 80 96 74" fill="none" stroke="#0F3D2E" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="5 4" mask={`url(#${mask})`} />
+          <g style={{ animation: 'stitch-walk 2.6s linear infinite' }}>
+            <g style={{ animation: 'stitch-hop 0.325s ease-in-out infinite' }}>
+              <g transform="translate(-14 24) scale(.62)">
+                <path d="M44 52 L30 20 L38 19 L53 47 Z" fill="#0F3D2E" />
+                <path d="M42 54 C42 41 54 34 66 37 C77 40 82 50 78 58 C74 65 56 66 47 61 C44 59 42 57 42 54 Z" fill="#0F3D2E" />
+                <circle cx="74" cy="34" r="10" fill="#0F3D2E" />
+                <path d="M65 31 C66 22 80 22 84 30 C78 27 70 27 65 31 Z" fill="#E4572E" />
+                <circle cx="78" cy="33" r="1.8" fill="#F4F7F5" />
+                <path d="M83 35 L94 37.5 L83 40 Z" fill="#F2A93B" />
+                <path d="M52 52 C58 58 68 58 74 50" fill="none" stroke="#8CCB7A" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M60 63 L60 70 M68 63 L68 70" stroke="#0F3D2E" strokeWidth="2.4" strokeLinecap="round" />
+              </g>
+            </g>
+          </g>
+        </>
+      ) : (
+        <>
+          <mask id={mask}>
+            <rect x="34" y="10" width="52" height="68" rx="5" pathLength={100} fill="none" stroke="#fff" strokeWidth="7" strokeDasharray="100"
+              style={{ animation: 'stitch-sew 3s linear infinite' }} />
+          </mask>
+          <rect x="34" y="10" width="52" height="68" rx="5" fill="#F4F7F5" />
+          <rect x="34" y="10" width="52" height="68" rx="5" fill="none" stroke="#0F3D2E" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="5 4" mask={`url(#${mask})`} />
+          <rect x="44" y="20" width="32" height="4" rx="2" fill="#0F3D2E" />
+          <rect x="44" y="30" width="22" height="2.5" rx="1.2" fill="#C8431D" />
+          {[[40, 32], [47, 28], [54, 31], [61, 20]].map(([y, w]) => <rect key={y} x="44" y={y} width={w} height="2.5" rx="1.2" fill="#C0CCC5" />)}
+          <path d="M8 84 C24 74 50 74 66 80 C56 94 26 96 8 84 Z" fill="#8CCB7A" />
+        </>
+      )}
+    </svg>
   )
 }
 

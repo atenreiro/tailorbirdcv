@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type SetupState } from '../../api'
 import { cx, toBase64 } from '../../lib'
-import { ErrorNote } from '../../ui'
+import { ErrorNote, Stitching } from '../../ui'
 
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_PASTE = 200_000
@@ -53,7 +53,7 @@ export default function UploadCv({ onImported, onBlank }: {
   if (started !== null) {
     return (
       <div role="status" className="flex flex-col items-center gap-4 rounded-[14px] border border-rule bg-sheet px-6 py-14 text-center">
-        <span className="flex gap-1.5" aria-hidden>{[0, 1, 2].map((i) => <span key={i} className="size-2 animate-pulse rounded-full bg-accent" style={{ animationDelay: `${i * 160}ms` }} />)}</span>
+        <Stitching mode="ai" />
         <p className="font-display text-2xl text-ink">{stage}…</p>
         <ol className="flex flex-col gap-1 text-[13px] text-muted">
           {STAGES.slice(0, 3).map(([t, s]) => <li key={s} className={cx(elapsed >= t ? 'text-ink' : 'text-faint')}>{elapsed >= t ? '●' : '○'} {s}</li>)}

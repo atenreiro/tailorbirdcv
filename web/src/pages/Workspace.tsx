@@ -5,7 +5,7 @@ import { NO_GUARD, setUnsaved } from '../unsaved'
 import { changeStatus, sentAsApplied } from '../status'
 import { cx, fmtDate, useTitle } from '../lib'
 import { engineRuns, useSettings } from '../settings'
-import { ErrorNote, Spinner, StatusSelect } from '../ui'
+import { ErrorNote, Spinner, StatusSelect, Stitching } from '../ui'
 import Brief from './steps/Brief'
 import Export from './steps/Export'
 import Gaps from './steps/Gaps'
@@ -266,12 +266,8 @@ function WorkingPanel({ title, lines, ai }: { title: string; lines: string[]; ai
   }, [])
   const line = lines[Math.min(Math.floor(secs / 12), lines.length - 1)]
   return (
-    <div className="animate-rise flex flex-col items-center gap-2.5 rounded-[14px] border border-rule bg-sheet px-6 py-14 text-center sm:px-8" role="status" aria-live="polite">
-      <div className="mb-3 flex w-[180px] gap-1" aria-hidden>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <span key={i} className="h-[5px] flex-1 animate-pulse rounded-[5px] bg-accent" style={{ animationDelay: `${i * 120}ms` }} />
-        ))}
-      </div>
+    <div className="animate-rise flex flex-col items-center gap-2.5 rounded-[14px] border border-rule bg-sheet px-6 py-12 text-center sm:px-8" role="status" aria-live="polite">
+      <Stitching mode={ai ? 'ai' : 'build'} className="mb-1" />
       <p className="font-display text-[32px] leading-tight tracking-[-0.01em] text-ink">{title}</p>
       <p className="text-[15px] text-body">{line}</p>
       <p className="mt-1.5 font-mono text-xs text-faint">
