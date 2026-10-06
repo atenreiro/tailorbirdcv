@@ -1,4 +1,4 @@
-// Mirrors autocv/critique.py apply_issue: targets are found by their ORIGINAL text, so
+// Mirrors tailorbirdcv/critique.py apply_issue: targets are found by their ORIGINAL text, so
 // accepting one fix never misapplies another after indices shift.
 import type { Claim, Critique, CritiqueIssue, Tailored } from '../../api'
 

@@ -1,4 +1,4 @@
-"""Update checks (PyPI, at most daily, never when off) and the one-click upgrade that restarts AutoCV."""
+"""Update checks (PyPI, at most daily, never when off) and the one-click upgrade that restarts TailorbirdCV."""
 
 import asyncio
 import json
@@ -9,11 +9,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from autocv import cli, oscompat, update
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
-from autocv.update import fetch_latest as real_fetch_latest  # conftest replaces it with an offline stub
+from tailorbirdcv import cli, oscompat, update
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
+from tailorbirdcv.update import fetch_latest as real_fetch_latest  # conftest replaces it with an offline stub
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -44,9 +44,9 @@ def receipt(tmp_path, requirement: str) -> Path:
 def test_install_kind(tmp_path, monkeypatch):
     for d in "abc":
         (tmp_path / d).mkdir()
-    assert update.install_kind(receipt(tmp_path / "a", '{ name = "autocv-app" }')) == "uv-tool"
-    assert update.install_kind(receipt(tmp_path / "b", '{ name = "autocv-app", path = "/x/autocv.whl" }')) == "uv-tool-local"
-    from autocv import paths
+    assert update.install_kind(receipt(tmp_path / "a", '{ name = "tailorbirdcv" }')) == "uv-tool"
+    assert update.install_kind(receipt(tmp_path / "b", '{ name = "tailorbirdcv", path = "/x/tailorbirdcv.whl" }')) == "uv-tool-local"
+    from tailorbirdcv import paths
     monkeypatch.setattr(paths, "is_checkout", lambda: False)
     assert update.install_kind(tmp_path / "c") == "other"
     monkeypatch.setattr(paths, "is_checkout", lambda: True)
@@ -56,7 +56,7 @@ def test_install_kind(tmp_path, monkeypatch):
 def pypi(version, status=200):
     def handler(request):
         assert request.url == httpx.URL(update.PYPI_URL) and request.method == "GET"
-        assert request.headers["user-agent"].startswith("AutoCV/")
+        assert request.headers["user-agent"].startswith("TailorbirdCV/")
         return httpx.Response(status, json={"info": {"version": version}})
     return httpx.MockTransport(handler)
 
@@ -120,7 +120,7 @@ def test_status_and_upgrade_refusals(env, monkeypatch):
 
     monkeypatch.setattr(update, "install_kind", lambda prefix=None: "uv-tool")
     r = client.post("/api/update/upgrade")
-    assert r.status_code == 409 and "autocv serve" in r.json()["detail"]  # not started by `autocv serve`
+    assert r.status_code == 409 and "tailorbirdcv serve" in r.json()["detail"]  # not started by `tailorbirdcv serve`
 
     exits = []
     app.state.request_exit = lambda: exits.append(1)
@@ -177,7 +177,7 @@ def test_the_next_start_says_whether_the_upgrade_took(tmp_path):
 
 # ---- restart -------------------------------------------------------------------------------------------
 class FakeProc:
-    def __init__(self, code, out="Updated autocv-app v0.2.0 -> v9.9.9\n"):
+    def __init__(self, code, out="Updated tailorbirdcv v0.2.0 -> v9.9.9\n"):
         self.stdout, self.code = iter([out]), code
 
     def wait(self):
@@ -189,7 +189,7 @@ def test_posix_restart_upgrades_then_execs_on_the_same_port(tmp_path, monkeypatc
     seen = {}
     monkeypatch.setattr(cli, "PRIVATE", tmp_path)
     monkeypatch.setattr(cli, "IS_WINDOWS", False)
-    monkeypatch.setattr(cli.sys, "argv", ["/home/me/.local/bin/autocv", "serve", "--port", "8010"])
+    monkeypatch.setattr(cli.sys, "argv", ["/home/me/.local/bin/tailorbirdcv", "serve", "--port", "8010"])
 
     def popen(cmd, env, **kw):
         seen["cmd"], seen["env"] = cmd, env
@@ -197,11 +197,11 @@ def test_posix_restart_upgrades_then_execs_on_the_same_port(tmp_path, monkeypatc
     monkeypatch.setattr("subprocess.Popen", popen)
     monkeypatch.setattr(cli.os, "execv", lambda path, argv: seen.update(exec=(path, argv)))
     cli.restart_after_upgrade({"target": "9.9.9", "uv": "/home/me/.local/bin/uv"}, 8010)
-    assert seen["cmd"] == ["/home/me/.local/bin/uv", "tool", "upgrade", "autocv-app"]
+    assert seen["cmd"] == ["/home/me/.local/bin/uv", "tool", "upgrade", "tailorbirdcv"]
     assert seen["env"]["UV_MANAGED_PYTHON"] == "1" and seen["env"]["UV_SYSTEM_CERTS"]
     # the old version starts again too if the upgrade failed: the next start reports it
-    assert seen["exec"] == ("/home/me/.local/bin/autocv",
-                            ["/home/me/.local/bin/autocv", "serve", "--port", "8010", "--no-browser"])
+    assert seen["exec"] == ("/home/me/.local/bin/tailorbirdcv",
+                            ["/home/me/.local/bin/tailorbirdcv", "serve", "--port", "8010", "--no-browser"])
     assert "v9.9.9" in update.log_path(tmp_path).read_text(encoding="utf-8")
     assert ("Upgraded" if code == 0 else "failed") in capsys.readouterr().out
 
@@ -209,7 +209,7 @@ def test_posix_restart_upgrades_then_execs_on_the_same_port(tmp_path, monkeypatc
 def test_nothing_to_install_is_said_plainly(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "PRIVATE", tmp_path)
     monkeypatch.setattr(cli, "IS_WINDOWS", False)
-    monkeypatch.setattr(cli.sys, "argv", ["/home/me/.local/bin/autocv"])
+    monkeypatch.setattr(cli.sys, "argv", ["/home/me/.local/bin/tailorbirdcv"])
     monkeypatch.setattr("subprocess.Popen", lambda cmd, env, **kw: FakeProc(0, "Nothing to upgrade\n"))
     monkeypatch.setattr(cli.os, "execv", lambda *a: None)
     cli.restart_after_upgrade({"target": "9.9.9", "uv": "uv"}, 8000)
@@ -221,7 +221,7 @@ def test_windows_restart_hands_over_to_a_helper_in_a_new_window(tmp_path, monkey
     seen = {}
     monkeypatch.setattr(cli, "PRIVATE", tmp_path)
     monkeypatch.setattr(cli, "IS_WINDOWS", True)
-    monkeypatch.setattr(cli.sys, "argv", [r"C:\Users\Me Too\.local\bin\autocv.exe", "serve"])
+    monkeypatch.setattr(cli.sys, "argv", [r"C:\Users\Me Too\.local\bin\tailorbirdcv.exe", "serve"])
     monkeypatch.setattr(cli.os.path, "isabs", lambda p: True)
     monkeypatch.setattr(oscompat, "spawn_new_console", lambda cmd, env: seen.update(cmd=cmd, env=env))
     monkeypatch.setattr(cli.os, "execv", lambda *a: pytest.fail("Windows must not exec"))
@@ -232,9 +232,9 @@ def test_windows_restart_hands_over_to_a_helper_in_a_new_window(tmp_path, monkey
     assert b"9.9.9" not in text and b"8010" not in text and b"Me Too" not in text  # values only via env vars
     assert seen["cmd"][:2] == ["powershell", "-NoProfile"] and seen["cmd"][-1] == str(script)
     env = seen["env"]
-    assert env["AUTOCV_UPGRADE_TARGET"] == "9.9.9" and env["AUTOCV_UPGRADE_PORT"] == "8010"
-    assert env["AUTOCV_UPGRADE_UV"].endswith("uv.exe") and env["AUTOCV_UPGRADE_AUTOCV"].endswith("autocv.exe")
-    assert env["AUTOCV_UPGRADE_PID"].isdigit() and env["UV_MANAGED_PYTHON"] == "1"
+    assert env["TAILORBIRDCV_UPGRADE_TARGET"] == "9.9.9" and env["TAILORBIRDCV_UPGRADE_PORT"] == "8010"
+    assert env["TAILORBIRDCV_UPGRADE_UV"].endswith("uv.exe") and env["TAILORBIRDCV_UPGRADE_EXE"].endswith("tailorbirdcv.exe")
+    assert env["TAILORBIRDCV_UPGRADE_PID"].isdigit() and env["UV_MANAGED_PYTHON"] == "1"
 
 
 def test_update_json_is_private_data(tmp_path):

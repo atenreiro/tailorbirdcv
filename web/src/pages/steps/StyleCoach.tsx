@@ -39,10 +39,10 @@ export default function StyleCoach({ app }: { app: Application }) {
 
   return (
     <section className="animate-rise flex flex-col gap-2.5 rounded-xl border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
-      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Teach AutoCV your style</p>
+      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Teach TailorbirdCV your style</p>
       <p className="text-muted">
         You changed {app.edits} claim{app.edits === 1 ? '' : 's'} from the AI draft{guidance ? ' and gave guidance' : ''}.
-        AutoCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
+        TailorbirdCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
       </p>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {proposals === null ? (

@@ -1,17 +1,17 @@
-"""AutoCV command line.
+"""TailorbirdCV command line.
 
-    autocv ingest [--force]          base resume → private/profile.yaml (+ base_tailored.yaml)
-    autocv baseline                  re-render the base resume; verify text + page count
-    autocv new "<Company>" "<Role>"  create an application folder
-    autocv evidence [term]           list citable evidence ids (optionally filtered)
-    autocv check <app>               fact-check + ATS report (exit 1 on errors)
-    autocv build <app>               check → .docx → .pdf → page limit → status "built"
+    tailorbirdcv ingest [--force]          base resume → private/profile.yaml (+ base_tailored.yaml)
+    tailorbirdcv baseline                  re-render the base resume; verify text + page count
+    tailorbirdcv new "<Company>" "<Role>"  create an application folder
+    tailorbirdcv evidence [term]           list citable evidence ids (optionally filtered)
+    tailorbirdcv check <app>               fact-check + ATS report (exit 1 on errors)
+    tailorbirdcv build <app>               check → .docx → .pdf → page limit → status "built"
                                      (exit 1 fact-check, 2 too long, 3 PDF failed)
-    autocv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
+    tailorbirdcv serve [--port 8000]       start the web UI (localhost only) and open it in the browser
                  [--no-browser]
-    autocv doctor                    check this machine: data folder, AI engine, PDF engine, fonts, browser
-    autocv install-browser           install the headless browser used for JavaScript-only job pages
-    autocv --version
+    tailorbirdcv doctor                    check this machine: data folder, AI engine, PDF engine, fonts, browser
+    tailorbirdcv install-browser           install the headless browser used for JavaScript-only job pages
+    tailorbirdcv --version
 """
 
 from __future__ import annotations
@@ -245,7 +245,7 @@ class _QuietShutdown(logging.Filter):
 
 class _HideKey(logging.Filter):
     """The request log would show the private link's key (GET /?key=…): masked. The link itself is printed once,
-    on purpose, when AutoCV starts."""
+    on purpose, when TailorbirdCV starts."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         import re
@@ -267,7 +267,7 @@ def _server_class(uvicorn):
                 return
             if not self.should_exit:
                 self.first_exit = now
-                print(f"\nStopping AutoCV (anything still running gets {SHUTDOWN_GRACE} s to finish)…", flush=True)
+                print(f"\nStopping TailorbirdCV (anything still running gets {SHUTDOWN_GRACE} s to finish)…", flush=True)
             super().handle_exit(sig, frame)
     return Server
 
@@ -280,7 +280,7 @@ def cmd_serve(args) -> int:
     from .api import create_app
     from .paths import web_dir
     import socket
-    # Claim the port first: if something else already listens there (another AutoCV, a dev server), never open
+    # Claim the port first: if something else already listens there (another TailorbirdCV, a dev server), never open
     # this data folder's private link on it.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     if not IS_WINDOWS:  # reuse a port left in TIME_WAIT; on Windows this flag would allow two listeners
@@ -289,8 +289,8 @@ def cmd_serve(args) -> int:
         sock.bind(("127.0.0.1", args.port))
     except OSError:
         sock.close()
-        print(f"Port {args.port} is already in use — AutoCV may already be running (open its link from that "
-              f"terminal), or start this one on another port: autocv serve --port {args.port + 1}", file=sys.stderr)
+        print(f"Port {args.port} is already in use — TailorbirdCV may already be running (open its link from that "
+              f"terminal), or start this one on another port: tailorbirdcv serve --port {args.port + 1}", file=sys.stderr)
         return PDF_FAILED
     url = f"http://127.0.0.1:{args.port}/?key={STORE.access_key()}"  # unlocks this browser (see api.guard)
     built = web_dir() is not None
@@ -298,8 +298,8 @@ def cmd_serve(args) -> int:
         print("note: web UI not built — run `npm --prefix web install && npm --prefix web run build` "
               "(or use `npm --prefix web run dev` on :5173). Serving the API only.")
     app = create_app()
-    print(f"AutoCV → {url}", flush=True)
-    print("  (this link unlocks AutoCV in your browser; keep it to yourself)", flush=True)
+    print(f"TailorbirdCV → {url}", flush=True)
+    print("  (this link unlocks TailorbirdCV in your browser; keep it to yourself)", flush=True)
     if built and not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url, args.port), daemon=True).start()
     config = uvicorn.Config(app, host="127.0.0.1", port=args.port, timeout_graceful_shutdown=SHUTDOWN_GRACE)
@@ -314,15 +314,15 @@ def cmd_serve(args) -> int:
     if app.state.upgrade:
         sock.close()
         return restart_after_upgrade(app.state.upgrade, args.port)
-    print("AutoCV stopped.", flush=True)
+    print("TailorbirdCV stopped.", flush=True)
     return 0
 
 
 def restart_after_upgrade(plan: dict, port: int) -> int:
     """The server has stopped for an upgrade (POST /api/update/upgrade): upgrade with uv, then start again on
     the same port. macOS/Linux: in this terminal (exec), so Ctrl+C keeps working. Windows locks a running
-    program's files, so a helper in a new window waits for this process to end, upgrades, and starts AutoCV
-    there. Whatever happens, AutoCV starts again (the old version if the upgrade failed); the next start
+    program's files, so a helper in a new window waits for this process to end, upgrades, and starts TailorbirdCV
+    there. Whatever happens, TailorbirdCV starts again (the old version if the upgrade failed); the next start
     records the outcome (update.settle)."""
     import subprocess
 
@@ -334,13 +334,13 @@ def restart_after_upgrade(plan: dict, port: int) -> int:
     if IS_WINDOWS:
         script = log_file.parent / "upgrade.ps1"
         script.write_text(update.WINDOWS_SCRIPT, encoding="ascii", newline="\r\n")
-        env = {**update.upgrade_env(), "AUTOCV_UPGRADE_TARGET": plan["target"], "AUTOCV_UPGRADE_UV": plan["uv"],
-               "AUTOCV_UPGRADE_PID": str(os.getpid()), "AUTOCV_UPGRADE_PPID": str(os.getppid()),
-               "AUTOCV_UPGRADE_LOG": str(log_file), "AUTOCV_UPGRADE_AUTOCV": me, "AUTOCV_UPGRADE_PORT": str(port)}
+        env = {**update.upgrade_env(), "TAILORBIRDCV_UPGRADE_TARGET": plan["target"], "TAILORBIRDCV_UPGRADE_UV": plan["uv"],
+               "TAILORBIRDCV_UPGRADE_PID": str(os.getpid()), "TAILORBIRDCV_UPGRADE_PPID": str(os.getppid()),
+               "TAILORBIRDCV_UPGRADE_LOG": str(log_file), "TAILORBIRDCV_UPGRADE_EXE": me, "TAILORBIRDCV_UPGRADE_PORT": str(port)}
         oscompat.spawn_new_console(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)], env)
-        print(f"Upgrading AutoCV to {plan['target']}: it continues in a new window, where it starts again.", flush=True)
+        print(f"Upgrading TailorbirdCV to {plan['target']}: it continues in a new window, where it starts again.", flush=True)
         return 0
-    print(f"\nUpgrading AutoCV to {plan['target']}…", flush=True)
+    print(f"\nUpgrading TailorbirdCV to {plan['target']}…", flush=True)
     output = []
     with open(log_file, "w", encoding="utf-8") as log:
         proc = subprocess.Popen(command, env=update.upgrade_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -355,7 +355,7 @@ def restart_after_upgrade(plan: dict, port: int) -> int:
     elif any("Nothing to upgrade" in line for line in output):
         print("uv found nothing newer to install (it may not be published yet); starting the version you had.", flush=True)
     else:
-        print("Upgraded. Starting AutoCV again…", flush=True)
+        print("Upgraded. Starting TailorbirdCV again…", flush=True)
     os.execv(me, [me, "serve", "--port", str(port), "--no-browser"])
     return 0  # not reached
 
@@ -382,9 +382,9 @@ def cmd_install_browser(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     from .doctor import version
-    parser = argparse.ArgumentParser(prog="autocv", description=__doc__,
+    parser = argparse.ArgumentParser(prog="tailorbirdcv", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--version", action="version", version=f"autocv {version()}")
+    parser.add_argument("--version", action="version", version=f"tailorbirdcv {version()}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("ingest"); p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_ingest)
     p = sub.add_parser("baseline"); p.add_argument("--no-pdf", action="store_true"); p.set_defaults(fn=cmd_baseline)

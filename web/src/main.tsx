@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-// Fonts ship with AutoCV (no Google Fonts request: nothing leaves this computer just to show a page)
+// Fonts ship with TailorbirdCV (no Google Fonts request: nothing leaves this computer just to show a page)
 import '@fontsource-variable/instrument-sans/wdth.css'
 import '@fontsource-variable/instrument-sans/wdth-italic.css'
 import '@fontsource/geist-mono/400.css'

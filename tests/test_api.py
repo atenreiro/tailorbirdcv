@@ -7,9 +7,9 @@ import pytest
 import yaml
 from conftest import client_for
 
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
 
 FIX = Path(__file__).parent / "fixtures"
 JD = "# Detection Lead — Example Capital\n\n" + "We need a hands-on detection engineering lead. " * 10

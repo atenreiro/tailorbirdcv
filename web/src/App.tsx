@@ -32,7 +32,7 @@ function Masthead() {
     return (
       <header className="sticky top-0 z-30 bg-ink text-white">
         <div className={cx('mx-auto flex h-14 items-center gap-4', FRAME)}>
-          <span aria-label="AutoCV" className="flex items-center"><Logo /></span>
+          <span aria-label="TailorbirdCV" className="flex items-center"><Logo /></span>
           <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#9aa3b5]">Setup</span>
         </div>
       </header>
@@ -43,7 +43,7 @@ function Masthead() {
   return (
     <header className="sticky top-0 z-30 bg-ink text-white">
       <div className={cx('mx-auto flex h-14 items-center gap-3 sm:gap-9', FRAME)}>
-        <NavLink to="/" aria-label="AutoCV" className="flex items-center"><Logo /></NavLink>
+        <NavLink to="/" aria-label="TailorbirdCV" className="flex items-center"><Logo /></NavLink>
         <nav className="flex h-full gap-0 overflow-x-auto sm:gap-1 whitespace-nowrap [scrollbar-width:none]">
           <NavLink to="/" end className={link}><span className="sm:hidden">Apps</span><span className="hidden sm:inline">Applications</span></NavLink>
           <NavLink to="/funnel" className={link}>Funnel</NavLink>
@@ -77,13 +77,13 @@ function FirstTip() {
   )
 }
 
-/** This browser hasn't been unlocked: the API only answers the browser opened from `autocv serve`'s link. */
+/** This browser hasn't been unlocked: the API only answers the browser opened from `tailorbirdcv serve`'s link. */
 function useLocked() {
   const [locked, setLocked] = useState(false)
   useEffect(() => {
     const on = () => setLocked(true)
-    window.addEventListener('autocv:locked', on)
-    return () => window.removeEventListener('autocv:locked', on)
+    window.addEventListener('tailorbirdcv:locked', on)
+    return () => window.removeEventListener('tailorbirdcv:locked', on)
   }, [])
   return locked
 }
@@ -91,12 +91,12 @@ function useLocked() {
 function Locked() {
   return (
     <section className="animate-rise mx-auto flex max-w-[640px] flex-col gap-4 py-16 text-center">
-      <h1 className="font-display text-[44px] leading-none tracking-[-0.02em] text-ink">Open AutoCV from its link</h1>
+      <h1 className="font-display text-[44px] leading-none tracking-[-0.02em] text-ink">Open TailorbirdCV from its link</h1>
       <p className="text-[15px] leading-[1.6] text-body text-pretty">
-        To keep your resume data private from other programs on this computer, AutoCV only answers the browser
+        To keep your resume data private from other programs on this computer, TailorbirdCV only answers the browser
         opened from the link it prints when it starts. Look in the terminal where you ran
-        <code className="mx-1 rounded bg-wash px-1.5 font-mono text-[13px]">autocv serve</code>
-        for the line starting with <span className="font-mono text-[13px]">AutoCV →</span> and open that link. You only need to do this once per browser.
+        <code className="mx-1 rounded bg-wash px-1.5 font-mono text-[13px]">tailorbirdcv serve</code>
+        for the line starting with <span className="font-mono text-[13px]">TailorbirdCV →</span> and open that link. You only need to do this once per browser.
       </p>
     </section>
   )

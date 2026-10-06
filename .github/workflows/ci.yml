@@ -64,7 +64,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest -q tests/test_pdf_real.py tests/test_pdf.py tests/test_oscompat.py -rs
         env:
-          AUTOCV_EXPECT_LIBREOFFICE: "1"
+          TAILORBIRDCV_EXPECT_LIBREOFFICE: "1"
 
   package:
     name: Installable package · ${{ matrix.os }}
@@ -91,8 +91,8 @@ jobs:
           uv pip install --python ../clean $(ls dist/*.whl)
           cd ..
           if [ -x clean/Scripts/python.exe ]; then PY=clean/Scripts/python.exe; else PY=clean/bin/python; fi
-          $PY -m autocv.cli --version
-          $PY -c "from autocv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); print(paths.private_dir())"
+          $PY -m tailorbirdcv.cli --version
+          $PY -c "from tailorbirdcv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); print(paths.private_dir())"
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest'
         with:
@@ -122,39 +122,39 @@ jobs:
         shell: bash
         run: |
           set -eux
-          export AUTOCV_PACKAGE="$(ls "$PWD"/dist/*.whl)"
+          export TAILORBIRDCV_PACKAGE="$(ls "$PWD"/dist/*.whl)"
           command -v uv || echo "no uv on this runner: the script installs it"
           sh -s -- --no-launch < install.sh                 # as `curl … | sh -s -- --no-launch`
-          "$HOME/.local/bin/autocv" --version
-          "$(uv tool dir 2>/dev/null || echo "$HOME/.local/share/uv/tools")/autocv-app/bin/python" --version | grep -q '^Python 3\.13\.'
-          if [ "$RUNNER_OS" = macOS ]; then zsh -ic 'autocv --version'; else bash -lc 'autocv --version'; fi  # a new terminal finds it
-          # while AutoCV runs, updating and uninstalling are refused (they'd swap its files out from under it)
-          AUTOCV_PRIVATE="$RUNNER_TEMP/data" "$HOME/.local/bin/autocv" serve --no-browser --port 8765 & pid=$!
+          "$HOME/.local/bin/tailorbirdcv" --version
+          "$(uv tool dir 2>/dev/null || echo "$HOME/.local/share/uv/tools")/tailorbirdcv/bin/python" --version | grep -q '^Python 3\.13\.'
+          if [ "$RUNNER_OS" = macOS ]; then zsh -ic 'tailorbirdcv --version'; else bash -lc 'tailorbirdcv --version'; fi  # a new terminal finds it
+          # while TailorbirdCV runs, updating and uninstalling are refused (they'd swap its files out from under it)
+          TAILORBIRDCV_PRIVATE="$RUNNER_TEMP/data" "$HOME/.local/bin/tailorbirdcv" serve --no-browser --port 8765 & pid=$!
           for i in $(seq 30); do curl -s -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
-          if sh -s -- --no-launch < install.sh 2> refused.txt; then echo "updated a running AutoCV"; exit 1; fi
-          grep -q "AutoCV is running" refused.txt
+          if sh -s -- --no-launch < install.sh 2> refused.txt; then echo "updated a running TailorbirdCV"; exit 1; fi
+          grep -q "TailorbirdCV is running" refused.txt
           kill "$pid"; wait "$pid" || true
           sh -s -- --no-launch < install.sh                 # running it again updates in place
           sh -s -- --uninstall < install.sh
-          test ! -e "$HOME/.local/bin/autocv"
+          test ! -e "$HOME/.local/bin/tailorbirdcv"
       - name: Install with install.ps1 (Windows PowerShell 5.1)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $env:AUTOCV_PACKAGE = (Resolve-Path dist\*.whl).Path
-          $env:AUTOCV_NO_LAUNCH = '1'
+          $env:TAILORBIRDCV_PACKAGE = (Resolve-Path dist\*.whl).Path
+          $env:TAILORBIRDCV_NO_LAUNCH = '1'
           if (Get-Command uv -ErrorAction SilentlyContinue) { 'uv already on this runner' } else { 'no uv on this runner: the script installs it' }
           Get-Content -Raw install.ps1 | Invoke-Expression   # as `irm … | iex`
-          $exe = Join-Path $env:USERPROFILE '.local\bin\autocv.exe'
+          $exe = Join-Path $env:USERPROFILE '.local\bin\tailorbirdcv.exe'
           & $exe --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
           if (-not $uv) { $uv = Join-Path $env:USERPROFILE '.local\bin\uv.exe' }
-          $toolPython = Join-Path (& $uv tool dir).Trim() 'autocv-app\Scripts\python.exe'
+          $toolPython = Join-Path (& $uv tool dir).Trim() 'tailorbirdcv\Scripts\python.exe'
           $py = & $toolPython --version
-          if ($py -notmatch '^Python 3\.13\.') { throw "AutoCV runs on $py, not Python 3.13" }
+          if ($py -notmatch '^Python 3\.13\.') { throw "TailorbirdCV runs on $py, not Python 3.13" }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | ForEach-Object { $_.TrimEnd('\') }
-          if ($userPath -notcontains (Split-Path $exe)) { throw 'the user PATH does not include autocv' }
+          if ($userPath -notcontains (Split-Path $exe)) { throw 'the user PATH does not include tailorbirdcv' }
           foreach ($name in 'UV_SYSTEM_CERTS', 'UV_NATIVE_TLS', 'UV_MANAGED_PYTHON') {
             if (Test-Path "Env:$name") { throw "the installer left $name in this window" }
           }
@@ -164,33 +164,33 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:AUTOCV_PACKAGE = (Resolve-Path dist\*.whl).Path
-          $env:AUTOCV_NO_LAUNCH = '1'
-          $exe = Join-Path $env:USERPROFILE '.local\bin\autocv.exe'
-          # while AutoCV runs, updating and uninstalling are refused (Windows locks a running program's files)
-          $env:AUTOCV_PRIVATE = Join-Path $env:RUNNER_TEMP 'data'
+          $env:TAILORBIRDCV_PACKAGE = (Resolve-Path dist\*.whl).Path
+          $env:TAILORBIRDCV_NO_LAUNCH = '1'
+          $exe = Join-Path $env:USERPROFILE '.local\bin\tailorbirdcv.exe'
+          # while TailorbirdCV runs, updating and uninstalling are refused (Windows locks a running program's files)
+          $env:TAILORBIRDCV_PRIVATE = Join-Path $env:RUNNER_TEMP 'data'
           Start-Process -FilePath $exe -ArgumentList 'serve', '--no-browser', '--port', '8765' -WindowStyle Hidden
           foreach ($i in 1..30) {
             try { (New-Object Net.Sockets.TcpClient).Connect('127.0.0.1', 8765); break } catch { Start-Sleep -Seconds 1 }
           }
           $out = Get-Content -Raw install.ps1 | Invoke-Expression *>&1 | Out-String
-          if ($out -notmatch 'AutoCV is running') { throw "a running AutoCV wasn't detected: $out" }
-          $env:AUTOCV_UNINSTALL = '1'
+          if ($out -notmatch 'TailorbirdCV is running') { throw "a running TailorbirdCV wasn't detected: $out" }
+          $env:TAILORBIRDCV_UNINSTALL = '1'
           $out = Get-Content -Raw install.ps1 | Invoke-Expression *>&1 | Out-String
-          if ($out -notmatch 'AutoCV is running') { throw "uninstalled a running AutoCV: $out" }
-          if (-not (Test-Path $exe)) { throw 'autocv.exe went missing' }
+          if ($out -notmatch 'TailorbirdCV is running') { throw "uninstalled a running TailorbirdCV: $out" }
+          if (-not (Test-Path $exe)) { throw 'tailorbirdcv.exe went missing' }
           $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
           if (-not $uv) { $uv = Join-Path $env:USERPROFILE '.local\bin\uv.exe' }
-          $tools = (Join-Path (& $uv tool dir).Trim() 'autocv-app') + '\'
+          $tools = (Join-Path (& $uv tool dir).Trim() 'tailorbirdcv') + '\'
           Get-Process | Where-Object { $_.Path -and ($_.Path -eq $exe -or $_.Path.StartsWith($tools, [StringComparison]::OrdinalIgnoreCase)) } | Stop-Process -Force
           Start-Sleep -Seconds 2
           Get-Content -Raw install.ps1 | Invoke-Expression   # running it again updates in place
           & $exe --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          $env:AUTOCV_UNINSTALL = '1'
+          $env:TAILORBIRDCV_UNINSTALL = '1'
           Get-Content -Raw install.ps1 | Invoke-Expression
-          if (Test-Path $exe) { throw 'autocv.exe is still there after uninstalling' }
-          if ($env:AUTOCV_UNINSTALL) { throw 'AUTOCV_UNINSTALL was not cleared' }
+          if (Test-Path $exe) { throw 'tailorbirdcv.exe is still there after uninstalling' }
+          if ($env:TAILORBIRDCV_UNINSTALL) { throw 'TAILORBIRDCV_UNINSTALL was not cleared' }
 
   self-upgrade:
     # Applications → Upgrade, end to end: a one-line-installer copy upgrades itself to the next version and comes
@@ -226,21 +226,21 @@ jobs:
       - name: Install the old version by name with install.sh
         if: runner.os != 'Windows'
         shell: bash
-        run: AUTOCV_PACKAGE=autocv-app UV_FIND_LINKS="$RUNNER_TEMP/links" sh -s -- --no-launch < install.sh
+        run: TAILORBIRDCV_PACKAGE=tailorbirdcv UV_FIND_LINKS="$RUNNER_TEMP/links" sh -s -- --no-launch < install.sh
       - name: Install the old version by name with install.ps1
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $env:AUTOCV_PACKAGE = 'autocv-app'
+          $env:TAILORBIRDCV_PACKAGE = 'tailorbirdcv'
           $env:UV_FIND_LINKS = Join-Path $env:RUNNER_TEMP 'links'
-          $env:AUTOCV_NO_LAUNCH = '1'
+          $env:TAILORBIRDCV_NO_LAUNCH = '1'
           Get-Content -Raw install.ps1 | Invoke-Expression
       - name: Upgrade from the web API and wait for the new version
         shell: bash
         run: |
           set -eux
           cp "$RUNNER_TEMP"/next/*.whl "$RUNNER_TEMP/links/"  # the new version is now "published"
-          export UV_FIND_LINKS="$RUNNER_TEMP/links" AUTOCV_PRIVATE="$RUNNER_TEMP/data"
+          export UV_FIND_LINKS="$RUNNER_TEMP/links" TAILORBIRDCV_PRIVATE="$RUNNER_TEMP/data"
           bin=$(uv tool dir --bin)  # where the installer put it (setup-uv moves it out of ~/.local/bin)
-          if [ "$RUNNER_OS" = Windows ]; then exe="$bin/autocv.exe"; else exe="$bin/autocv"; fi
-          uv run --no-project python .github/scripts/self_upgrade.py "$exe" "$AUTOCV_PRIVATE" "$OLD" "$NEW"
+          if [ "$RUNNER_OS" = Windows ]; then exe="$bin/tailorbirdcv.exe"; else exe="$bin/tailorbirdcv"; fi
+          uv run --no-project python .github/scripts/self_upgrade.py "$exe" "$TAILORBIRDCV_PRIVATE" "$OLD" "$NEW"

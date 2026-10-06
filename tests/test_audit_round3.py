@@ -5,9 +5,9 @@ import json
 import shutil
 from pathlib import Path
 
-from autocv import cli, importer
-from autocv.engine import AnthropicAPIEngine
-from autocv.store import Store
+from tailorbirdcv import cli, importer
+from tailorbirdcv.engine import AnthropicAPIEngine
+from tailorbirdcv.store import Store
 from test_importer import TRANSCRIPTION
 
 FIX = Path(__file__).parent / "fixtures"
@@ -29,7 +29,7 @@ def test_a_recreated_profile_never_reuses_an_old_id(tmp_path):
 
 
 def fresh_ids(profile: dict) -> list[str]:
-    from autocv.schema import MasterProfile
+    from tailorbirdcv.schema import MasterProfile
     return MasterProfile.model_validate(profile).all_ids()
 
 
@@ -63,7 +63,7 @@ def test_the_api_engine_reuses_one_client_per_key():
 
 
 def test_cli_build_reports_a_pdf_failure_without_a_traceback(tmp_path, monkeypatch, capsys):
-    from autocv import pdf
+    from tailorbirdcv import pdf
     private = tmp_path / "p"
     shutil.copytree(FIX, private, ignore=shutil.ignore_patterns("*.xml"))
     store = Store(private)

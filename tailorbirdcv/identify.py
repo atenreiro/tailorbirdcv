@@ -1,5 +1,5 @@
 """Which application a PDF came from. Nothing is ever added to the PDF: a file is matched against the
-copies AutoCV froze when you applied (and the current builds) by
+copies TailorbirdCV froze when you applied (and the current builds) by
 
 1. its SHA-256: the exact file, byte for byte;
 2. the PDF's own document ids: Word's XMP `xmpMM:DocumentID` and the trailer `/ID`, new on every export
@@ -48,7 +48,7 @@ def pdf_ids(data: bytes) -> dict:
             raw = getattr(first, "original_bytes", None) or bytes(str(first), "latin-1")
             pdf_id = raw.hex() or None
     except Exception as e:  # noqa: BLE001 — not a readable PDF
-        log.debug("AutoCV: no PDF ids (%s)", e)
+        log.debug("TailorbirdCV: no PDF ids (%s)", e)
     return {"document_id": document_id, "pdf_id": pdf_id}
 
 
@@ -82,7 +82,7 @@ def match(data: bytes, candidates: list[dict]) -> dict:
         try:
             theirs = c.get("fingerprint") or fingerprint(c["read"]())
         except OSError as e:
-            log.warning("AutoCV: can't read %s (%s)", c.get("file"), e)
+            log.warning("TailorbirdCV: can't read %s (%s)", c.get("file"), e)
             continue
         info = {k: v for k, v in c.items() if k not in ("read", "fingerprint")}
         if theirs.get("sha256") == mine["sha256"]:

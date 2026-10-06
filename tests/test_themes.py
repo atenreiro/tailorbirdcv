@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from autocv import ai, themes
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.render import docx_text, render, use_design
-from autocv.schema import load_profile, load_tailored
-from autocv.store import Store
+from tailorbirdcv import ai, themes
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.render import docx_text, render, use_design
+from tailorbirdcv.schema import load_profile, load_tailored
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"

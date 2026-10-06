@@ -155,7 +155,7 @@ export default function ReviewProfile({ draft, onSaved, onRestart }: {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {notice && <p role="status" className="rounded-lg bg-warn-soft px-4 py-3 text-[13.5px] text-warn">{notice}</p>}
       <p className="max-w-[760px] text-[13px] leading-[1.5] text-muted text-pretty">
-        Everything AutoCV writes later comes only from this profile. Highlighted lines didn’t match your file word-for-word
+        Everything TailorbirdCV writes later comes only from this profile. Highlighted lines didn’t match your file word-for-word
         (the AI may have misread them): fix, remove, or confirm each one. You can edit any line, and refine everything later
         under Master profile.
       </p>

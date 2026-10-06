@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from autocv import critique as hm
-from autocv.factcheck import FactChecker, Report, check, numbers
-from autocv.schema import Claim, load_profile, load_tailored
+from tailorbirdcv import critique as hm
+from tailorbirdcv.factcheck import FactChecker, Report, check, numbers
+from tailorbirdcv.schema import Claim, load_profile, load_tailored
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -281,8 +281,8 @@ def test_common_abbreviations_pass(profile, tailored):
 
 def test_a_group_label_cant_name_a_domain_the_profile_never_mentions():
     from pathlib import Path
-    from autocv import factcheck
-    from autocv.schema import load_profile, load_tailored
+    from tailorbirdcv import factcheck
+    from tailorbirdcv.schema import load_profile, load_tailored
     fix = Path(__file__).parent / "fixtures"
     profile, tailored = load_profile(fix / "profile.yaml"), load_tailored(fix / "tailored.yaml")
     tailored.competencies[0].label = "Healthcare & Clinical Systems"

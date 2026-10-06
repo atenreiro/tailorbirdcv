@@ -11,13 +11,13 @@ import yaml
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
-from autocv import ai, fit, themes
-from autocv import pdf as pdfmod
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.render import use_design
-from autocv.schema import load_profile, load_tailored
-from autocv.store import Store
+from tailorbirdcv import ai, fit, themes
+from tailorbirdcv import pdf as pdfmod
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.render import use_design
+from tailorbirdcv.schema import load_profile, load_tailored
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"

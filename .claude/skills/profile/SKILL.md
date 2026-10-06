@@ -6,11 +6,11 @@ argument-hint: "[ingest | prep-guide <path> | interview [role] | headlines]"
 
 # /profile — curate the source of truth
 
-The rules in `CLAUDE.md` apply. Every change to `<data folder>/profile.yaml` needs the user's explicit approval of the exact wording. Work in small batches and validate after each edit with `uv run autocv evidence`, which fails loudly on a schema error.
+The rules in `CLAUDE.md` apply. Every change to `<data folder>/profile.yaml` needs the user's explicit approval of the exact wording. Work in small batches and validate after each edit with `uv run tailorbirdcv evidence`, which fails loudly on a schema error.
 
 ## ingest (first run only)
 1. Make sure the base resume is at `<data folder>/source/base_resume.docx`.
-2. `uv run autocv ingest`, then `uv run autocv baseline`. The text must be identical. (The web UI's Welcome page imports any resume layout through the AI; `ingest` reads AutoCV's own layout.)
+2. `uv run tailorbirdcv ingest`, then `uv run tailorbirdcv baseline`. The text must be identical. (The web UI's Welcome page imports any resume layout through the AI; `ingest` reads TailorbirdCV's own layout.)
 3. Walk the user through what was captured: roles, achievement ids, skills.
 
 ## prep-guide <path>

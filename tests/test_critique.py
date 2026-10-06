@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from autocv import critique as hm
-from autocv import factcheck
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.schema import TailoredResume, load_profile
-from autocv.store import Store
+from tailorbirdcv import critique as hm
+from tailorbirdcv import factcheck
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.schema import TailoredResume, load_profile
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"

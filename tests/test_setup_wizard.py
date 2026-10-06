@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from autocv import importer
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
+from tailorbirdcv import importer
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 from test_importer import RESUME, TRANSCRIPTION
 
@@ -133,7 +133,7 @@ def test_encrypted_or_broken_pdfs_get_a_friendly_error(wizard):
 
 
 def test_the_browser_install_reports_its_state(wizard, monkeypatch):
-    from autocv import doctor
+    from tailorbirdcv import doctor
     client, _ = wizard
     monkeypatch.setattr(doctor, "browser_installed", lambda: True)
     assert client.get("/api/setup/browser").json()["state"] == "done"

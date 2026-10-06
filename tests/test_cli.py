@@ -1,7 +1,7 @@
 import socket
 import webbrowser
 
-from autocv import cli
+from tailorbirdcv import cli
 
 
 def test_opens_browser_once_server_listens(monkeypatch):

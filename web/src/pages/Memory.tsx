@@ -92,8 +92,8 @@ export function PreferencesPanel({ k, setK }: KnowledgeEdit) {
   return (
     <div className="flex flex-col gap-5">
       <p className="max-w-[760px] text-sm leading-[1.5] text-muted text-pretty">
-        Writing-style rules applied to every new draft. AutoCV proposes them from your Review edits and guidance
-        (Export step → “Teach AutoCV your style”). Only <strong>active</strong> ones are used, and they never override the fact rules.
+        Writing-style rules applied to every new draft. TailorbirdCV proposes them from your Review edits and guidance
+        (Export step → “Teach TailorbirdCV your style”). Only <strong>active</strong> ones are used, and they never override the fact rules.
       </p>
       {prefs.map((p) => (
         <div key={p.id} className={cx('flex flex-col gap-2.5 rounded-[14px] border border-rule bg-sheet px-5 py-4', p.status === 'dismissed' && 'opacity-50', p.status === 'proposed' && 'shadow-[inset_3px_0_0_#c47a00]')}>

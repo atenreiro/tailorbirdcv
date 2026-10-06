@@ -7,21 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from autocv import pdf
-from autocv.render import render
-from autocv.schema import load_profile, load_tailored
+from tailorbirdcv import pdf
+from tailorbirdcv.render import render
+from tailorbirdcv.schema import load_profile, load_tailored
 
 FIX = Path(__file__).parent / "fixtures"
 
-# CI sets AUTOCV_EXPECT_LIBREOFFICE=1 where it installed LibreOffice: not finding it is then a failure.
-pytestmark = pytest.mark.skipif(pdf.soffice() is None and not os.environ.get("AUTOCV_EXPECT_LIBREOFFICE"),
+# CI sets TAILORBIRDCV_EXPECT_LIBREOFFICE=1 where it installed LibreOffice: not finding it is then a failure.
+pytestmark = pytest.mark.skipif(pdf.soffice() is None and not os.environ.get("TAILORBIRDCV_EXPECT_LIBREOFFICE"),
                                 reason="LibreOffice isn't installed")
 
 
 def test_libreoffice_converts_the_fixture_resume(tmp_path, monkeypatch):
-    assert pdf.soffice() is not None, "LibreOffice was installed but AutoCV didn't find it"
-    monkeypatch.setenv("AUTOCV_WORD_DIR", str(tmp_path / "work"))
-    monkeypatch.setenv("AUTOCV_LO_PROFILE", str(tmp_path / "lo-profile"))
+    assert pdf.soffice() is not None, "LibreOffice was installed but TailorbirdCV didn't find it"
+    monkeypatch.setenv("TAILORBIRDCV_WORD_DIR", str(tmp_path / "work"))
+    monkeypatch.setenv("TAILORBIRDCV_LO_PROFILE", str(tmp_path / "lo-profile"))
     profile = load_profile(FIX / "profile.yaml")
     docx = render(profile, load_tailored(FIX / "tailored.yaml"), tmp_path / "app" / "Resume.docx")
     out = pdf.to_pdf(docx, engine="libreoffice", timeout=240)

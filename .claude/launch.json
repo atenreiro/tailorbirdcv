@@ -2,19 +2,19 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "autocv",
+      "name": "tailorbirdcv",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "autocv", "serve", "--port", "8000", "--no-browser"],
+      "runtimeArgs": ["run", "tailorbirdcv", "serve", "--port", "8000", "--no-browser"],
       "port": 8000
     },
     {
-      "name": "autocv-demo",
+      "name": "tailorbirdcv-demo",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["AUTOCV_ENGINE=fake", "uv", "run", "autocv", "serve", "--port", "8001", "--no-browser"],
+      "runtimeArgs": ["TAILORBIRDCV_ENGINE=fake", "uv", "run", "tailorbirdcv", "serve", "--port", "8001", "--no-browser"],
       "port": 8001
     },
     {
-      "name": "autocv-web-dev",
+      "name": "tailorbirdcv-web-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "web", "run", "dev"],
       "port": 5173

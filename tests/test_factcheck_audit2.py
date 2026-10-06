@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from autocv.factcheck import check
-from autocv.schema import Claim, load_profile, load_tailored
+from tailorbirdcv.factcheck import check
+from tailorbirdcv.schema import Claim, load_profile, load_tailored
 
 FIX = Path(__file__).parent / "fixtures"
 

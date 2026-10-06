@@ -1,31 +1,31 @@
 #!/bin/sh
-# AutoCV installer for macOS and Linux.
+# TailorbirdCV installer for macOS and Linux.
 #
-#   curl -LsSf https://raw.githubusercontent.com/atenreiro/autocv/main/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.sh | sh
 #
 # What it does, and nothing else:
 #   1. installs uv (Astral's Python tool installer) into ~/.local/bin, unless you already have it;
-#   2. installs or upgrades AutoCV from PyPI (`autocv-app`) in its own environment, on a Python that uv
+#   2. installs or upgrades TailorbirdCV from PyPI (`tailorbirdcv`) in its own environment, on a Python that uv
 #      downloads and manages itself: your system's Python (and Homebrew's) is never used or changed;
-#   3. makes sure the `autocv` command is on your PATH, in this terminal and new ones;
-#   4. starts AutoCV, which opens in your browser.
+#   3. makes sure the `tailorbirdcv` command is on your PATH, in this terminal and new ones;
+#   4. starts TailorbirdCV, which opens in your browser.
 # No sudo, nothing outside your home folder. Run it again to update.
 #
 # Options (after `sh -s --` when piping, e.g. `curl … | sh -s -- --no-launch`):
-#   --no-launch   install or update only; don't start AutoCV
-#   --uninstall   remove AutoCV (your profile and applications are kept)
-# Environment: AUTOCV_PACKAGE overrides what gets installed (default: autocv-app; e.g. autocv-app==0.2.0).
+#   --no-launch   install or update only; don't start TailorbirdCV
+#   --uninstall   remove TailorbirdCV (your profile and applications are kept)
+# Environment: TAILORBIRDCV_PACKAGE overrides what gets installed (default: tailorbirdcv; e.g. tailorbirdcv==0.2.0).
 
 set -eu
 
 # Everything runs from main(), called on the last line: when this script is piped into sh, nothing
 # happens until the whole file has arrived.
 
-# The Python AutoCV runs on: one CI tests, so every dependency has a ready-made wheel for it.
+# The Python TailorbirdCV runs on: one CI tests, so every dependency has a ready-made wheel for it.
 PYTHON_VERSION=3.13
 
 say() { printf '%s\n' "$*"; }
-fail() { printf 'AutoCV installer: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'TailorbirdCV installer: %s\n' "$*" >&2; exit 1; }
 
 find_uv() {
   if command -v uv >/dev/null 2>&1; then command -v uv; return; fi
@@ -49,11 +49,11 @@ install_uv() {
   rm -f "$tmp"
 }
 
-# An update or uninstall under a running AutoCV would swap its files out from under it.
+# An update or uninstall under a running TailorbirdCV would swap its files out from under it.
 refuse_if_running() {
   command -v pgrep >/dev/null 2>&1 || return 0
-  if pgrep -f "$1/autocv-app/" >/dev/null 2>&1; then
-    fail "AutoCV is running. Stop it first (press Ctrl+C in the terminal window where it runs), then run this again."
+  if pgrep -f "$1/tailorbirdcv/" >/dev/null 2>&1; then
+    fail "TailorbirdCV is running. Stop it first (press Ctrl+C in the terminal window where it runs), then run this again."
   fi
 }
 
@@ -71,26 +71,26 @@ main() {
 
   case "$(uname -s)" in
     Darwin|Linux) ;;
-    *) fail "this script is for macOS and Linux. On Windows, run in PowerShell: irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex" ;;
+    *) fail "this script is for macOS and Linux. On Windows, run in PowerShell: irm https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.ps1 | iex" ;;
   esac
   if [ "$(id -u)" = 0 ]; then
-    fail "don't run this with sudo or as root: AutoCV installs into your own user folder. Run it again without sudo."
+    fail "don't run this with sudo or as root: TailorbirdCV installs into your own user folder. Run it again without sudo."
   fi
 
   # Use the system's certificate store (works behind company proxies that inspect HTTPS), and only
   # uv-managed Pythons (probing macOS's /usr/bin/python3 stub would pop up an Xcode tools prompt, and a
-  # Homebrew Python upgrade would break AutoCV's environment).
+  # Homebrew Python upgrade would break TailorbirdCV's environment).
   UV_SYSTEM_CERTS=${UV_SYSTEM_CERTS:-1}; UV_NATIVE_TLS=${UV_NATIVE_TLS:-1}; UV_MANAGED_PYTHON=1
   export UV_SYSTEM_CERTS UV_NATIVE_TLS UV_MANAGED_PYTHON
 
   uv=$(find_uv)
   if [ "$uninstall" = 1 ]; then
-    [ -n "$uv" ] || fail "uv isn't installed, so AutoCV isn't either."
+    [ -n "$uv" ] || fail "uv isn't installed, so TailorbirdCV isn't either."
     refuse_if_running "$("$uv" tool dir)"
-    "$uv" tool uninstall autocv-app </dev/null
+    "$uv" tool uninstall tailorbirdcv </dev/null
     say ""
-    say "AutoCV is removed. Your profile and applications are still in your data folder:"
-    if [ "$(uname -s)" = Darwin ]; then say "  ~/Library/Application Support/AutoCV"; else say "  ${XDG_DATA_HOME:-~/.local/share}/AutoCV"; fi
+    say "TailorbirdCV is removed. Your profile and applications are still in your data folder:"
+    if [ "$(uname -s)" = Darwin ]; then say "  ~/Library/Application Support/TailorbirdCV"; else say "  ${XDG_DATA_HOME:-~/.local/share}/TailorbirdCV"; fi
     say "Delete that folder yourself if you want them gone. uv stays installed."
     return 0
   fi
@@ -107,25 +107,25 @@ main() {
   refuse_if_running "$("$uv" tool dir)"
   case ":$PATH:" in
     *":$bindir:"*) ;;
-    *) "$uv" tool update-shell </dev/null >/dev/null 2>&1 || true  # new terminals find `autocv`
+    *) "$uv" tool update-shell </dev/null >/dev/null 2>&1 || true  # new terminals find `tailorbirdcv`
        PATH="$bindir:$PATH"; export PATH ;;                        # and so does this one
   esac
 
-  package=${AUTOCV_PACKAGE:-autocv-app}
-  say "Installing AutoCV ($package)…"
+  package=${TAILORBIRDCV_PACKAGE:-tailorbirdcv}
+  say "Installing TailorbirdCV ($package)…"
   "$uv" tool install --upgrade --python "$PYTHON_VERSION" "$package" </dev/null
-  autocv="$bindir/autocv"
-  [ -x "$autocv" ] || fail "AutoCV was installed but $autocv is missing."
+  tailorbirdcv="$bindir/tailorbirdcv"
+  [ -x "$tailorbirdcv" ] || fail "TailorbirdCV was installed but $tailorbirdcv is missing."
 
   say ""
-  say "$("$autocv" --version) is installed."
-  say "  Start it any time with:  autocv serve   (in a new terminal)"
+  say "$("$tailorbirdcv" --version) is installed."
+  say "  Start it any time with:  tailorbirdcv serve   (in a new terminal)"
   say "  Update with:             the same command you just ran"
-  say "  Check your setup with:   autocv doctor"
+  say "  Check your setup with:   tailorbirdcv doctor"
   if [ "$launch" = 1 ]; then
     say ""
-    say "Starting AutoCV. It opens in your browser; press Ctrl+C here to stop it."
-    exec "$autocv" serve </dev/null
+    say "Starting TailorbirdCV. It opens in your browser; press Ctrl+C here to stop it."
+    exec "$tailorbirdcv" serve </dev/null
   fi
 }
 

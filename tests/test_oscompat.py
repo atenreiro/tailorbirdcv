@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from autocv import engine, oscompat
-from autocv.store import slug
+from tailorbirdcv import engine, oscompat
+from tailorbirdcv.store import slug
 
 
 def test_rmtree_removes_read_only_files(tmp_path):
@@ -78,7 +78,7 @@ def test_reveal_command_per_os(monkeypatch, tmp_path):
 
 def test_reads_retry_while_windows_has_the_file_mid_replace(tmp_path, monkeypatch):
     """On Windows, opening a file another thread is replacing raises PermissionError for a moment."""
-    from autocv import oscompat
+    from tailorbirdcv import oscompat
     f = tmp_path / "profile.yaml"
     f.write_bytes(b"a: 1\r\nb: 2\r")  # exact bytes on every OS (text mode would add \r on Windows)
     real, calls = Path.read_bytes, {"n": 0}

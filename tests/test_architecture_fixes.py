@@ -1,5 +1,5 @@
 """Fixes from the architecture review: no server hang around builds, no 500 on a failing compose, Claude Code
-never used on a pay-per-use login, the key link never leaves AutoCV, and the key never reaches the request log."""
+never used on a pay-per-use login, the key link never leaves TailorbirdCV, and the key never reaches the request log."""
 
 import asyncio
 import logging
@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from autocv import cli
-from autocv.api import create_app
-from autocv.engine import ClaudeCLIEngine, EngineError, FakeEngine
-from autocv.store import Store
+from tailorbirdcv import cli
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import ClaudeCLIEngine, EngineError, FakeEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 from test_freeze_history import ANALYSIS, JD, TAILORED, env  # noqa: F401 — application fixture with a fake PDF engine
 
@@ -118,7 +118,7 @@ def test_claude_code_refuses_pay_per_use_logins(login, refused):
         assert engine.calls.count(["auth", "status"]) == 1  # checked once a minute, not per call
 
 
-# ---- 4. the private link only ever redirects within AutoCV ---------------------------------------------------
+# ---- 4. the private link only ever redirects within TailorbirdCV ---------------------------------------------------
 @pytest.mark.parametrize("path,expected", [
     ("//evil.example/?key=wrong", "/evil.example/"),
     ("/%5Cevil.example/?key=wrong", "/evil.example/"),

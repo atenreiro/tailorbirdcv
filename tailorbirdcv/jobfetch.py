@@ -12,7 +12,7 @@ falling back to visible text, try (in order):
 SSRF guard: every request — including each redirect hop, and every request the
 headless browser makes (scripts, XHR/fetch, redirects) — must target a public
 address. WebSockets and service workers are disabled in the browser.
-Set AUTOCV_BROWSER_FALLBACK=0 to disable step 4.
+Set TAILORBIRDCV_BROWSER_FALLBACK=0 to disable step 4.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def _embedded_ipv4(addr: ipaddress.IPv6Address) -> list[ipaddress.IPv4Address]:
 def check_addr(ip: str, port: int | None = None) -> None:
     """Raise BlockedURL unless `ip` is a public unicast address, including any IPv4 address
     embedded in an IPv6 one (mapped, NAT64, IPv4-compatible, 6to4, Teredo). (`port` is for tests.)"""
-    blocked = BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
+    blocked = BlockedURL("That URL points to a private or local network address, so TailorbirdCV won't fetch it.")
     addr = ipaddress.ip_address(ip)
     candidates: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = [addr]
     if isinstance(addr, ipaddress.IPv6Address):
@@ -159,7 +159,7 @@ def pinned_client(timeout: float = 20) -> httpx.AsyncClient:
     assert hasattr(pool, "_network_backend"), "httpx internals changed: PinnedBackend can't be installed"
     pool._network_backend = PinnedBackend()
     return httpx.AsyncClient(transport=transport, follow_redirects=False, timeout=timeout, trust_env=False,
-                             headers={"User-Agent": "Mozilla/5.0 AutoCV"})
+                             headers={"User-Agent": "Mozilla/5.0 TailorbirdCV"})
 
 
 async def safe_fetch(client: httpx.AsyncClient, url: str, max_bytes: int = MAX_BYTES) -> tuple[bytes, str, str]:
@@ -395,7 +395,7 @@ def from_page(page: str) -> Job | None:
 # --------------------------------------------------------------------------- headless browser
 
 
-BROWSER_FALLBACK = os.environ.get("AUTOCV_BROWSER_FALLBACK", "1") != "0"
+BROWSER_FALLBACK = os.environ.get("TAILORBIRDCV_BROWSER_FALLBACK", "1") != "0"
 RENDER_TIMEOUT_MS = 30_000
 BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
@@ -504,9 +504,9 @@ async def render_page(url: str) -> Rendered:
                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-quic"])
         except PWError as e:
             if "sandbox" in str(e).lower():
-                raise FetchError("The headless browser can't start its security sandbox on this computer, so AutoCV "
+                raise FetchError("The headless browser can't start its security sandbox on this computer, so TailorbirdCV "
                                  "won't render job pages with it. Paste the job description instead.")
-            raise FetchError("The headless browser isn't installed — run `autocv install-browser` "
+            raise FetchError("The headless browser isn't installed — run `tailorbirdcv install-browser` "
                              "(or Settings → System check → Install).")
         try:
             context = await browser.new_context(user_agent=BROWSER_UA, service_workers="block", locale="en-US")

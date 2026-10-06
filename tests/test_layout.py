@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from autocv.store import Store
+from tailorbirdcv.store import Store
 
 FIX = Path(__file__).parent / "fixtures"
 TODAY = f"{dt.date.today():%Y-%m-%d}"
@@ -90,8 +90,8 @@ def test_old_flat_folders_move_and_old_ids_keep_working(store):
 
 
 def test_migration_runs_when_the_server_starts(store):
-    from autocv.api import create_app
-    from autocv.engine import FakeEngine
+    from tailorbirdcv.api import create_app
+    from tailorbirdcv.engine import FakeEngine
     from conftest import client_for
     old = _old_style(store, "2026-10-03_globex_data-analyst", "Globex", "Data Analyst", "built")
     client = client_for(create_app(store, FakeEngine({})))

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { api, type UpdateStatus } from '../api'
 import { Spinner } from '../ui'
 
-const DISMISS_KEY = 'autocv:update-dismissed'  // the version (or upgrade outcome) "Later"/"Dismiss" hid
+const DISMISS_KEY = 'tailorbirdcv:update-dismissed'  // the version (or upgrade outcome) "Later"/"Dismiss" hid
 const POLL_MS = 2000
 const GIVE_UP_MS = 180_000
 
@@ -30,7 +30,7 @@ function Command({ text }: { text: string }) {
   )
 }
 
-/** "A newer AutoCV is out": Upgrade (one-line-installer copies) or the command to run, plus the restart itself
+/** "A newer TailorbirdCV is out": Upgrade (one-line-installer copies) or the command to run, plus the restart itself
  * and its outcome. Shown on every page; checks happen on the server (PyPI, at most daily, off in Settings). */
 export default function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
@@ -42,8 +42,8 @@ export default function UpdateBanner() {
   useEffect(() => {
     const load = () => { api.updateStatus().then(setStatus).catch(() => {}) }
     load()
-    window.addEventListener('autocv:update', load)  // Settings → About AutoCV changed something
-    return () => window.removeEventListener('autocv:update', load)
+    window.addEventListener('tailorbirdcv:update', load)  // Settings → About TailorbirdCV changed something
+    return () => window.removeEventListener('tailorbirdcv:update', load)
   }, [])
 
   useEffect(() => {
@@ -72,10 +72,10 @@ export default function UpdateBanner() {
           </h2>
           <p className="text-[15px] leading-[1.6] text-body text-pretty">
             {phase === 'upgrading'
-              ? <>AutoCV is downloading the new version and restarting. This takes about a minute; the page reloads by itself.
+              ? <>TailorbirdCV is downloading the new version and restarting. This takes about a minute; the page reloads by itself.
                 {status.windows ? ' It continues in a new terminal window.' : ''}</>
-              : <>Check the terminal where AutoCV runs. If it stopped, start it again with
-                <code className="mx-1 rounded bg-wash px-1.5 font-mono text-[13px]">autocv serve</code>
+              : <>Check the terminal where TailorbirdCV runs. If it stopped, start it again with
+                <code className="mx-1 rounded bg-wash px-1.5 font-mono text-[13px]">tailorbirdcv serve</code>
                 or run the install command from the README again.</>}
           </p>
           {phase === 'stuck' && <button className="btn h-9 px-3.5" onClick={() => window.location.reload()}>Reload</button>}
@@ -89,7 +89,7 @@ export default function UpdateBanner() {
   if (last && dismissed !== `upgrade:${last.at}` && !(last.ok && status.newer)) {  // a newer version beats "upgraded"
     return last.ok ? (
       <div role="status" className={`${banner} border-[#bfe3cf] bg-ok-soft`}>
-        <span className="flex-1"><strong>AutoCV was upgraded to {last.target}.</strong> You’re on the latest version.</span>
+        <span className="flex-1"><strong>TailorbirdCV was upgraded to {last.target}.</strong> You’re on the latest version.</span>
         <button className={quiet} onClick={() => hide(`upgrade:${last.at}`)}>Dismiss</button>
       </div>
     ) : (
@@ -112,9 +112,9 @@ export default function UpdateBanner() {
   return (
     <div role="status" className={`${banner} border-[#cfd8f7] bg-accent-soft`}>
       <span className="flex-1">
-        <strong>AutoCV {latest} is available</strong> (you have {status.current}).
+        <strong>TailorbirdCV {latest} is available</strong> (you have {status.current}).
         {status.kind === 'uv-tool' && phase === 'confirm' &&
-          <> AutoCV restarts to upgrade, in about a minute{status.windows ? ', in a new terminal window' : ''}. Anything running stops.</>}
+          <> TailorbirdCV restarts to upgrade, in about a minute{status.windows ? ', in a new terminal window' : ''}. Anything running stops.</>}
       </span>
       {status.kind === 'uv-tool' ? (
         phase === 'confirm' ? (

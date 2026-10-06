@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from autocv.engine import ClaudeCLIEngine, EngineError
+from tailorbirdcv.engine import ClaudeCLIEngine, EngineError
 
 FAKE = """
 import json, os, sys

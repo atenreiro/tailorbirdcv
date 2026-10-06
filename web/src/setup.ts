@@ -10,7 +10,7 @@ export const markSetupDone = () => { ready = true }
 
 if (typeof window !== 'undefined') {
   // The server said there's no profile (e.g. the data folder changed): check again on the next page.
-  window.addEventListener('autocv:no-profile', () => { ready = null })
+  window.addEventListener('tailorbirdcv:no-profile', () => { ready = null })
 }
 
 export function useFirstRun() {

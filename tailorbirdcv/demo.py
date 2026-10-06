@@ -1,5 +1,5 @@
 """Canned engine responses so the UI can be exercised without the Claude CLI
-(AUTOCV_ENGINE=fake). Responses are derived from the user's profile and contain no
+(TAILORBIRDCV_ENGINE=fake). Responses are derived from the user's profile and contain no
 new facts: compose returns the base resume layout (or the whole profile) unchanged."""
 
 from __future__ import annotations

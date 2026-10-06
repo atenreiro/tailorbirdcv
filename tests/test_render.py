@@ -1,11 +1,11 @@
 """Render ↔ ingest round trip on the synthetic fixture: what render writes, ingest
-must read back identically (this is what makes `autocv baseline` meaningful)."""
+must read back identically (this is what makes `tailorbirdcv baseline` meaningful)."""
 
 from pathlib import Path
 
-from autocv.ingest import ingest
-from autocv.render import docx_text, render
-from autocv.schema import MasterProfile, TailoredResume, load_profile, load_tailored
+from tailorbirdcv.ingest import ingest
+from tailorbirdcv.render import docx_text, render
+from tailorbirdcv.schema import MasterProfile, TailoredResume, load_profile, load_tailored
 
 FIX = Path(__file__).parent / "fixtures"
 

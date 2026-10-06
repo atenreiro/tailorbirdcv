@@ -1,9 +1,9 @@
-"""CI: AutoCV upgrades itself (Applications banner → Upgrade), scripted against the API.
+"""CI: TailorbirdCV upgrades itself (Applications banner → Upgrade), scripted against the API.
 
-Expects AutoCV <old> installed by name with the one-line installer from a local package folder (UV_FIND_LINKS)
-that also holds <new>. Serves a PyPI-like answer announcing <new> (AUTOCV_UPDATE_URL points here), starts
-`autocv serve`, asks it to upgrade, and waits until <new> answers on the same port and reports a successful upgrade.
-Usage: self_upgrade.py <autocv executable> <data folder> <old> <new>
+Expects TailorbirdCV <old> installed by name with the one-line installer from a local package folder (UV_FIND_LINKS)
+that also holds <new>. Serves a PyPI-like answer announcing <new> (TAILORBIRDCV_UPDATE_URL points here), starts
+`tailorbirdcv serve`, asks it to upgrade, and waits until <new> answers on the same port and reports a successful upgrade.
+Usage: self_upgrade.py <tailorbirdcv executable> <data folder> <old> <new>
 """
 
 import hashlib
@@ -24,9 +24,9 @@ exe, data, old, new = sys.argv[1], Path(sys.argv[2]).resolve(), sys.argv[3], sys
 
 def call(method: str, path: str) -> dict:
     key = (data / ".access-key").read_text(encoding="utf-8").strip()
-    cookie = "autocv_key_" + hashlib.sha256(str(data).encode()).hexdigest()[:10]
+    cookie = "tailorbirdcv_key_" + hashlib.sha256(str(data).encode()).hexdigest()[:10]
     req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api{path}", method=method, data=b"" if method == "POST" else None,
-                                 headers={"Cookie": f"{cookie}={key}", "X-AutoCV": "1"})
+                                 headers={"Cookie": f"{cookie}={key}", "X-TailorbirdCV": "1"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
 
@@ -42,14 +42,14 @@ def wait_for(check, what: str, seconds: float):
             pass  # restarting
         time.sleep(1)
     stop()
-    sys.exit(f"timed out waiting for {what}\n--- autocv serve output ---\n{LOG.read_text(errors='replace')[-4000:]}")
+    sys.exit(f"timed out waiting for {what}\n--- tailorbirdcv serve output ---\n{LOG.read_text(errors='replace')[-4000:]}")
 
 
 def stop():
-    """Stop AutoCV: on POSIX it's still our child (the upgrade re-execs in place); on Windows the upgraded copy
+    """Stop TailorbirdCV: on POSIX it's still our child (the upgrade re-execs in place); on Windows the upgraded copy
     runs in the helper's new console, so stop it by name."""
     if os.name == "nt":
-        subprocess.run(["taskkill", "/F", "/T", "/IM", "autocv.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/T", "/IM", "tailorbirdcv.exe"], capture_output=True)
     server.terminate()
 
 
@@ -64,20 +64,20 @@ class Feed(BaseHTTPRequestHandler):
 
 feed = ThreadingHTTPServer(("127.0.0.1", 0), Feed)
 threading.Thread(target=feed.serve_forever, daemon=True).start()
-os.environ["AUTOCV_UPDATE_URL"] = f"http://127.0.0.1:{feed.server_port}/pypi/autocv-app/json"
+os.environ["TAILORBIRDCV_UPDATE_URL"] = f"http://127.0.0.1:{feed.server_port}/pypi/tailorbirdcv/json"
 LOG = data / "serve.log"
 with open(LOG, "w") as log:  # never our stdout: the server outlives this script's pipe otherwise
     server = subprocess.Popen([exe, "serve", "--port", str(PORT), "--no-browser"], stdin=subprocess.DEVNULL,
                               stdout=log, stderr=subprocess.STDOUT)
-status = wait_for(lambda: call("GET", "/update"), "AutoCV to start", 60)
+status = wait_for(lambda: call("GET", "/update"), "TailorbirdCV to start", 60)
 print("before:", status)
 assert status["current"] == old and status["latest"] == new and status["newer"], status
 assert status["kind"] == "uv-tool", status
 print("upgrade:", call("POST", "/update/upgrade"))
-after = wait_for(lambda: (s := call("GET", "/update"))["current"] == new and s, f"AutoCV {new} to answer", 300)
+after = wait_for(lambda: (s := call("GET", "/update"))["current"] == new and s, f"TailorbirdCV {new} to answer", 300)
 print("after:", after)
 assert after["last_upgrade"] and after["last_upgrade"]["ok"] and after["last_upgrade"]["target"] == new, after
 assert not after["newer"], after
-print(f"AutoCV upgraded itself from {old} to {new} and answers on port {PORT} again.")
-print("--- autocv serve output ---", LOG.read_text(errors="replace")[-3000:], sep="\n")
+print(f"TailorbirdCV upgraded itself from {old} to {new} and answers on port {PORT} again.")
+print("--- tailorbirdcv serve output ---", LOG.read_text(errors="replace")[-3000:], sep="\n")
 stop()

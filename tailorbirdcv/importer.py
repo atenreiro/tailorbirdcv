@@ -1,7 +1,7 @@
 """First-run import: any resume (.docx, .pdf, text) → a draft master profile.
 
 The AI only *transcribes*: it sorts the resume's own sentences into the profile's sections, copying
-the wording verbatim. AutoCV then assigns the evidence ids itself (the same scheme as `autocv ingest`)
+the wording verbatim. TailorbirdCV then assigns the evidence ids itself (the same scheme as `tailorbirdcv ingest`)
 and checks every extracted text against the original; anything not found word-for-word is flagged
 for the user to check. Nothing is saved here: the user reviews the draft and saves it explicitly.
 """
@@ -74,7 +74,7 @@ def _converted_text(name: str, data: bytes) -> str:
     if not tool:
         raise ImportError_(f"{Path(name).suffix} files can't be read here. Save your CV as .docx (or PDF) in your word "
                            "processor first.")
-    with tempfile.TemporaryDirectory(prefix="autocv-cv-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="tailorbirdcv-cv-") as tmp:
         src = Path(tmp) / f"cv{Path(name).suffix}"
         src.write_bytes(data)
         try:
@@ -170,7 +170,7 @@ def import_schema() -> dict:
     }
 
 
-SYSTEM = """You transcribe resumes into a structured form for AutoCV. You never write, rephrase, summarise, \
+SYSTEM = """You transcribe resumes into a structured form for TailorbirdCV. You never write, rephrase, summarise, \
 translate, correct or add anything: every value is copied verbatim from the resume. Answer only with JSON \
 matching the schema."""
 
@@ -239,7 +239,7 @@ def _clean(x) -> str:
 
 
 def build_profile(raw: dict, used_ids: set[str] | None = None) -> dict:
-    """The AI's transcription → a MasterProfile dict with AutoCV's own ids (avoiding `used_ids`)."""
+    """The AI's transcription → a MasterProfile dict with TailorbirdCV's own ids (avoiding `used_ids`)."""
     taken: set[str] = set(used_ids or ())
     c = raw.get("contact") or {}
     links = [{"text": _clean(lk.get("text")), "url": _clean(lk.get("url"))}

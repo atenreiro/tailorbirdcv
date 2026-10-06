@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from autocv import pdf as pdfmod
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
+from tailorbirdcv import pdf as pdfmod
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -211,7 +211,7 @@ def test_funnel_falls_back_to_evidence_for_older_applications(env):
     meta = store.meta(app_id)
     meta.pop("milestones")
     meta["status"] = "rejected"
-    from autocv.store import _write_json_atomic
+    from tailorbirdcv.store import _write_json_atomic
     _write_json_atomic(store.app_path(app_id) / "meta.json", meta)   # as written before milestones existed
     stage, when = reached(client)
     assert stage == "applied" and when == store.sent_copies(app_id)[-1]["created"]
@@ -250,7 +250,7 @@ def test_outcomes_imply_the_stage_reached(env):
 
 def test_legacy_rejected_and_withdrawn_become_closed(env):
     client, store, app_id, _ = env
-    from autocv.store import _write_json_atomic
+    from tailorbirdcv.store import _write_json_atomic
     meta = store.meta(app_id)
     meta.update(status="withdrawn", updated="2026-09-20T10:00:00")
     _write_json_atomic(store.app_path(app_id) / "meta.json", meta)

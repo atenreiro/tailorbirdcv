@@ -6,8 +6,8 @@ import threading
 
 import pytest
 
-from autocv import jobfetch
-from autocv.jobfetch import BlockedURL, check_public_url, pinned_client, safe_get
+from tailorbirdcv import jobfetch
+from tailorbirdcv.jobfetch import BlockedURL, check_public_url, pinned_client, safe_get
 
 
 class Recorder(http.server.BaseHTTPRequestHandler):

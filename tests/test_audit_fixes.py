@@ -11,9 +11,9 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -57,7 +57,7 @@ def composed_app(client):
 
 def test_cross_site_post_without_header_is_refused(env):
     _, store, engine = env
-    raw = TestClient(create_app(store, engine), base_url="http://127.0.0.1")  # no X-AutoCV header
+    raw = TestClient(create_app(store, engine), base_url="http://127.0.0.1")  # no X-TailorbirdCV header
     res = raw.post("/api/applications", json={"jd": JD})
     assert res.status_code == 403 and "cross-site" in res.json()["detail"]
     assert raw.get("/api/applications").status_code == 401          # no access key: nothing to read either
@@ -314,10 +314,10 @@ def test_reveal_failure_is_reported(env, monkeypatch):
 
 
 def test_the_api_needs_this_users_access_key(env):
-    """Other programs or accounts on the computer can't use the server; the link from `autocv serve` unlocks it."""
+    """Other programs or accounts on the computer can't use the server; the link from `tailorbirdcv serve` unlocks it."""
     _, store, engine = env
     app = create_app(store, engine)
-    raw = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"}, follow_redirects=False)
+    raw = TestClient(app, base_url="http://127.0.0.1", headers={"X-TailorbirdCV": "1"}, follow_redirects=False)
     r = raw.get("/api/profile")
     assert r.status_code == 401 and r.json()["detail"]["code"] == "locked"
     assert raw.get("/?key=wrong").status_code == 303 and app.state.cookie_name not in raw.cookies
@@ -339,7 +339,7 @@ def test_the_data_folder_is_private(env):
 
 
 def test_site_local_ipv6_is_blocked():
-    from autocv.jobfetch import BlockedURL, check_addr
+    from tailorbirdcv.jobfetch import BlockedURL, check_addr
     with pytest.raises(BlockedURL):
         check_addr("fec0::1")
 
@@ -372,7 +372,7 @@ def test_a_failed_freeze_leaves_no_half_copy(env, monkeypatch):
 
 
 def test_profile_create_ignores_fields_that_widen_the_fact_check(env):
-    from autocv import importer
+    from tailorbirdcv import importer
     shaped = importer.import_shape({"vocabulary": ["Kubernetes"], "synonyms": [["a", "b"]], "retired_ids": ["x"],
                                     "summary_facts": [{"id": "s1", "text": "t", "source": "interview", "tags": ["x"]}]})
     assert "vocabulary" not in shaped and "synonyms" not in shaped and "retired_ids" not in shaped
@@ -382,7 +382,7 @@ def test_profile_create_ignores_fields_that_widen_the_fact_check(env):
 def test_serve_never_opens_its_link_on_a_busy_port(tmp_path, monkeypatch, capsys):
     import argparse
     import socket
-    from autocv import cli
+    from tailorbirdcv import cli
     busy = socket.socket()
     busy.bind(("127.0.0.1", 0))
     busy.listen()
@@ -405,7 +405,7 @@ def test_each_data_folder_has_its_own_cookie(tmp_path):
 
 
 def test_a_failed_pdf_test_offers_the_other_engine(monkeypatch):
-    from autocv import pdf
+    from tailorbirdcv import pdf
     monkeypatch.setattr(pdf, "detect", lambda: [{"id": "word", "name": "Microsoft Word", "available": True, "path": None, "version": None},
                                                 {"id": "libreoffice", "name": "LibreOffice", "available": True, "path": None, "version": None}])
 
@@ -417,7 +417,7 @@ def test_a_failed_pdf_test_offers_the_other_engine(monkeypatch):
 
 
 def test_a_keychain_that_refuses_is_not_no_key(monkeypatch):
-    from autocv import apikey
+    from tailorbirdcv import apikey
 
     class Refusing:
         def get_password(self, *a):

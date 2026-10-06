@@ -16,4 +16,4 @@ class CustomBuildHook(BuildHookInterface):
         dist = Path(self.root) / "web" / "dist"
         if not (dist / "index.html").is_file():
             raise RuntimeError("web/dist is missing: run `npm --prefix web ci && npm --prefix web run build` first")
-        build_data["force_include"][str(dist)] = "autocv/web"
+        build_data["force_include"][str(dist)] = "tailorbirdcv/web"

@@ -1,19 +1,19 @@
-# AutoCV installer for Windows (Windows PowerShell 5.1 or PowerShell 7).
+# TailorbirdCV installer for Windows (Windows PowerShell 5.1 or PowerShell 7).
 #
-#   irm https://raw.githubusercontent.com/atenreiro/autocv/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.ps1 | iex
 #
 # What it does, and nothing else:
 #   1. installs uv (Astral's Python tool installer) into %USERPROFILE%\.local\bin, unless you already have it;
-#   2. installs or upgrades AutoCV from PyPI (`autocv-app`) in its own environment, on a Python that uv
+#   2. installs or upgrades TailorbirdCV from PyPI (`tailorbirdcv`) in its own environment, on a Python that uv
 #      downloads and manages itself: any Python you already have is never used or changed;
-#   3. makes sure the `autocv` command is on your PATH, in this window and new ones;
-#   4. starts AutoCV, which opens in your browser.
+#   3. makes sure the `tailorbirdcv` command is on your PATH, in this window and new ones;
+#   4. starts TailorbirdCV, which opens in your browser.
 # No administrator rights, nothing outside your user folder. Run it again to update.
 #
 # Options, set before running:
-#   $env:AUTOCV_NO_LAUNCH = "1"   install or update only; don't start AutoCV
-#   $env:AUTOCV_UNINSTALL = "1"   remove AutoCV (your profile and applications are kept); cleared afterwards
-#   $env:AUTOCV_PACKAGE = "..."   what to install (default: autocv-app; e.g. autocv-app==0.2.0)
+#   $env:TAILORBIRDCV_NO_LAUNCH = "1"   install or update only; don't start TailorbirdCV
+#   $env:TAILORBIRDCV_UNINSTALL = "1"   remove TailorbirdCV (your profile and applications are kept); cleared afterwards
+#   $env:TAILORBIRDCV_PACKAGE = "..."   what to install (default: tailorbirdcv; e.g. tailorbirdcv==0.2.0)
 #
 # It runs inside your own PowerShell window (through `iex`), so it never calls `exit`. Kept to plain
 # ASCII so Windows PowerShell 5.1 reads it correctly however it's saved or downloaded.
@@ -22,7 +22,7 @@
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 may not offer TLS 1.2 by default; PyPI, GitHub and astral.sh require it.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    # The Python AutoCV runs on: one CI tests, so every dependency has a ready-made wheel for it.
+    # The Python TailorbirdCV runs on: one CI tests, so every dependency has a ready-made wheel for it.
     $pythonVersion = '3.13'
 
     function Find-Uv {
@@ -50,16 +50,16 @@
         return $false
     }
 
-    # Windows locks the files of a running program: updating or removing a running AutoCV would fail halfway.
+    # Windows locks the files of a running program: updating or removing a running TailorbirdCV would fail halfway.
     function Assert-NotRunning([string]$uv) {
-        $toolDir = (& $uv tool dir | Out-String).Trim().TrimEnd('\') + '\autocv-app\'
+        $toolDir = (& $uv tool dir | Out-String).Trim().TrimEnd('\') + '\tailorbirdcv\'
         $binDir = (& $uv tool dir --bin | Out-String).Trim().TrimEnd('\') + '\'
         $running = Get-Process -ErrorAction SilentlyContinue | Where-Object {
             $_.Path -and ($_.Path.StartsWith($toolDir, [StringComparison]::OrdinalIgnoreCase) -or
-                          $_.Path -ieq ($binDir + 'autocv.exe') -or $_.Path -ieq ($binDir + 'autocv-app.exe'))
+                          $_.Path -ieq ($binDir + 'tailorbirdcv.exe'))
         }
         if ($running) {
-            throw 'AutoCV is running. Stop it first (press Ctrl+C in the window where it runs), then run this again.'
+            throw 'TailorbirdCV is running. Stop it first (press Ctrl+C in the window where it runs), then run this again.'
         }
     }
 
@@ -78,14 +78,14 @@
 
         $uv = Find-Uv
 
-        if ($env:AUTOCV_UNINSTALL -eq '1') {
-            Remove-Item Env:AUTOCV_UNINSTALL  # so running the installer again in this window installs
-            if (-not $uv) { throw "uv isn't installed, so AutoCV isn't either." }
+        if ($env:TAILORBIRDCV_UNINSTALL -eq '1') {
+            Remove-Item Env:TAILORBIRDCV_UNINSTALL  # so running the installer again in this window installs
+            if (-not $uv) { throw "uv isn't installed, so TailorbirdCV isn't either." }
             Assert-NotRunning $uv
-            Invoke-Checked 'Removing AutoCV' { & $uv tool uninstall autocv-app }
+            Invoke-Checked 'Removing TailorbirdCV' { & $uv tool uninstall tailorbirdcv }
             Write-Host ''
-            Write-Host 'AutoCV is removed. Your profile and applications are still in your data folder:'
-            Write-Host "  $env:LOCALAPPDATA\AutoCV"
+            Write-Host 'TailorbirdCV is removed. Your profile and applications are still in your data folder:'
+            Write-Host "  $env:LOCALAPPDATA\TailorbirdCV"
             Write-Host 'Delete that folder yourself if you want them gone. uv stays installed.'
             return
         }
@@ -107,32 +107,32 @@
         }
         Assert-NotRunning $uv
         if (-not (Test-OnUserPath $bindir)) {
-            # new windows find `autocv` (Continue: in PowerShell 5.1, redirected stderr would otherwise stop the script)
+            # new windows find `tailorbirdcv` (Continue: in PowerShell 5.1, redirected stderr would otherwise stop the script)
             & { $ErrorActionPreference = 'Continue'; & $uv tool update-shell 2>&1 | Out-Null }
         }
         if (-not (($env:Path -split ';') -contains $bindir)) { $env:Path = "$bindir;$env:Path" }  # and this one
 
-        $package = if ($env:AUTOCV_PACKAGE) { $env:AUTOCV_PACKAGE } else { 'autocv-app' }
-        Write-Host "Installing AutoCV ($package)..."
-        Invoke-Checked 'Installing AutoCV' { & $uv tool install --upgrade --python $pythonVersion $package }
-        $autocv = Join-Path $bindir 'autocv.exe'
-        if (-not (Test-Path -LiteralPath $autocv)) { throw "AutoCV was installed but $autocv is missing." }
+        $package = if ($env:TAILORBIRDCV_PACKAGE) { $env:TAILORBIRDCV_PACKAGE } else { 'tailorbirdcv' }
+        Write-Host "Installing TailorbirdCV ($package)..."
+        Invoke-Checked 'Installing TailorbirdCV' { & $uv tool install --upgrade --python $pythonVersion $package }
+        $tailorbirdcv = Join-Path $bindir 'tailorbirdcv.exe'
+        if (-not (Test-Path -LiteralPath $tailorbirdcv)) { throw "TailorbirdCV was installed but $tailorbirdcv is missing." }
 
-        $version = (& $autocv --version | Out-String).Trim()
+        $version = (& $tailorbirdcv --version | Out-String).Trim()
         Write-Host ''
         Write-Host "$version is installed."
-        Write-Host '  Start it any time with:  autocv serve'
+        Write-Host '  Start it any time with:  tailorbirdcv serve'
         Write-Host '  Update with:             the same command you just ran'
-        Write-Host '  Check your setup with:   autocv doctor'
+        Write-Host '  Check your setup with:   tailorbirdcv doctor'
 
-        if ($env:AUTOCV_NO_LAUNCH -ne '1') {
+        if ($env:TAILORBIRDCV_NO_LAUNCH -ne '1') {
             Write-Host ''
-            Write-Host 'Starting AutoCV. It opens in your browser; press Ctrl+C here to stop it.'
-            & $autocv serve
+            Write-Host 'Starting TailorbirdCV. It opens in your browser; press Ctrl+C here to stop it.'
+            & $tailorbirdcv serve
         }
     } catch {
-        Write-Host "AutoCV installer: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'If this keeps happening, install uv yourself (https://docs.astral.sh/uv/getting-started/installation/), then run: uv tool install autocv-app'
+        Write-Host "TailorbirdCV installer: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host 'If this keeps happening, install uv yourself (https://docs.astral.sh/uv/getting-started/installation/), then run: uv tool install tailorbirdcv'
     } finally {
         # Remove-Item, not SetEnvironmentVariable($name, $null): PowerShell turns that $null into "", which uv rejects.
         foreach ($name in $uvSettings.Keys) {

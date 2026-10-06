@@ -51,7 +51,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
       <div className="flex flex-col gap-7">
         <div className={`${sheetCard} animate-rise px-6 py-12 text-center sm:px-8`}>
           <p className="font-display text-[32px] leading-tight text-ink">Not analyzed yet.</p>
-          <p className="mx-auto mt-1 max-w-xl text-body">AutoCV will work out the industry, the IC vs manager track, and how your evidence stacks up against each requirement.</p>
+          <p className="mx-auto mt-1 max-w-xl text-body">TailorbirdCV will work out the industry, the IC vs manager track, and how your evidence stacks up against each requirement.</p>
           <button className={`${btnPrimary} mt-5`} onClick={analyze}>Analyze the role</button>
         </div>
         {jd}

@@ -10,12 +10,12 @@ import httpx
 import pytest
 import yaml
 
-from autocv import ai, apikey, critique, importer
-from autocv.api import create_app
-from autocv.engine import (DEFAULT_OPENROUTER_MODEL, EngineError, OpenAIAPIEngine, OpenRouterEngine, SwitchingEngine,
+from tailorbirdcv import ai, apikey, critique, importer
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import (DEFAULT_OPENROUTER_MODEL, EngineError, OpenAIAPIEngine, OpenRouterEngine, SwitchingEngine,
                            openai_schema, strip_nulls)
-from autocv.schema import TailoredResume, load_profile, load_tailored
-from autocv.store import Store
+from tailorbirdcv.schema import TailoredResume, load_profile, load_tailored
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -72,7 +72,7 @@ def test_every_schema_converts_to_openai_strict_form(name):
 def test_optional_fields_become_nullable_and_their_nulls_are_dropped_again():
     schema = ai.tailored_schema(PROFILE, "hybrid")
     strict = openai_schema(schema)
-    assert "summary" in strict["required"]  # optional in AutoCV, required-but-nullable for OpenAI
+    assert "summary" in strict["required"]  # optional in TailorbirdCV, required-but-nullable for OpenAI
     answer = TAILORED.model_dump(exclude_none=True)
     answer["summary"] = None  # what a strict model sends for "no summary"
     for role in answer["experience"]:
@@ -223,7 +223,7 @@ def test_each_provider_has_its_own_key(memory_keyring, monkeypatch):
     apikey.save(OR_KEY, "openrouter")
     assert apikey.get("openai") == (OPENAI_KEY, "keychain") and apikey.get("openrouter") == (OR_KEY, "keychain")
     assert apikey.get() == (None, None)  # the Anthropic key is separate
-    assert memory_keyring.store[("AutoCV", "openai-api-key")] == OPENAI_KEY
+    assert memory_keyring.store[("TailorbirdCV", "openai-api-key")] == OPENAI_KEY
     apikey.delete("openai")
     monkeypatch.setenv("OPENAI_API_KEY", OPENAI_KEY)
     assert apikey.get("openai") == (OPENAI_KEY, "environment")

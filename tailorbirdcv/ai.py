@@ -50,7 +50,7 @@ class Context:
         return cls(**known, private=private)
 
 
-CONTEXT: ContextVar[Context] = ContextVar("autocv_ai_context", default=Context())
+CONTEXT: ContextVar[Context] = ContextVar("tailorbirdcv_ai_context", default=Context())
 
 
 def use_context(context: Context):
@@ -69,7 +69,7 @@ def system_prompt() -> str:
     who = f"a {who} professional" if who else "a job seeker"
     aims = "; ".join(x for x in (c.roles, c.region) if x)
     spelling = "UK English spelling" if c.spelling.upper() == "UK" else "US English spelling"
-    return f"""You are AutoCV, a meticulous resume strategist for {who}{f" (targets: {aims})" if aims else ""}.
+    return f"""You are TailorbirdCV, a meticulous resume strategist for {who}{f" (targets: {aims})" if aims else ""}.
 
 Absolute rules:
 - Never invent. Only use facts present in the candidate's PROFILE. No new numbers, tools, employers, \
@@ -88,7 +88,7 @@ def _yaml(data) -> str:
 
 def _config(name: str) -> dict:
     """Emphasis heuristics: the user's own override (<data folder>/config/<name>), else the domain
-    pack's, else the general default shipped with AutoCV."""
+    pack's, else the general default shipped with TailorbirdCV."""
     c = CONTEXT.get()
     candidates = [c.private / "config" / name] if c.private else []
     if c.pack in PACKS and c.pack != "general":
@@ -407,7 +407,7 @@ def default_budget(pages: int | None = None) -> dict:
 
 
 def length_budget(profile: MasterProfile, base: TailoredResume | None) -> dict:
-    """The page limit in the active design sets the budget (lines). A base resume from `autocv ingest` only
+    """The page limit in the active design sets the budget (lines). A base resume from `tailorbirdcv ingest` only
     calibrates how many words the candidate's own lines carry; its length never shrinks the budget, since it
     filled its pages in its own design, not necessarily in this one."""
     budget = default_budget()

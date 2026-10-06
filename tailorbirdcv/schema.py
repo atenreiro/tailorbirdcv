@@ -197,7 +197,7 @@ class TailoredResume(_Model):
 
 # --------------------------------------------------------------------------- memory
 #
-# What AutoCV remembers across applications. None of this is citable evidence: a
+# What TailorbirdCV remembers across applications. None of this is citable evidence: a
 # resume claim can only cite the MasterProfile. Knowledge steers *questions* (don't
 # re-ask, pre-fill) and active preferences steer *style*.
 

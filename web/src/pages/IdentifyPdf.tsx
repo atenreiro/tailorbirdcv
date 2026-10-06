@@ -5,7 +5,7 @@ import { cx, fmtDate } from '../lib'
 import { ErrorNote, Spinner } from '../ui'
 
 const MATCH: Record<PdfMatch['match'], { label: string; tone: string; explain: string }> = {
-  exact: { label: 'Exact file', tone: 'bg-ok-soft text-ok', explain: 'Byte for byte the file AutoCV recorded (same SHA-256).' },
+  exact: { label: 'Exact file', tone: 'bg-ok-soft text-ok', explain: 'Byte for byte the file TailorbirdCV recorded (same SHA-256).' },
   document: { label: 'Same PDF, re-saved', tone: 'bg-accent-soft text-accent',
     explain: 'The file was changed or re-saved by another app, but it still carries the same PDF document id.' },
   text: { label: 'Similar text', tone: 'bg-[#f6ead2] text-warn',

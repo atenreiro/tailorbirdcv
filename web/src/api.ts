@@ -1,4 +1,4 @@
-// Types mirror autocv/schema.py and autocv/api.py.
+// Types mirror tailorbirdcv/schema.py and tailorbirdcv/api.py.
 
 export type Track = 'manager' | 'ic' | 'hybrid'
 
@@ -192,7 +192,7 @@ export interface Proposal {
 }
 
 export const STATUSES = ['draft', 'analyzed', 'composed', 'built', 'applied', 'interview', 'offer', 'closed']
-/** How a closed application ended (mirrors OUTCOMES in autocv/store.py). */
+/** How a closed application ended (mirrors OUTCOMES in tailorbirdcv/store.py). */
 export type Outcome = 'rejected' | 'no_response' | 'role_closed' | 'withdrew' | 'declined_offer' | 'did_not_apply' | 'accepted_offer'
 
 /** GET /api/update: the running and latest versions, and how this copy upgrades. */
@@ -217,13 +217,13 @@ export class ApiError extends Error {
 
 async function req<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
   const headers: Record<string, string> = { ...extraHeaders }
-  if (method !== 'GET') headers['X-AutoCV'] = '1'  // required by the server's cross-site guard
+  if (method !== 'GET') headers['X-TailorbirdCV'] = '1'  // required by the server's cross-site guard
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   let res: Response
   try {
     res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch {
-    throw new ApiError(0, 'Can’t reach the AutoCV server. Is `autocv serve` still running? Your inputs are kept, so retry once it’s back.')
+    throw new ApiError(0, 'Can’t reach the TailorbirdCV server. Is `tailorbirdcv serve` still running? Your inputs are kept, so retry once it’s back.')
   }
   if (!res.ok) {
     let msg = res.statusText
@@ -240,8 +240,8 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
           [d.loc?.slice(1).join('.'), d.msg].filter(Boolean).join(': ')).join('; ') || 'Invalid request'
       } else msg = 'Request failed'
     } catch { /* not json */ }
-    if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('autocv:no-profile'))
-    if (res.status === 401 && code === 'locked') window.dispatchEvent(new Event('autocv:locked'))
+    if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('tailorbirdcv:no-profile'))
+    if (res.status === 401 && code === 'locked') window.dispatchEvent(new Event('tailorbirdcv:locked'))
     throw new ApiError(res.status, msg, code, detail)
   }
   return res.status === 204 ? (undefined as T) : res.json()

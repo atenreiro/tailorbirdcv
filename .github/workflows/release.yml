@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes `autocv-app` to PyPI. The version is the VERSION file at the repo root.
+# Publishes `tailorbirdcv` to PyPI. The version is the VERSION file at the repo root.
 #  - Automatic: bump VERSION on main. Once CI passes on that commit, this builds it, publishes it and tags
 #    vX.Y.Z. Commits that don't change the version find their tag already there and release nothing.
 #    Automatic releases only run once the repository variable RELEASES_ENABLED is "true" (Settings → Secrets and
@@ -102,7 +102,7 @@ jobs:
       - name: The packages carry the VERSION
         env:
           VERSION: ${{ needs.decide.outputs.version }}
-        run: ls dist/ | grep -qx "autocv_app-${VERSION}-py3-none-any.whl"
+        run: ls dist/ | grep -qx "tailorbirdcv-${VERSION}-py3-none-any.whl"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -127,9 +127,9 @@ jobs:
           uv venv clean
           uv pip install --python clean $(ls dist/*.whl)
           if [ -x clean/Scripts/python.exe ]; then PY=clean/Scripts/python.exe; else PY=clean/bin/python; fi
-          $PY -m autocv.cli --version
-          $PY -c "from autocv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); assert (paths.DATA / 'words.txt.gz').is_file()"
-          AUTOCV_PRIVATE=$PWD/smoke-data $PY -m autocv.cli doctor || true  # prints what this runner lacks; never fails the release
+          $PY -m tailorbirdcv.cli --version
+          $PY -c "from tailorbirdcv import paths; assert paths.web_dir() and not paths.is_checkout(); assert (paths.DATA / 'templates' / 'base.docx').is_file(); assert (paths.DATA / 'words.txt.gz').is_file()"
+          TAILORBIRDCV_PRIVATE=$PWD/smoke-data $PY -m tailorbirdcv.cli doctor || true  # prints what this runner lacks; never fails the release
 
   publish:
     needs: [decide, build, smoke]

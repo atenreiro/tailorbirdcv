@@ -20,7 +20,7 @@ function about(id: PdfEngine, platform?: Platform): About {
         ? ['Runs invisibly in the background; nothing appears on screen.',
            'If Word still needs activation or sign-in, open it once yourself first.']
         : ['Opens hidden in the background; its icon shows in the Dock for a few seconds.',
-           'The first time, macOS may ask Word for file access or ask you to allow AutoCV to control Word.'],
+           'The first time, macOS may ask Word for file access or ask you to allow TailorbirdCV to control Word.'],
       missing: platform === 'linux' ? 'Microsoft Word isn’t available on Linux. Use LibreOffice.' : `Not installed on ${here}.`,
     }
   }
@@ -289,7 +289,7 @@ const ENGINE_COPY: Record<EngineId, { lead: string; detail: ReactNode; keyUrl?: 
   'anthropic-api': { lead: 'Pay per use on your Anthropic account.', keyUrl: 'console.anthropic.com',
     detail: 'Claude through your own key, without Claude Code.' },
   'openai-api': { lead: 'Pay per use on your OpenAI account.', keyUrl: 'platform.openai.com',
-    detail: 'OpenAI’s models through your own key. AutoCV asks OpenAI not to store the requests.' },
+    detail: 'OpenAI’s models through your own key. TailorbirdCV asks OpenAI not to store the requests.' },
   'openrouter-api': { lead: 'Pay per use. Claude by default.', keyUrl: 'openrouter.ai',
     detail: 'One key for many models; uses the same Claude model as the Anthropic option unless you choose another.' },
 }
@@ -336,7 +336,7 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
         <div className="flex max-w-[640px] flex-col gap-1.5">
           <p className={cx(label, 'text-accent')}>AI engine</p>
           <h2 id="ai-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which AI does the writing</h2>
-          <p className="text-sm leading-[1.5] text-muted text-pretty">Whichever you choose, the AI only sees what AutoCV sends it for the task at hand, and every claim is fact-checked against your profile.</p>
+          <p className="text-sm leading-[1.5] text-muted text-pretty">Whichever you choose, the AI only sees what TailorbirdCV sends it for the task at hand, and every claim is fact-checked against your profile.</p>
         </div>
         <div className="flex items-center gap-3">
           {status && <span role="status" className={cx('max-w-[260px] text-xs', status.ready ? 'text-ok' : 'text-bad')}>{status.ready ? '✓ ' : '✗ '}{status.detail}</span>}
@@ -395,12 +395,12 @@ function EngineOptions({ engine, settings, busy, apply }: {
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-wash px-5 py-4">
       {provider && k && settings.keychain?.available === false && !k.configured && (
-        <p className="text-[13px] text-warn text-pretty">This computer has no system keychain, so AutoCV can’t save the key.
-          Start AutoCV with it in an environment variable instead: <code className="font-mono text-[12.5px]">{settings.platform === 'windows' ? `$env:${k.env}="…"; autocv serve` : `${k.env}=… autocv serve`}</code>
+        <p className="text-[13px] text-warn text-pretty">This computer has no system keychain, so TailorbirdCV can’t save the key.
+          Start TailorbirdCV with it in an environment variable instead: <code className="font-mono text-[12.5px]">{settings.platform === 'windows' ? `$env:${k.env}="…"; tailorbirdcv serve` : `${k.env}=… tailorbirdcv serve`}</code>
           {settings.platform === 'linux' && ' (or install GNOME Keyring / KWallet and log in again)'}.</p>
       )}
       {provider && k?.source === 'locked' && (
-        <p className="text-[13px] text-warn text-pretty">AutoCV can’t read your keychain right now (it’s locked, or access was
+        <p className="text-[13px] text-warn text-pretty">TailorbirdCV can’t read your keychain right now (it’s locked, or access was
           denied). Unlock it, or click Allow when your system asks, then Test again.</p>
       )}
       {provider && k && settings.keychain?.available !== false && (
@@ -420,7 +420,7 @@ function EngineOptions({ engine, settings, busy, apply }: {
             <button className="btn btn-primary" disabled={!key.trim() || !!busy}
               onClick={async () => { if (await apply('key', () => api.saveApiKey(key, provider))) setKey('') }}>{busy === 'key' && <Spinner />}Save key</button>
           </div>
-          <span className="text-xs text-faint">Create a key at {copy.keyUrl}. AutoCV keeps it in your system’s secure credential store (Keychain, Credential Manager or Secret Service), never in its files.</span>
+          <span className="text-xs text-faint">Create a key at {copy.keyUrl}. TailorbirdCV keeps it in your system’s secure credential store (Keychain, Credential Manager or Secret Service), never in its files.</span>
         </div>
       )}
       {engine.id === 'openrouter-api' && (
@@ -479,7 +479,7 @@ function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; o
         <span className="flex flex-col gap-0.5">
           <span className="font-medium text-ink">Show company icons</span>
           <span className="text-muted text-pretty">
-            Shows each company’s site icon on your applications. AutoCV fetches it once from the company’s own website
+            Shows each company’s site icon on your applications. TailorbirdCV fetches it once from the company’s own website
             (never a job board’s logo); turn this off to show no icons and fetch none.
           </span>
         </span>
@@ -488,13 +488,13 @@ function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; o
   )
 }
 
-/** Settings → About AutoCV: the version, update checks (PyPI, at most daily) and how this copy upgrades. */
-function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
+/** Settings → About TailorbirdCV: the version, update checks (PyPI, at most daily) and how this copy upgrades. */
+function AboutTailorbirdCV({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [busy, setBusy] = useState<'check' | 'toggle' | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { api.updateStatus().then(setStatus).catch((e) => setError((e as Error).message)) }, [])
-  const changed = (s: UpdateStatus) => { setStatus(s); window.dispatchEvent(new Event('autocv:update')) }
+  const changed = (s: UpdateStatus) => { setStatus(s); window.dispatchEvent(new Event('tailorbirdcv:update')) }
   const check = () => {
     setBusy('check'); setError(null)
     api.checkUpdate().then(changed).catch((e) => setError((e as Error).message)).finally(() => setBusy(null))
@@ -508,7 +508,7 @@ function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (
   return (
     <section id="about" aria-labelledby="about-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
       <div className="flex flex-col gap-1.5">
-        <p className={cx(label, 'text-accent')}>About AutoCV</p>
+        <p className={cx(label, 'text-accent')}>About TailorbirdCV</p>
         <h2 id="about-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">
           {status ? `Version ${status.current}` : 'Version'}
         </h2>
@@ -517,7 +517,7 @@ function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {status && status.enabled && (
         <p className="text-sm text-body">
-          {status.newer ? <><strong>AutoCV {status.latest} is available.</strong> </> : status.latest ? 'You have the latest version. ' : ''}
+          {status.newer ? <><strong>TailorbirdCV {status.latest} is available.</strong> </> : status.latest ? 'You have the latest version. ' : ''}
           {status.checked_at ? `Last checked ${fmtDate(status.checked_at)}, ${new Date(status.checked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : 'Not checked yet.'}
           {status.error ? <span className="text-warn"> {status.error}</span> : null}
         </p>
@@ -529,7 +529,7 @@ function AboutAutoCV({ settings, onSaved }: { settings: SettingsData; onSaved: (
             onChange={(e) => toggle(e.target.checked)} />
           <span className="flex flex-col gap-0.5">
             <span className="font-medium text-ink">Check for updates</span>
-            <span className="text-muted text-pretty">Asks PyPI, where AutoCV is published, for the latest version: when AutoCV opens, at most once a day. It sends nothing about you or your resumes.</span>
+            <span className="text-muted text-pretty">Asks PyPI, where TailorbirdCV is published, for the latest version: when TailorbirdCV opens, at most once a day. It sends nothing about you or your resumes.</span>
           </span>
         </label>
         {settings.update_check && (
@@ -585,7 +585,7 @@ export default function Settings() {
     <div className="flex flex-col gap-7">
       <div className="animate-rise flex flex-col gap-2.5">
         <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Settings</h1>
-        <p className="text-lg text-body">How AutoCV works on {s ? thisComputer(s.platform) : 'this computer'}. <Link to="/setup" className="text-[15px] text-accent hover:text-accent-strong">Run the setup wizard again</Link></p>
+        <p className="text-lg text-body">How TailorbirdCV works on {s ? thisComputer(s.platform) : 'this computer'}. <Link to="/setup" className="text-[15px] text-accent hover:text-accent-strong">Run the setup wizard again</Link></p>
       </div>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
@@ -604,7 +604,7 @@ export default function Settings() {
               <p className={cx(label, 'text-accent')}>PDF export</p>
               <h2 id="pdf-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Which app makes your PDF</h2>
               <p className="text-sm leading-[1.5] text-muted text-pretty">
-                AutoCV renders your resume as a Word document (.docx), then an app on {thisComputer(s.platform)} converts it to PDF and
+                TailorbirdCV renders your resume as a Word document (.docx), then an app on {thisComputer(s.platform)} converts it to PDF and
                 counts the pages. When both are installed, Microsoft Word is the default.
               </p>
             </div>
@@ -640,7 +640,7 @@ export default function Settings() {
 
       <SystemCheck />
 
-      {s && <AboutAutoCV settings={s} onSaved={onSaved} />}
+      {s && <AboutTailorbirdCV settings={s} onSaved={onSaved} />}
     </div>
   )
 }

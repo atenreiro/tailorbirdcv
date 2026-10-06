@@ -14,12 +14,12 @@ import httpx
 import pytest
 import yaml
 
-from autocv import ai, cli, factcheck, jobfetch
-from autocv import pdf as pdfmod
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.ingest import merge_reingest
-from autocv.store import APP_SEP, LEGACY_IDS, RetiredIdReused, Store, _write_json_atomic
+from tailorbirdcv import ai, cli, factcheck, jobfetch
+from tailorbirdcv import pdf as pdfmod
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.ingest import merge_reingest
+from tailorbirdcv.store import APP_SEP, LEGACY_IDS, RetiredIdReused, Store, _write_json_atomic
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -82,7 +82,7 @@ def edit_profile(client, change):
 # ---- A: freeze gate ---------------------------------------------------------------------------
 
 def test_freeze_refused_after_the_profile_changed(env):
-    from autocv.store import render_fingerprint
+    from tailorbirdcv.store import render_fingerprint
     client, store, _ = env
     app_id = composed_app(client)
     client.post(f"/api/applications/{app_id}/build")
@@ -122,7 +122,7 @@ def test_build_hash_is_of_the_bytes_rendered(env, monkeypatch):
             edited["done"] = True
             t = copy.deepcopy(TAILORED)
             t["highlights"][0]["text"] = "Cut false positives by over 65%."
-            from autocv.schema import TailoredResume
+            from tailorbirdcv.schema import TailoredResume
             store.save_tailored(app_id, TailoredResume.model_validate(t))
         return real_check(profile, tailored)
     monkeypatch.setattr(factcheck, "check", check_while_user_saves)
@@ -146,7 +146,7 @@ def test_cli_build_records_the_profile_version(env, monkeypatch):
     monkeypatch.setattr(cli, "APPS", store.apps_dir)
     assert cli.cmd_build(argparse.Namespace(app=app_id, no_pdf=False, max_pages=2)) == 0
     meta = store.meta(app_id)
-    from autocv.store import render_fingerprint
+    from tailorbirdcv.store import render_fingerprint
     assert meta["built_profile"] == render_fingerprint(store.profile(), store.tailored(app_id))
     assert meta["built_hash"] == store.tailored_hash(app_id)
     assert store.freeze_problem(app_id) is None
@@ -164,7 +164,7 @@ def test_trim_returns_a_fact_checked_proposal_without_saving(env):
     assert (store.app_path(app_id) / "tailored.yaml").read_bytes() == before
     proposal = data["trim_proposal"]
     assert set(proposal) >= {"tailored", "lines", "budget", "trim_rounds"}
-    from autocv.schema import TailoredResume
+    from tailorbirdcv.schema import TailoredResume
     assert factcheck.check(store.profile(), TailoredResume.model_validate(proposal["tailored"])).ok
 
 
@@ -216,7 +216,7 @@ def test_restore_cannot_unretire_an_id(env):
 
 def test_save_knowledge_cannot_unretire_an_id(env):
     _, store, _ = env
-    from autocv.schema import Knowledge
+    from tailorbirdcv.schema import Knowledge
     k = Knowledge.model_validate({"answers": [{"id": "k1", "topic": "t", "question": "q", "kind": "no_experience",
                                                "date": "2026-10-01"}]})
     store.save_knowledge(k)
@@ -461,7 +461,7 @@ def test_request_finishing_after_delete_is_a_clean_404(env):
 # ---- I: model-supplied question ids ----------------------------------------------------------------
 
 def test_analyze_renumbers_forged_question_ids():
-    from autocv.schema import load_profile
+    from tailorbirdcv.schema import load_profile
     profile = load_profile(FIX / "profile.yaml")
     questions = [{"id": "kg-k1", "requirement": "a", "question": "A?", "prefill_from": ""},
                  {"id": "q1", "requirement": "b", "question": "B?", "prefill_from": ""},
@@ -606,7 +606,7 @@ def test_builds_from_before_fingerprints_count_as_current(env):
     client.post(f"/api/applications/{app_id}/build")
     meta = store.meta(app_id)
     meta.pop("built_profile")
-    from autocv.store import _write_json_atomic
+    from tailorbirdcv.store import _write_json_atomic
     _write_json_atomic(store.app_path(app_id) / "meta.json", meta)   # as an older build wrote it
     assert not client.get(f"/api/applications/{app_id}").json()["outputs_stale"]
     assert store.freeze_problem(app_id) is None                       # the fact-check still ran and passed

@@ -9,10 +9,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from autocv import apikey
-from autocv.api import create_app
-from autocv.engine import AnthropicAPIEngine, ClaudeCLIEngine, EngineError, SwitchingEngine
-from autocv.store import Store
+from tailorbirdcv import apikey
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import AnthropicAPIEngine, ClaudeCLIEngine, EngineError, SwitchingEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -107,7 +107,7 @@ def test_status_makes_one_tiny_real_request_and_caches_success():
 
 
 def test_the_subscription_engine_never_passes_an_api_key_on(monkeypatch):
-    from autocv.engine import cli_env
+    from tailorbirdcv.engine import cli_env
     monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token")
     env = cli_env()
@@ -117,7 +117,7 @@ def test_the_subscription_engine_never_passes_an_api_key_on(monkeypatch):
 def test_the_key_lives_in_the_keychain(memory_keyring, monkeypatch):
     assert apikey.get() == (None, None)
     apikey.save(f"  {KEY}  ")
-    assert apikey.get() == (KEY, "keychain") and memory_keyring.store[("AutoCV", "anthropic-api-key")] == KEY
+    assert apikey.get() == (KEY, "keychain") and memory_keyring.store[("TailorbirdCV", "anthropic-api-key")] == KEY
     assert apikey.masked(KEY) == "sk-ant-…xxxx"
     apikey.delete()
     monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)

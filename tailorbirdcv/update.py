@@ -1,9 +1,9 @@
-"""Is a newer AutoCV out, and upgrading to it.
+"""Is a newer TailorbirdCV out, and upgrading to it.
 
 The version is the repo's VERSION file; bumping it on main publishes that version to PyPI (release.yml). The app
 asks PyPI (and only PyPI) for the latest version: at most once a day, and never when Settings → "Check for updates"
 is off. Installs made by the one-line installer (`uv tool`) can upgrade with one click: the server stops, `uv tool
-upgrade autocv-app` runs, and AutoCV starts again on the same port (cli.restart_after_upgrade). Checkouts and other
+upgrade tailorbirdcv` runs, and TailorbirdCV starts again on the same port (cli.restart_after_upgrade). Checkouts and other
 installs get the command to run instead.
 """
 
@@ -17,17 +17,17 @@ import shutil
 import sys
 from pathlib import Path
 
-PACKAGE = "autocv-app"
-PYPI_URL = "https://pypi.org/pypi/autocv-app/json"
+PACKAGE = "tailorbirdcv"
+PYPI_URL = "https://pypi.org/pypi/tailorbirdcv/json"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 CHECK_EVERY = dt.timedelta(hours=24)
 TIMEOUT = 5.0
 
 COMMANDS = {  # how to upgrade by hand, per install kind (None: the Upgrade button does it)
     "uv-tool": None,
-    "uv-tool-local": "uv tool install --upgrade autocv-app",  # installed from a file: switch to PyPI's
-    "checkout": "git pull --ff-only && uv sync && npm --prefix web run build, then restart autocv serve",
-    "other": "Upgrade it the way you installed it, e.g. uv tool upgrade autocv-app or pipx upgrade autocv-app",
+    "uv-tool-local": "uv tool install --upgrade tailorbirdcv",  # installed from a file: switch to PyPI's
+    "checkout": "git pull --ff-only && uv sync && npm --prefix web run build, then restart tailorbirdcv serve",
+    "other": "Upgrade it the way you installed it, e.g. uv tool upgrade tailorbirdcv or pipx upgrade tailorbirdcv",
 }
 
 
@@ -70,7 +70,7 @@ def install_kind(prefix: str | Path | None = None) -> str:
 
 
 def find_uv() -> str | None:
-    """The uv that installed AutoCV: on the PATH, or where the installers put it."""
+    """The uv that installed TailorbirdCV: on the PATH, or where the installers put it."""
     found = shutil.which("uv")
     if found:
         return found
@@ -138,10 +138,10 @@ def _ssl_context():
 async def fetch_latest(transport=None) -> str:
     """The latest release on PyPI. Raises on any problem (network, odd answer)."""
     import httpx
-    url = os.environ.get("AUTOCV_UPDATE_URL") or PYPI_URL  # tests and the end-to-end check only
+    url = os.environ.get("TAILORBIRDCV_UPDATE_URL") or PYPI_URL  # tests and the end-to-end check only
     async with httpx.AsyncClient(timeout=TIMEOUT, trust_env=True, verify=_ssl_context(), transport=transport,
                                  follow_redirects=False,
-                                 headers={"User-Agent": f"AutoCV/{current()}", "Accept": "application/json"}) as c:
+                                 headers={"User-Agent": f"TailorbirdCV/{current()}", "Accept": "application/json"}) as c:
         r = await c.get(url)
     r.raise_for_status()
     body = r.json()
@@ -193,7 +193,7 @@ def settle(private: Path) -> None:
     target, installed = pending.get("target"), current()
     ok = installed == target or newer(installed, target)
     cache["last_upgrade"] = {"target": target, "ok": ok, "at": _now().isoformat(timespec="seconds"),
-                             "error": None if ok else f"AutoCV {installed} is still running; the upgrade log says why."}
+                             "error": None if ok else f"TailorbirdCV {installed} is still running; the upgrade log says why."}
     save(private, cache)
 
 
@@ -201,16 +201,16 @@ def log_path(private: Path) -> Path:
     return private / "update" / "last-upgrade.log"
 
 
-WINDOWS_SCRIPT = r"""# AutoCV upgrade helper, written by AutoCV. Every value comes from an environment variable.
+WINDOWS_SCRIPT = r"""# TailorbirdCV upgrade helper, written by TailorbirdCV. Every value comes from an environment variable.
 $ErrorActionPreference = 'Continue'
-$Host.UI.RawUI.WindowTitle = 'AutoCV'
-Write-Host "Upgrading AutoCV to $env:AUTOCV_UPGRADE_TARGET..."
-foreach ($id in @($env:AUTOCV_UPGRADE_PID, $env:AUTOCV_UPGRADE_PPID)) {
+$Host.UI.RawUI.WindowTitle = 'TailorbirdCV'
+Write-Host "Upgrading TailorbirdCV to $env:TAILORBIRDCV_UPGRADE_TARGET..."
+foreach ($id in @($env:TAILORBIRDCV_UPGRADE_PID, $env:TAILORBIRDCV_UPGRADE_PPID)) {
     if ($id) { Wait-Process -Id ([int]$id) -Timeout 30 -ErrorAction SilentlyContinue }
 }
 Start-Sleep -Seconds 1
-& $env:AUTOCV_UPGRADE_UV tool upgrade autocv-app *>&1 | Tee-Object -FilePath $env:AUTOCV_UPGRADE_LOG
+& $env:TAILORBIRDCV_UPGRADE_UV tool upgrade tailorbirdcv *>&1 | Tee-Object -FilePath $env:TAILORBIRDCV_UPGRADE_LOG
 if ($LASTEXITCODE -eq 0) { Write-Host 'Upgraded.' }
 else { Write-Host "The upgrade failed (exit code $LASTEXITCODE): starting the version you had." -ForegroundColor Red }
-& $env:AUTOCV_UPGRADE_AUTOCV serve --port ([int]$env:AUTOCV_UPGRADE_PORT) --no-browser
+& $env:TAILORBIRDCV_UPGRADE_EXE serve --port ([int]$env:TAILORBIRDCV_UPGRADE_PORT) --no-browser
 """

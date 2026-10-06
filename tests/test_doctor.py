@@ -1,12 +1,12 @@
-"""`autocv doctor` / GET /api/doctor: reports what this machine needs, changes nothing."""
+"""`tailorbirdcv doctor` / GET /api/doctor: reports what this machine needs, changes nothing."""
 
 import shutil
 from pathlib import Path
 
-from autocv import doctor, pdf
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store
+from tailorbirdcv import doctor, pdf
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -53,7 +53,7 @@ def test_libreoffice_without_microsoft_fonts_reports_the_stand_ins(monkeypatch):
 def test_setup_phase_lists_what_you_have_and_what_you_need(tmp_path, monkeypatch):
     """The wizard's first step: every AI option, keychain, PDF, browser and Node — each with its level."""
     import asyncio
-    from autocv import engine as eng
+    from tailorbirdcv import engine as eng
     monkeypatch.setattr(pdf, "detect", lambda: engines(word=False, libreoffice=False))
 
     async def logged_in(self):

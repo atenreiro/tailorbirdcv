@@ -31,7 +31,7 @@ from . import oscompat, paths
 from .schema import (AppAnswer, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
                      load_profile, load_tailored, load_yaml)
 
-log = logging.getLogger("autocv")
+log = logging.getLogger("tailorbirdcv")
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ["draft", "analyzed", "composed", "built", "applied", "interview", "offer", "closed"]
@@ -233,7 +233,7 @@ class Store:
         "codex_model": None,         # Codex CLI model; None = Codex's own default
         "openrouter_model": None,    # OpenRouter model; None = the same Claude model as the Anthropic default
         "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
-        "update_check": True,        # ask PyPI (at most daily) whether a newer AutoCV is out; off = never
+        "update_check": True,        # ask PyPI (at most daily) whether a newer TailorbirdCV is out; off = never
         "company_icons": True,       # show each company's site icon (fetched once); off = none shown or fetched
     }
 
@@ -351,7 +351,7 @@ class Store:
             return _APP_LOCKS.setdefault(key, threading.Lock())
 
     def access_key(self) -> str:
-        """This data folder's secret for the web UI: `autocv serve` opens the browser with it once, and the API
+        """This data folder's secret for the web UI: `tailorbirdcv serve` opens the browser with it once, and the API
         then only answers requests carrying it (as a cookie). Other programs or other users on this computer
         can't use the server without reading this file, which only its owner can."""
         import secrets
@@ -495,7 +495,7 @@ class Store:
             try:
                 when = dt.datetime.strptime(stamp, "%Y%m%d-%H%M%S-%f")
             except ValueError:
-                continue  # not a snapshot AutoCV made (e.g. a file dropped in by hand)
+                continue  # not a snapshot TailorbirdCV made (e.g. a file dropped in by hand)
             out.append({"id": f.stem, "time": when.isoformat(timespec="seconds"),
                         "cause": cause.replace("-", " "), "size": f.stat().st_size})
         return out
@@ -604,10 +604,10 @@ class Store:
         try:
             data = json.loads(oscompat.read_text(p))
         except (OSError, ValueError) as e:
-            log.warning("AutoCV: ignoring unreadable %s (%s); old application links may not resolve", p, e)
+            log.warning("TailorbirdCV: ignoring unreadable %s (%s); old application links may not resolve", p, e)
             return {}
         if not isinstance(data, dict):
-            log.warning("AutoCV: ignoring %s (not a JSON object)", p)
+            log.warning("TailorbirdCV: ignoring %s (not a JSON object)", p)
             return {}
         return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
 
@@ -631,7 +631,7 @@ class Store:
                 try:
                     new_id = self._migrate_one(old)
                 except Exception as e:  # noqa: BLE001 — one bad folder must never block the rest
-                    log.warning("AutoCV: couldn't move application folder %s (%s); left as is", old.name, e)
+                    log.warning("TailorbirdCV: couldn't move application folder %s (%s); left as is", old.name, e)
                     continue
                 if new_id:
                     moved[old.name] = new_id
@@ -639,7 +639,7 @@ class Store:
                 try:
                     step()
                 except Exception as e:  # noqa: BLE001
-                    log.warning("AutoCV: %s skipped (%s)", step.__name__.strip("_").replace("_", " "), e)
+                    log.warning("TailorbirdCV: %s skipped (%s)", step.__name__.strip("_").replace("_", " "), e)
         return moved
 
     def _migrate_one(self, old: Path) -> str | None:
@@ -652,7 +652,7 @@ class Store:
                 if not isinstance(meta, dict):
                     raise ValueError("not a JSON object")
             except (OSError, ValueError) as e:
-                log.warning("AutoCV: skipping %s: unreadable meta.json (%s)", old.name, e)
+                log.warning("TailorbirdCV: skipping %s: unreadable meta.json (%s)", old.name, e)
                 return None
         else:
             m = self._FLAT.match(old.name)
@@ -681,7 +681,7 @@ class Store:
         try:
             self._repoint_knowledge({old.name: new_id})
         except Exception as e:  # noqa: BLE001 — the old id still resolves through the map
-            log.warning("AutoCV: couldn't update knowledge links for %s (%s)", old.name, e)
+            log.warning("TailorbirdCV: couldn't update knowledge links for %s (%s)", old.name, e)
         return new_id
 
     def _close_legacy_statuses(self) -> None:
@@ -751,7 +751,7 @@ class Store:
             try:
                 self._repoint_knowledge({i: None for i in [canonical, *gone]})
             except Exception as e:  # noqa: BLE001 — the folder is gone either way
-                log.warning("AutoCV: couldn't unlink knowledge from %s (%s)", canonical, e)
+                log.warning("TailorbirdCV: couldn't unlink knowledge from %s (%s)", canonical, e)
 
     def create_app(self, company: str, role: str, jd: str, url: str | None = None) -> str:
         with _LOCK:
@@ -789,7 +789,7 @@ class Store:
             try:
                 self._repoint_knowledge({app_id: new_id})
             except Exception as e:  # noqa: BLE001 — the old id still resolves through the map
-                log.warning("AutoCV: couldn't update knowledge links for %s (%s)", app_id, e)
+                log.warning("TailorbirdCV: couldn't update knowledge links for %s (%s)", app_id, e)
             return new_id
 
     def meta(self, app_id: str) -> dict:
@@ -957,7 +957,7 @@ class Store:
                     row = {"id": app_id, **meta, "industry": analysis.get("industry"), "track": analysis.get("track"),
                            "files": self.files(app_id)}
                 except Exception as e:  # noqa: BLE001
-                    log.warning("AutoCV: application %s can't be read (%s)", app_id, e)
+                    log.warning("TailorbirdCV: application %s can't be read (%s)", app_id, e)
                     row = {"id": app_id, "company": c.name, "role": p.name, "status": "draft",
                            "created": p.name[:10], "files": [], "broken": str(e)}
                 apps.append(row)
@@ -1205,7 +1205,7 @@ class Store:
 
     def sent_copies(self, app_id: str, fingerprints: bool = False) -> list[dict]:
         """The sent copies, newest first. `fingerprints`: also work out those of copies frozen before
-        AutoCV recorded them (computed from the read-only files, never written back)."""
+        TailorbirdCV recorded them (computed from the read-only files, never written back)."""
         copies = self._sent_copies(app_id)
         if fingerprints:
             for c in copies:
@@ -1216,7 +1216,7 @@ class Store:
                         try:
                             prints[name] = self._fingerprint(path)
                         except OSError as e:
-                            log.warning("AutoCV: can't read %s (%s)", path, e)
+                            log.warning("TailorbirdCV: can't read %s (%s)", path, e)
         return copies
 
     def identify(self, data: bytes) -> dict:
@@ -1261,7 +1261,7 @@ class Store:
                 try:
                     record = json.loads(oscompat.read_text(d / "sent.json"))
                 except (OSError, ValueError) as e:
-                    log.warning("AutoCV: unreadable sent copy %s (%s)", d, e)
+                    log.warning("TailorbirdCV: unreadable sent copy %s (%s)", d, e)
                     continue
                 if isinstance(record, dict):
                     out.append(record)

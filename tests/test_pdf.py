@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from autocv import pdf
-from autocv.api import create_app
-from autocv.store import Store
+from tailorbirdcv import pdf
+from tailorbirdcv.api import create_app
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -30,8 +30,8 @@ def make_docx(path: Path, text="returning 2–4 hours in 2019-2021", fonts=("Geo
 
 @pytest.fixture
 def docx(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUTOCV_WORD_DIR", str(tmp_path / "word"))
-    monkeypatch.setenv("AUTOCV_LO_PROFILE", str(tmp_path / "lo-profile"))
+    monkeypatch.setenv("TAILORBIRDCV_WORD_DIR", str(tmp_path / "word"))
+    monkeypatch.setenv("TAILORBIRDCV_LO_PROFILE", str(tmp_path / "lo-profile"))
     monkeypatch.setattr(pdf, "detect", lambda: engines())
     return make_docx(tmp_path / "app" / "r.docx")
 
@@ -216,7 +216,7 @@ def test_a_chosen_engine_that_disappears_falls_back(client):
     assert s["pdf_engine"] == "libreoffice" and s["pdf_effective"] == "word"
 
 
-def test_settings_need_the_autocv_header(client):
+def test_settings_need_the_tailorbirdcv_header(client):
     from fastapi.testclient import TestClient
     bare = TestClient(client.app, base_url="http://127.0.0.1")
     assert bare.put("/api/settings", json={"pdf_engine": "word"}).status_code == 403
@@ -236,11 +236,11 @@ def test_a_missing_font_gets_its_open_stand_in_and_loses_it_once_installed(tmp_p
     monkeypatch.setattr(pdf, "installed", lambda family: family != "Georgia")
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri", "Aptos"})
     text = xcu.read_text(encoding="utf-8")
-    assert '<node oor:name="autocv-georgia"' in text and "<value>Gelasio</value>" in text
+    assert '<node oor:name="tailorbirdcv-georgia"' in text and "<value>Gelasio</value>" in text
     assert '<prop oor:name="Replacement" oor:op="fuse"><value>true</value>' in text
-    assert "autocv-calibri" not in text and "UseOpenCL" in text  # installed fonts and other settings untouched
+    assert "tailorbirdcv-calibri" not in text and "UseOpenCL" in text  # installed fonts and other settings untouched
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})  # idempotent: one rule, not two
-    assert xcu.read_text(encoding="utf-8").count("autocv-georgia") == 1
+    assert xcu.read_text(encoding="utf-8").count("tailorbirdcv-georgia") == 1
     monkeypatch.setattr(pdf, "installed", lambda family: True)  # Georgia got installed
     pdf.configure_substitutes(tmp_path, {"Georgia", "Calibri"})
     assert xcu.read_text(encoding="utf-8") == XCU_WITH_OTHER
@@ -249,7 +249,7 @@ def test_a_missing_font_gets_its_open_stand_in_and_loses_it_once_installed(tmp_p
 def test_a_new_profile_gets_the_rules_before_libreoffice_first_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(pdf, "installed", lambda family: False)
     pdf.configure_substitutes(tmp_path, {"Georgia"})
-    assert "autocv-georgia" in (tmp_path / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
+    assert "tailorbirdcv-georgia" in (tmp_path / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
     other = tmp_path / "other"
     monkeypatch.setattr(pdf, "installed", lambda family: True)
     pdf.configure_substitutes(other, {"Georgia"})  # nothing missing: LibreOffice creates its own file
@@ -272,10 +272,10 @@ def test_windows_word_runs_hidden_through_com_and_only_touches_our_document(monk
     assert cmd[1:8] == ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-OutputFormat", "Text",
                         "-EncodedCommand"]
     script = base64.b64decode(cmd[-1]).decode("utf-16-le")
-    assert "$src = $env:AUTOCV_SRC" in script and "it" not in script.split("$src")[0]  # paths never in the script
+    assert "$src = $env:TAILORBIRDCV_SRC" in script and "it" not in script.split("$src")[0]  # paths never in the script
     assert "ExportAsFixedFormat($dst, 17)" in script and "$doc.Close(0)" in script
     assert "if ($created -and $word.Documents.Count -eq 0) { $word.Quit(-2) }" in script
-    assert "AUTOCV_PIDFILE" in script and "Word error: " in script
+    assert "TAILORBIRDCV_PIDFILE" in script and "Word error: " in script
     assert ".Activate" not in script and "Documents.Item(" not in script  # never by position
 
 

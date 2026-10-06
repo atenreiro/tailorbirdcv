@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from autocv import ai
-from autocv.factcheck import is_common_word
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.store import Store, file_safe_name
+from tailorbirdcv import ai
+from tailorbirdcv.factcheck import is_common_word
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.store import Store, file_safe_name
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -39,7 +39,7 @@ def test_a_new_user_gets_neutral_prompts(env):
     client.post(f"/api/applications/{new_app(client)}/analyze")
     assert "healthcare" in engine.calls[0][1]  # the general industry lenses
     ai.use_context(ai.Context())  # no targets set
-    assert ai.system_prompt().startswith("You are AutoCV, a meticulous resume strategist for a job seeker.")
+    assert ai.system_prompt().startswith("You are TailorbirdCV, a meticulous resume strategist for a job seeker.")
     for word in ("cyber", "Singapore", "APAC", "banking"):
         assert word not in ai.system_prompt()
 
@@ -47,14 +47,14 @@ def test_a_new_user_gets_neutral_prompts(env):
 def test_targets_shape_the_system_prompt_and_spelling(env, monkeypatch):
     client, _, _ = env
     seen = []
-    import autocv.engine as eng
+    import tailorbirdcv.engine as eng
     monkeypatch.setattr(eng.FakeEngine, "complete", lambda self, system, prompt, schema: _record(seen, self, system, prompt))
     r = client.put("/api/settings", json={"targets": {"field": "nursing", "seniority": "senior", "region": "  London ",
                                                       "roles": "ward manager roles", "spelling": "UK", "pages": 1}})
     assert r.status_code == 200 and r.json()["targets"]["region"] == "London"
     client.post(f"/api/applications/{new_app(client)}/analyze")
     system = seen[0]
-    assert system.startswith("You are AutoCV, a meticulous resume strategist for a senior nursing professional "
+    assert system.startswith("You are TailorbirdCV, a meticulous resume strategist for a senior nursing professional "
                              "(targets: ward manager roles; London).")
     assert "UK English spelling" in system
 
@@ -103,7 +103,7 @@ def test_shipped_config_has_no_personal_data():
     if ai.paths.is_checkout() and mine.is_file():
         names |= _names(mine)
     leaked = sorted(n for n in names if n.lower() in shipped)
-    assert not leaked, f"{len(leaked)} personal name(s) in autocv/data/config"
+    assert not leaked, f"{len(leaked)} personal name(s) in tailorbirdcv/data/config"
 
 
 def test_the_page_limit_sets_the_budget_and_too_long(env):
@@ -124,7 +124,7 @@ def test_output_file_names_keep_the_letters_of_any_name(name, stem):
 
 
 def test_analysis_entities_the_jd_does_not_contain_are_unescaped():
-    from autocv.ai import _unescape_entities
+    from tailorbirdcv.ai import _unescape_entities
     jd = "Head of Detection & Response. Write &lt;b&gt; tags."
     out = _unescape_entities({"role": "Head of Detection &amp; Response", "keywords": [{"term": "R&amp;D"}],
                               "note": "&lt;b&gt; as written", "n": 3}, jd)

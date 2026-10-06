@@ -7,7 +7,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-SERVICE = "AutoCV"
+SERVICE = "TailorbirdCV"
+LEGACY_SERVICE = "AutoCV"  # the name before the rename: a key stored there moves to SERVICE the first time it's read
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ def get(provider: str = "anthropic") -> tuple[str | None, str | None]:
     locked = False
     try:
         keyring, KeyringError = _keyring()
-        stored = keyring.get_password(SERVICE, p.account)
+        stored = keyring.get_password(SERVICE, p.account) or _move_legacy(keyring, p.account)
     except Exception:  # noqa: BLE001
         stored, locked = None, backend_status()["available"]  # a real keychain that refused: not "no key"
     if stored:
@@ -58,6 +59,19 @@ def get(provider: str = "anthropic") -> tuple[str | None, str | None]:
     if env := os.environ.get(p.env, "").strip():
         return env, "environment"
     return None, "locked" if locked else None
+
+
+def _move_legacy(keyring, account: str) -> str | None:
+    """A key saved under the old name: copied to SERVICE, then removed from the old entry (if that fails, it's
+    simply read from there again next time)."""
+    stored = keyring.get_password(LEGACY_SERVICE, account)
+    if stored:
+        keyring.set_password(SERVICE, account, stored)
+        try:
+            keyring.delete_password(LEGACY_SERVICE, account)
+        except Exception:  # noqa: BLE001
+            pass
+    return stored
 
 
 def save(key: str, provider: str = "anthropic") -> None:
@@ -70,16 +84,17 @@ def save(key: str, provider: str = "anthropic") -> None:
         keyring.set_password(SERVICE, p.account, key)
     except Exception as e:  # noqa: BLE001
         raise KeychainUnavailable(f"No system keychain is available to store the key. Set the {p.env} "
-                                  "environment variable before starting AutoCV instead.") from e
+                                  "environment variable before starting TailorbirdCV instead.") from e
 
 
 def delete(provider: str = "anthropic") -> None:
     p = _provider(provider)
     keyring, KeyringError = _keyring()
-    try:
-        keyring.delete_password(SERVICE, p.account)
-    except Exception:  # noqa: BLE001 — nothing stored
-        pass
+    for service in (SERVICE, LEGACY_SERVICE):  # never let a removed key come back from the old entry
+        try:
+            keyring.delete_password(service, p.account)
+        except Exception:  # noqa: BLE001 — nothing stored
+            pass
 
 
 def backend_status() -> dict:

@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
-from autocv import doctor
-from autocv.engine import CODEX_ISOLATION, CodexCLIEngine, EngineError
+from tailorbirdcv import doctor
+from tailorbirdcv.engine import CODEX_ISOLATION, CodexCLIEngine, EngineError
 
 FAKE = """
 import json, os, sys, time
@@ -114,8 +114,8 @@ def test_codex_refuses_to_run_on_an_api_key_login(fake_codex, monkeypatch):
     eng = CodexCLIEngine(command=command)
     eng.command = None  # behave like a real install: check the login first…
     monkeypatch.setattr(CodexCLIEngine, "_argv", lambda self: command)
-    monkeypatch.setattr("autocv.engine.shutil.which", lambda name: "/usr/bin/codex")
-    monkeypatch.setattr("autocv.engine.cli_version", lambda binary: (0, 160, 0))
+    monkeypatch.setattr("tailorbirdcv.engine.shutil.which", lambda name: "/usr/bin/codex")
+    monkeypatch.setattr("tailorbirdcv.engine.cli_version", lambda binary: (0, 160, 0))
     monkeypatch.setenv("FAKE_MODE", "key")
     with pytest.raises(EngineError, match="API key"):
         asyncio.run(eng.complete("S", "TASK: x", SCHEMA))
@@ -127,7 +127,7 @@ def test_codex_too_old_is_not_ready(fake_codex, monkeypatch):
     eng = CodexCLIEngine(command=command)
     eng.command = None
     monkeypatch.setattr(CodexCLIEngine, "_argv", lambda self: command)
-    monkeypatch.setattr("autocv.engine.shutil.which", lambda name: "/usr/bin/codex")
-    monkeypatch.setattr("autocv.engine.cli_version", lambda binary: (0, 100, 0))
+    monkeypatch.setattr("tailorbirdcv.engine.shutil.which", lambda name: "/usr/bin/codex")
+    monkeypatch.setattr("tailorbirdcv.engine.cli_version", lambda binary: (0, 100, 0))
     st = asyncio.run(eng.status())
     assert not st["ready"] and "too old" in st["detail"]

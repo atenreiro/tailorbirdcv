@@ -118,7 +118,7 @@ const BUSY_TEXT: Partial<Record<Kind, string>> = {
   status: 'Saving…',
 }
 
-const VIEW_KEY = 'autocv.view'
+const VIEW_KEY = 'tailorbirdcv.view'
 function savedView(): View {
   try {
     const old = localStorage.getItem('acv3.view')  // the key's earlier name: migrate it once
@@ -390,7 +390,7 @@ export default function Applications() {
       {apps?.length === 0 && (
         <div className="animate-rise rounded-[14px] border border-rule bg-sheet px-10 py-16 text-center">
           <p className="font-display text-[36px] leading-none text-ink">No applications yet.</p>
-          <p className="mx-auto mt-3 max-w-md text-muted">Paste a job description and AutoCV will tailor your resume to it, using only facts from your master profile.</p>
+          <p className="mx-auto mt-3 max-w-md text-muted">Paste a job description and TailorbirdCV will tailor your resume to it, using only facts from your master profile.</p>
           <Link to="/new" className="btn btn-primary mt-6 hover:text-white">Start the first one</Link>
         </div>
       )}

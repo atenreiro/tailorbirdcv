@@ -6,8 +6,8 @@ import json
 import httpx
 import pytest
 
-from autocv import jobfetch
-from autocv.jobfetch import (BlockedURL, FetchError, Rendered, ashby_ref, fetch_job, format_lever, from_json_ld,
+from tailorbirdcv import jobfetch
+from tailorbirdcv.jobfetch import (BlockedURL, FetchError, Rendered, ashby_ref, fetch_job, format_lever, from_json_ld,
                              greenhouse_ref, html_to_text, lever_ref)
 
 JOB_ID = "01e7966a-9873-461c-ad17-771fd7c0be9a"
@@ -98,7 +98,7 @@ def test_fetch_follows_redirects_and_rechecks_each_hop(monkeypatch):
     async def check(url):
         checked.append(url)
         if "169.254" in url:
-            raise BlockedURL("That URL points to a private or local network address, so AutoCV won't fetch it.")
+            raise BlockedURL("That URL points to a private or local network address, so TailorbirdCV won't fetch it.")
     monkeypatch.setattr(jobfetch, "check_public_url", check)
     monkeypatch.setattr(jobfetch, "render_page", _no_browser)
     client = _client({"https://jobs.example.com/1": httpx.Response(302, headers={"location": "http://169.254.169.254/"})})

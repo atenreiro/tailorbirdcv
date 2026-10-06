@@ -1,5 +1,5 @@
 """Company site icons: the right site (never a job board's logo), raster images only, fetched once in the
-background, served only by AutoCV, and nothing shown or fetched when Settings turns icons off. Fictional sites."""
+background, served only by TailorbirdCV, and nothing shown or fetched when Settings turns icons off. Fictional sites."""
 
 import asyncio
 import shutil
@@ -9,12 +9,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from autocv import favicon, jobfetch
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.favicon import fetch as real_fetch  # conftest replaces favicon.fetch with an offline stub
-from autocv.jobfetch import FetchError
-from autocv.store import Store
+from tailorbirdcv import favicon, jobfetch
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.favicon import fetch as real_fetch  # conftest replaces favicon.fetch with an offline stub
+from tailorbirdcv.jobfetch import FetchError
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -143,7 +143,7 @@ def test_a_site_that_blocks_plain_requests_is_read_through_the_headless_browser(
         "https://www.example.com/favicon.ico": httpx.Response(200, content=b""),
         "https://static.example-cdn.net/img/favicon.ico": httpx.Response(200, content=ICO)})
     assert found == (ICO, "ico") and rendered == ["https://www.example.com/"]
-    assert "https://static.example-cdn.net/img/favicon.ico" in seen  # fetched by AutoCV's own guarded client
+    assert "https://static.example-cdn.net/img/favicon.ico" in seen  # fetched by TailorbirdCV's own guarded client
 
 
 def test_private_addresses_are_refused():
@@ -160,7 +160,7 @@ def test_json_ld_names_the_company_sites():
     assert favicon.company_site("https://boards.greenhouse.io/nw/jobs/1", job.sites) == "https://northwind.example"
 
 
-# ---- API: stored once, served by AutoCV, and Settings can turn it all off -----------------------------------
+# ---- API: stored once, served by TailorbirdCV, and Settings can turn it all off -----------------------------------
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     private = tmp_path / "private"

@@ -19,7 +19,7 @@ function chip(c: DoctorCheck): string {
   return { required: 'needed', recommended: 'recommended', optional: 'optional', info: 'to do' }[c.level ?? 'required']
 }
 
-/** What AutoCV needs on this computer: what's there, what's missing, and how to fix it. `phase="setup"` is the
+/** What TailorbirdCV needs on this computer: what's there, what's missing, and how to fix it. `phase="setup"` is the
  *  wizard's first-step list (every AI option, keychain, PDF, browser, Node); `poll` re-checks every few seconds
  *  while something that matters is missing, so an install is noticed without clicking. */
 export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
@@ -38,8 +38,8 @@ export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
   useEffect(() => {
     void load()
     const again = () => { void load() }
-    window.addEventListener('autocv:settings', again)  // engine, key or PDF choice changed
-    return () => window.removeEventListener('autocv:settings', again)
+    window.addEventListener('tailorbirdcv:settings', again)  // engine, key or PDF choice changed
+    return () => window.removeEventListener('tailorbirdcv:settings', again)
   }, [load])
   const missing = checks?.filter((c) => c.status !== 'ok' && (c.level === 'required' || c.level === 'recommended')).length ?? 0
   useEffect(() => {
@@ -106,7 +106,7 @@ export default function SystemCheck({ bare, phase = 'all', poll, onChecks }: {
           <h2 id={`doctor-title-${phase}`} className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">{title}</h2>
           <p className="text-sm leading-[1.5] text-muted text-pretty">
             {phase === 'setup' ? 'What this computer already has, and what to install or set up. Rows update by themselves as you fix them.'
-              : <>What AutoCV needs on this computer. Same as running <code className="font-mono text-[13px]">autocv doctor</code>.</>}
+              : <>What TailorbirdCV needs on this computer. Same as running <code className="font-mono text-[13px]">tailorbirdcv doctor</code>.</>}
           </p>
         </div>
         <button className="btn" onClick={run} disabled={busy}>{busy && <Spinner />}Check again</button>

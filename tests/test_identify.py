@@ -5,7 +5,7 @@ import base64
 
 import pytest
 
-from autocv import identify
+from tailorbirdcv import identify
 from test_freeze_history import env  # noqa: F401 — the application fixture (fake PDF engine)
 
 
@@ -67,7 +67,7 @@ def test_match_prefers_exact_then_same_document_then_text():
 
 def test_freezing_records_fingerprints_and_identify_finds_the_sent_copy(env, monkeypatch):  # noqa: F811
     client, store, app_id, _ = env
-    from autocv import pdf as pdfmod
+    from tailorbirdcv import pdf as pdfmod
     sent_pdf = make_pdf(RESUME, doc_id="0f0f0f0f-2222-3333-4444-555555555555", pdf_id="dd")
 
     def real_looking_pdf(docx, pdf=None, timeout=0, engine=None):

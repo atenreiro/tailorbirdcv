@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from autocv import jobfetch
-from autocv.jobfetch import BlockedURL, FetchError, render_page
+from tailorbirdcv import jobfetch
+from tailorbirdcv.jobfetch import BlockedURL, FetchError, render_page
 
 pytest.importorskip("playwright")
 _CACHES = [Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])] if os.environ.get("PLAYWRIGHT_BROWSERS_PATH") else [

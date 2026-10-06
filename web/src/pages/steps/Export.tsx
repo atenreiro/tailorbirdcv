@@ -173,7 +173,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
             </button>
           </div>
           {app.sent.length === 0 ? (
-            <p className="text-muted">When you mark this application <strong>applied</strong>, AutoCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
+            <p className="text-muted">When you mark this application <strong>applied</strong>, TailorbirdCV keeps a read-only copy of exactly what you sent. Later edits and rebuilds never change it.</p>
           ) : (
             app.sent.map((c) => (
               <div key={c.id} className="flex flex-col gap-1.5 rounded-lg border border-rule px-2.5 py-2">

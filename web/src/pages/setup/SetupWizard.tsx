@@ -76,7 +76,7 @@ function ConnectAI({ settings, onSettings, onNext, onBlank }: {
   const step = 'rounded bg-wash px-1.5 font-mono text-[13px]'
   return (
     <Panel eyebrow="Connect your AI" title="Connect your AI"
-      intro="AutoCV uses an AI to read your CV and to tailor it for each job. Use a subscription you already have (Claude or ChatGPT), or an API key from Anthropic, OpenAI or OpenRouter."
+      intro="TailorbirdCV uses an AI to read your CV and to tailor it for each job. Use a subscription you already have (Claude or ChatGPT), or an API key from Anthropic, OpenAI or OpenRouter."
       footer={<>
         <button className="btn btn-primary" onClick={onNext} disabled={!ready}>Continue</button>
         <button className="text-[13px] text-muted hover:text-ink" onClick={onBlank}>Set this up later and start with a blank profile</button>
@@ -164,10 +164,10 @@ function YourComputer({ onNext }: { onNext: () => void }) {
   const [dataOk, setDataOk] = useState(true)
   return (
     <Panel eyebrow="Your computer" title="What you have, what you need"
-      intro="AutoCV checked this computer. Required items must be in place; recommended ones make it work best; optional ones add extras. Install anything missing, and the list updates by itself."
+      intro="TailorbirdCV checked this computer. Required items must be in place; recommended ones make it work best; optional ones add extras. Install anything missing, and the list updates by itself."
       footer={<>
         <button className="btn btn-primary" onClick={onNext} disabled={!dataOk}>Continue</button>
-        {!dataOk && <span className="text-[13px] text-bad">AutoCV needs a data folder it can write to first.</span>}
+        {!dataOk && <span className="text-[13px] text-bad">TailorbirdCV needs a data folder it can write to first.</span>}
       </>}>
       <SystemCheck bare phase="setup" poll onChecks={(c) => setDataOk(c.find((x) => x.id === 'data')?.status !== 'error')} />
     </Panel>
@@ -235,12 +235,12 @@ export default function SetupWizard() {
     body = <StartBlank onBack={() => setBlank(false)} onCreated={() => { void refresh(); go('targets') }} />
   } else if (step === 'welcome') {
     body = (
-      <Panel eyebrow="Welcome" title="Let’s set up AutoCV"
-        intro={<>AutoCV tailors your resume to each job you apply for, <strong>without inventing anything</strong>: every line it writes comes from your own CV.</>}
+      <Panel eyebrow="Welcome" title="Let’s set up TailorbirdCV"
+        intro={<>TailorbirdCV tailors your resume to each job you apply for, <strong>without inventing anything</strong>: every line it writes comes from your own CV.</>}
         footer={<><button className="btn btn-primary" onClick={() => go('computer')}>Get started</button><span className="text-[13px] text-muted">About 5 minutes</span></>}>
         <ol className="grid max-w-[900px] gap-3 sm:grid-cols-3">
           {[['1', 'Your CV becomes a master profile', 'Upload it once; you check what was read.'],
-            ['2', 'Paste a job description', 'AutoCV finds the requirements and asks about gaps.'],
+            ['2', 'Paste a job description', 'TailorbirdCV finds the requirements and asks about gaps.'],
             ['3', 'Get a tailored resume', 'Rephrased and reordered from your facts, fact-checked, as Word and PDF.']].map(([n, t, d]) => (
             <li key={n} className="flex flex-col gap-1.5 rounded-xl bg-lane px-4 py-4">
               <span className="font-mono text-xs font-medium text-accent">0{n}</span>
@@ -259,7 +259,7 @@ export default function SetupWizard() {
   } else if (step === 'upload' || (step === 'review' && !setup.draft)) {
     body = (
       <Panel eyebrow="Your CV" title="Upload your CV"
-        intro="Your current CV, in any layout. AutoCV reads it once to build your master profile: the facts every tailored resume is made from.">
+        intro="Your current CV, in any layout. TailorbirdCV reads it once to build your master profile: the facts every tailored resume is made from.">
         <UploadCv onBlank={() => setBlank(true)} onImported={(draft) => { setSetup((s) => s && { ...s, draft }); void refresh(); setStep('review') }} />
       </Panel>
     )

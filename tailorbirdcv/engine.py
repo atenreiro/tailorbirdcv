@@ -6,10 +6,10 @@
 
 CLI calls are isolated (see ISOLATION_ARGS / CODEX_ISOLATION): no tools, MCP servers, plugins, hooks,
 skills or saved sessions, from an empty working directory, with every API key removed from the
-environment. Either way the model only sees the prompt AutoCV builds, and must answer with JSON
+environment. Either way the model only sees the prompt TailorbirdCV builds, and must answer with JSON
 matching the schema (OpenAI-style APIs get it in strict form: see openai_schema).
 
-Set AUTOCV_ENGINE=fake to run the UI with canned responses (tests / demos).
+Set TAILORBIRDCV_ENGINE=fake to run the UI with canned responses (tests / demos).
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ ISOLATION_ARGS = [
 # Where npm (and pnpm/yarn) put the program a `.cmd` shim runs, newest layout first.
 _NPM_TARGETS = {"claude": ["@anthropic-ai/claude-code/bin/claude.exe", "@anthropic-ai/claude-code/cli.js"],
                 "codex": ["@openai/codex/bin/codex.js"]}
-_PRODUCTS = {"claude": ("Claude Code", "claude.exe", "AUTOCV_CLAUDE_BIN"), "codex": ("Codex", "codex.exe", "AUTOCV_CODEX_BIN")}
+_PRODUCTS = {"claude": ("Claude Code", "claude.exe", "TAILORBIRDCV_CLAUDE_BIN"), "codex": ("Codex", "codex.exe", "TAILORBIRDCV_CODEX_BIN")}
 
 
 def _shim_target(shim: Path) -> Path | None:
@@ -91,8 +91,8 @@ def _windows_command(binary: str, tool: str = "claude") -> list[str]:
         return [str(target)]
     node = next((str(n) for n in (shim.parent / "node.exe",) if n.is_file()), None) or find_node()
     if not node:
-        raise EngineError(f"{product} needs Node.js, which AutoCV can't find. Install it from nodejs.org, then "
-                          "restart AutoCV (Ctrl+C, then autocv serve).")
+        raise EngineError(f"{product} needs Node.js, which TailorbirdCV can't find. Install it from nodejs.org, then "
+                          "restart TailorbirdCV (Ctrl+C, then tailorbirdcv serve).")
     return [node, str(target)]
 
 
@@ -106,7 +106,7 @@ _API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY
 
 def cli_env(binary: str | None = None) -> dict[str, str]:
     """The CLIs' environment: no API keys, and PATH starting with the CLI's own folder and Node's (a CLI found
-    outside the server's PATH, e.g. installed after AutoCV started, still finds `node`)."""
+    outside the server's PATH, e.g. installed after TailorbirdCV started, still finds `node`)."""
     env = {k: v for k, v in os.environ.items() if k not in _API_CREDENTIALS}
     extra: list[str] = []
     for path in (binary, find_node()):
@@ -181,7 +181,7 @@ async def _run_cli(command: list[str], args, *, stdin: str | None, timeout: floa
     `args` is a list in which "{name}" becomes that file's path, or a callable(inputs, work) -> list.
     Returns (exit code, stdout, stderr, {name: text} for each name in `collect` that the CLI wrote to `in`)."""
     # ignore_cleanup_errors: on Windows a folder still in use can't be removed; never let that mask the result
-    with tempfile.TemporaryDirectory(prefix="autocv-engine-", ignore_cleanup_errors=True) as root:
+    with tempfile.TemporaryDirectory(prefix="tailorbirdcv-engine-", ignore_cleanup_errors=True) as root:
         cwd, inputs = Path(root, "work"), Path(root, "in")
         cwd.mkdir()
         inputs.mkdir()
@@ -221,14 +221,14 @@ class ClaudeCLIEngine:
     def __init__(self, binary: str | None = None, model: str | None = None, timeout: float = 600,
                  command: list[str] | None = None):
         self._binary = binary
-        self.model = model or os.environ.get("AUTOCV_MODEL")
+        self.model = model or os.environ.get("TAILORBIRDCV_MODEL")
         self.timeout = timeout
         self.command = command  # the argv prefix to run instead of the binary (tests)
         self._login: tuple[float, str | None] | None = None  # (when checked, the billing problem or None)
 
     @property
-    def binary(self) -> str:  # looked up each time, so a Claude Code installed after AutoCV started is found
-        return self._binary or os.environ.get("AUTOCV_CLAUDE_BIN") or find_cli("claude") or "claude"
+    def binary(self) -> str:  # looked up each time, so a Claude Code installed after TailorbirdCV started is found
+        return self._binary or os.environ.get("TAILORBIRDCV_CLAUDE_BIN") or find_cli("claude") or "claude"
 
     @staticmethod
     def _login_problem(info: dict) -> str | None:
@@ -271,7 +271,7 @@ class ClaudeCLIEngine:
                                                binary=None if self.command else self.binary)
         except EngineError as e:
             if "not found" in str(e):
-                raise EngineError("Claude Code CLI not found — install it or set AUTOCV_CLAUDE_BIN") from e
+                raise EngineError("Claude Code CLI not found — install it or set TAILORBIRDCV_CLAUDE_BIN") from e
             raise
         if code and not out:
             raise EngineError(err.strip() or f"claude exited {code}")
@@ -323,7 +323,7 @@ DEFAULT_API_MODEL = "claude-sonnet-5-5"
 
 class AnthropicAPIEngine:
     """Claude through the Anthropic API with the user's own key (pay per use), answering through
-    structured outputs (JSON matching AutoCV's schema). Forced tool choice isn't used: current models
+    structured outputs (JSON matching TailorbirdCV's schema). Forced tool choice isn't used: current models
     (Opus 5.5, Sonnet 5.5, Fable 5.1) reject it."""
 
     name = "anthropic-api"
@@ -386,7 +386,7 @@ class AnthropicAPIEngine:
 
     async def complete(self, system: str, prompt: str, schema: dict) -> Any:
         """Structured outputs (the response is JSON matching the schema). A schema the API can't
-        compile falls back to an ordinary tool call; AutoCV validates every answer either way."""
+        compile falls back to an ordinary tool call; TailorbirdCV validates every answer either way."""
         key = await asyncio.to_thread(self._key)
         if not key:
             raise EngineError("No Anthropic API key — add one in Settings → AI engine.")
@@ -427,7 +427,7 @@ _UNSUPPORTED = ("maxItems", "minLength", "maxLength", "minimum", "maximum", "exc
 
 
 def api_schema(schema: Any) -> Any:
-    """AutoCV's JSON schema adapted to structured outputs: unsupported constraints dropped (AutoCV
+    """TailorbirdCV's JSON schema adapted to structured outputs: unsupported constraints dropped (TailorbirdCV
     validates the answer itself) and every object closed with additionalProperties: false."""
     if isinstance(schema, list):
         return [api_schema(x) for x in schema]
@@ -494,7 +494,7 @@ def _nullable(node: dict) -> dict:
 
 
 def openai_schema(schema: dict) -> dict:
-    """AutoCV's JSON schema in OpenAI's strict form (OpenAI API, OpenRouter, Codex --output-schema):
+    """TailorbirdCV's JSON schema in OpenAI's strict form (OpenAI API, OpenRouter, Codex --output-schema):
     titles, defaults and unsupported constraints dropped; every object closed with every property required,
     the ones that were optional made nullable (the answer goes through strip_nulls). Shared definitions
     ($defs) stay shared, each converted once, so big enums (evidence ids) aren't copied into every use."""
@@ -704,8 +704,8 @@ class OpenRouterEngine(_OpenAIStyleEngine):
     def _make_client(self, key: str):
         import openai
         return openai.AsyncOpenAI(api_key=key, base_url=OPENROUTER_URL, timeout=self.timeout, max_retries=2,
-                                  default_headers={"X-OpenRouter-Title": "AutoCV",
-                                                   "HTTP-Referer": "https://github.com/atenreiro/autocv"})
+                                  default_headers={"X-OpenRouter-Title": "TailorbirdCV",
+                                                   "HTTP-Referer": "https://github.com/atenreiro/tailorbirdcv"})
 
     def routing(self) -> dict:
         provider = {"require_parameters": True, "data_collection": "deny"}
@@ -842,8 +842,8 @@ class CodexCLIEngine:
         self._login: tuple[float, dict] | None = None  # the last login check (when, status)
 
     @property
-    def binary(self) -> str:  # looked up each time, so a Codex installed after AutoCV started is found
-        return self._binary or os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex") or "codex"
+    def binary(self) -> str:  # looked up each time, so a Codex installed after TailorbirdCV started is found
+        return self._binary or os.environ.get("TAILORBIRDCV_CODEX_BIN") or find_cli("codex") or "codex"
 
     def _argv(self) -> list[str]:
         return self.command or _windows_command(self.binary, "codex")
@@ -860,14 +860,14 @@ class CodexCLIEngine:
             return {**base, "ready": False, "detail": str(e)}
         text = f"{out}\n{err}".lower()
         if _needs_node(code, text):
-            return {**base, "ready": False, "detail": "Codex needs Node.js, which AutoCV can't find. Install it from "
+            return {**base, "ready": False, "detail": "Codex needs Node.js, which TailorbirdCV can't find. Install it from "
                                                       "nodejs.org (or reinstall Codex), then Check again."}
         if code == 0 and "chatgpt" in text:
             if not self.command:
                 version = await asyncio.to_thread(cli_version, self.binary)
                 if version and version[:2] < CODEX_MIN_VERSION:
                     shown = ".".join(map(str, version))
-                    return {**base, "ready": False, "detail": f"Codex {shown} is too old for AutoCV — update it: "
+                    return {**base, "ready": False, "detail": f"Codex {shown} is too old for TailorbirdCV — update it: "
                                                               + ("brew upgrade --cask codex" if oscompat.IS_MAC
                                                                  else "npm i -g @openai/codex")}
             return {**base, "ready": True, "detail": "logged in with ChatGPT"}
@@ -1011,7 +1011,7 @@ class FakeEngine:
 
 
 def default_engine(store=None) -> Engine:
-    if os.environ.get("AUTOCV_ENGINE") == "fake":
+    if os.environ.get("TAILORBIRDCV_ENGINE") == "fake":
         from .demo import demo_engine
         return demo_engine()
     if store is None:

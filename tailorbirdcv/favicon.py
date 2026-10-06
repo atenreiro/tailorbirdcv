@@ -6,7 +6,7 @@ would be the board's, not the company's. Then the company's website named in the
 client; only images up to 200 KB are kept (ICO, PNG, GIF, JPEG, WEBP, or SVG, which is only ever shown as an image
 and served with a policy that blocks scripts). Sites that answer plain requests with an empty page (bot protection)
 get one more try through the headless browser, when it's installed: it renders the homepage to find where the icon
-really lives. The browser only ever loads the icon from AutoCV (GET /api/applications/{id}/favicon), never from
+really lives. The browser only ever loads the icon from TailorbirdCV (GET /api/applications/{id}/favicon), never from
 the company's site.
 """
 
@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 
 from .jobfetch import FetchError, org_sites, pinned_client, safe_fetch, safe_get
 
-log = logging.getLogger("autocv")
+log = logging.getLogger("tailorbirdcv")
 
 MAX_ICON = 200_000
 TIMEOUT = 10.0
@@ -165,7 +165,7 @@ async def fetch(job_url: str, sites: list[str] | None = None, client: httpx.Asyn
                 if found := await asyncio.wait_for(attempt(job_url, sites, client), limit):
                     return found
             except Exception as e:  # noqa: BLE001 — no icon is fine; it never matters enough to show an error
-                log.debug("AutoCV: no site icon for %s via %s (%s)", job_url, attempt.__name__, e)
+                log.debug("TailorbirdCV: no site icon for %s via %s (%s)", job_url, attempt.__name__, e)
         return None
     finally:
         if own:

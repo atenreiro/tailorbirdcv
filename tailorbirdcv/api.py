@@ -1,6 +1,6 @@
-"""FastAPI backend for the AutoCV web UI (localhost only).
+"""FastAPI backend for the TailorbirdCV web UI (localhost only).
 
-    uv run autocv serve            → http://127.0.0.1:8000 (serves web/dist if built)
+    uv run tailorbirdcv serve            → http://127.0.0.1:8000 (serves web/dist if built)
     cd web && npm run dev          → http://localhost:5173 (proxies /api to :8000)
 """
 
@@ -31,7 +31,7 @@ from .schema import AppAnswer, Knowledge, MasterProfile, Preference, TailoredRes
 from .store import (OUTCOMES, STATUSES, AppNotFound, Conflict, CorruptApp, IncompleteRole, NeedsBuild, OutputInUse,
                     RetiredIdReused, Store, next_id)
 
-log = logging.getLogger("autocv")
+log = logging.getLogger("tailorbirdcv")
 
 
 
@@ -214,7 +214,7 @@ def _engine_call(exc: EngineError) -> HTTPException:
 # --------------------------------------------------------------------------- app
 
 
-ACCESS_COOKIE = "autocv_key"
+ACCESS_COOKIE = "tailorbirdcv_key"
 
 
 def create_app(store: Store | None = None, engine: Engine | None = None,
@@ -223,26 +223,26 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     try:  # older flat application folders → applications/<company>/<date>_<role>/
         moved = store.migrate_layout()
         if moved:
-            print(f"AutoCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
+            print(f"TailorbirdCV: moved {len(moved)} application folder(s) to applications/<company>/<date>_<role>/")
     except Exception as e:  # noqa: BLE001 — the app must always start; the UI shows what's readable
-        log.warning("AutoCV: application folder migration failed (%s); starting anyway", e)
+        log.warning("TailorbirdCV: application folder migration failed (%s); starting anyway", e)
     try:  # did the upgrade that restarted us take? (the UI says so either way)
         update.settle(store.private)
     except Exception as e:  # noqa: BLE001
-        log.warning("AutoCV: couldn't read the last upgrade's outcome (%s)", e)
+        log.warning("TailorbirdCV: couldn't read the last upgrade's outcome (%s)", e)
     try:
         if store.profile_path.exists():
             store.profile()
     except Exception as e:  # noqa: BLE001
-        log.warning("AutoCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
+        log.warning("TailorbirdCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
     engine = engine or default_engine(store)
-    app = FastAPI(title="AutoCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="TailorbirdCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     import hmac
     app.state.access_key = access_key = store.access_key()
     app.state.busy = 0         # non-GET API requests still running: an upgrade waits until there are none
-    app.state.upgrade = None   # set by POST /api/update/upgrade; `autocv serve` upgrades once the server stops
-    # app.state.request_exit is set by `autocv serve`: it stops the server (for an upgrade)
-    # One cookie per data folder: a second AutoCV (another folder, another port) doesn't lock this one out.
+    app.state.upgrade = None   # set by POST /api/update/upgrade; `tailorbirdcv serve` upgrades once the server stops
+    # app.state.request_exit is set by `tailorbirdcv serve`: it stops the server (for an upgrade)
+    # One cookie per data folder: a second TailorbirdCV (another folder, another port) doesn't lock this one out.
     import hashlib
     cookie = app.state.cookie_name = ACCESS_COOKIE + "_" + hashlib.sha256(str(store.private.resolve()).encode()).hexdigest()[:10]
     oscompat.make_private(store.private)  # resumes, profile and the key: not readable by other accounts
@@ -258,7 +258,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        # Opening AutoCV's link (…/?key=…) turns the key into a cookie and drops it from the address bar.
+        # Opening TailorbirdCV's link (…/?key=…) turns the key into a cookie and drops it from the address bar.
         if request.method == "GET" and "key" in request.query_params:
             from fastapi.responses import RedirectResponse
             from urllib.parse import urlencode
@@ -274,7 +274,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                     samesite="strict", path="/")
             return response
         if request.url.path.startswith("/api/"):
-            # Browsers label every request with where it came from. Only AutoCV's own pages
+            # Browsers label every request with where it came from. Only TailorbirdCV's own pages
             # (same-origin) and typed URLs/bookmarks ("none") may read or change data: another
             # site can't even GET a resume or the profile through a link, image or iframe.
             site = request.headers.get("sec-fetch-site")
@@ -282,13 +282,13 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 return JSONResponse({"detail": "Cross-site request refused."}, status_code=403)
             # Cross-site guard: a page on another site can send "simple" POSTs to localhost without
             # a preflight. Requiring a custom header forces a CORS preflight, which this API never
-            # grants, so only the AutoCV UI itself can change data or start AI runs.
-            if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-autocv") != "1":
-                return JSONResponse({"detail": "Missing X-AutoCV header (cross-site request refused)."},
+            # grants, so only the TailorbirdCV UI itself can change data or start AI runs.
+            if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-tailorbirdcv") != "1":
+                return JSONResponse({"detail": "Missing X-TailorbirdCV header (cross-site request refused)."},
                                     status_code=403)
             # Only this user's browser: other programs and other accounts on this computer don't have the key.
             if not hmac.compare_digest(request.cookies.get(cookie, "").encode(), access_key.encode()):
-                return JSONResponse({"detail": {"code": "locked", "message": "Open AutoCV from the link `autocv serve` "
+                return JSONResponse({"detail": {"code": "locked", "message": "Open TailorbirdCV from the link `tailorbirdcv serve` "
                                                 "printed in your terminal (it unlocks this browser)."}},
                                     status_code=401)
             # The candidate's targets (Settings) steer every AI prompt made while handling this request.
@@ -301,7 +301,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             response = await call_next(request)
         finally:
             app.state.busy -= counted
-        # Anti-clickjacking: other sites can't frame AutoCV; AutoCV may frame itself
+        # Anti-clickjacking: other sites can't frame TailorbirdCV; TailorbirdCV may frame itself
         # (the Export step previews the PDF in an iframe).
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
@@ -331,7 +331,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     def need_profile():
         if not store.profile_path.exists():
-            raise HTTPException(409, "No master profile yet — open AutoCV's Welcome page to import your resume.")
+            raise HTTPException(409, "No master profile yet — open TailorbirdCV's Welcome page to import your resume.")
         return store.profile()
 
     def profile_payload(profile=None):
@@ -354,8 +354,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def engines_installed():
         """Which subscription CLIs are on this computer (the setup wizard picks Codex when Claude Code isn't)."""
         from .engine import find_cli
-        return {"claude-cli": bool(os.environ.get("AUTOCV_CLAUDE_BIN") or find_cli("claude")),
-                "codex-cli": bool(os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex"))}
+        return {"claude-cli": bool(os.environ.get("TAILORBIRDCV_CLAUDE_BIN") or find_cli("claude")),
+                "codex-cli": bool(os.environ.get("TAILORBIRDCV_CODEX_BIN") or find_cli("codex"))}
 
     def settings_payload():
         settings, engines = store.settings(), pdfmod.detect()
@@ -502,30 +502,30 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.post("/update/check")
     async def update_check():
         if not store.settings()["update_check"]:
-            raise HTTPException(409, "Update checks are off. Turn them on in Settings → About AutoCV.")
+            raise HTTPException(409, "Update checks are off. Turn them on in Settings → About TailorbirdCV.")
         return update_view(await update.refresh(store.private, True, force=True))
 
     @api.post("/update/upgrade", status_code=202)
     async def upgrade():
-        """Upgrade to the latest version: the server stops, `autocv serve` runs `uv tool upgrade` and starts
+        """Upgrade to the latest version: the server stops, `tailorbirdcv serve` runs `uv tool upgrade` and starts
         again on the same port. Only for one-line-installer copies, and only when nothing else is running."""
         if app.state.upgrade:
             return update_view()
         view = update_view(await update.refresh(store.private, store.settings()["update_check"]))
         if view["kind"] != "uv-tool":
-            raise HTTPException(409, "This copy of AutoCV wasn't installed with the one-line installer, so it can't "
+            raise HTTPException(409, "This copy of TailorbirdCV wasn't installed with the one-line installer, so it can't "
                                      f"upgrade itself. To upgrade: {view['command']}")
         if not view["newer"]:
             raise HTTPException(409, "You already have the latest version.")
         uv = update.find_uv()
         if not uv:
-            raise HTTPException(409, "uv, which installed AutoCV, can't be found. Upgrade by running the install "
+            raise HTTPException(409, "uv, which installed TailorbirdCV, can't be found. Upgrade by running the install "
                                      "command again.")
         request_exit = getattr(app.state, "request_exit", None)
         if request_exit is None:
-            raise HTTPException(409, "AutoCV can only upgrade itself when it was started with `autocv serve`.")
+            raise HTTPException(409, "TailorbirdCV can only upgrade itself when it was started with `tailorbirdcv serve`.")
         if app.state.busy > 1 or browser_install["state"] == "running":
-            raise HTTPException(409, "AutoCV is busy (an AI run, build or download is still going). Try again when "
+            raise HTTPException(409, "TailorbirdCV is busy (an AI run, build or download is still going). Try again when "
                                      "it has finished.")
         app.state.upgrade = {"target": view["latest"], "uv": uv}
         update.mark_pending(store.private, view["latest"])
@@ -552,7 +552,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
 
     @api.post("/setup/browser", status_code=202)
     async def install_browser():
-        """Install the optional headless browser (same as `autocv install-browser`), in the background."""
+        """Install the optional headless browser (same as `tailorbirdcv install-browser`), in the background."""
         import sys
         if browser_install["state"] == "running":
             return browser_install
@@ -743,7 +743,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 found = await favicon.fetch(url, sites)
                 await asyncio.to_thread(store.save_favicon, app_id, found)
             except Exception as e:  # noqa: BLE001 — an icon is never worth an error
-                log.debug("AutoCV: site icon for %s failed (%s)", app_id, e)
+                log.debug("TailorbirdCV: site icon for %s failed (%s)", app_id, e)
             finally:
                 favicon_pending.discard(app_id)
 
@@ -1001,7 +1001,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         fill = meta.get("fill") or {}
         room = fill.get("room", 0)
         if store.outputs_stale(app_id) or not meta.get("pages") or fill.get("design") != ai.design_key():
-            raise HTTPException(409, "Build the PDF first, so AutoCV can measure the room left on the last page.")
+            raise HTTPException(409, "Build the PDF first, so TailorbirdCV can measure the room left on the last page.")
         if meta["pages"] > page_limit():
             raise HTTPException(409, f"The PDF is over the {page_limit()}-page limit: trim it instead.")
         if room < fit.ROOM_MIN_LINES:
@@ -1269,8 +1269,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def unknown_api(path: str):
         # Otherwise these fall through to the page route and surface as a cryptic
         # "405 Method Not Allowed" — typically a server started before an update.
-        raise HTTPException(404, "Unknown AutoCV endpoint. If you just updated AutoCV, restart the server "
-                                 "(Ctrl+C, then `autocv serve`, or `uv run autocv serve` in a source checkout).")
+        raise HTTPException(404, "Unknown TailorbirdCV endpoint. If you just updated TailorbirdCV, restart the server "
+                                 "(Ctrl+C, then `tailorbirdcv serve`, or `uv run tailorbirdcv serve` in a source checkout).")
 
     dist = paths.web_dir()
     if dist:

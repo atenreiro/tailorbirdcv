@@ -12,7 +12,7 @@ export function loadSettings(force = false): Promise<Settings> {
 /** Store fresh settings and tell anything showing engine status (header badge, system check) to refresh. */
 export const cacheSettings = (s: Settings) => {
   cache = Promise.resolve(s)
-  window.dispatchEvent(new Event('autocv:settings'))
+  window.dispatchEvent(new Event('tailorbirdcv:settings'))
 }
 
 export function useSettings() {

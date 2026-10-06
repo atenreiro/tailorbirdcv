@@ -1,4 +1,4 @@
-"""`autocv doctor`: what AutoCV needs on this machine, what's missing, and how to fix it.
+"""`tailorbirdcv doctor`: what TailorbirdCV needs on this machine, what's missing, and how to fix it.
 
 Shared by the CLI, the Settings page and the setup wizard (`GET /api/doctor`, `?phase=setup` for the
 wizard's "Your computer" step). Nothing here changes anything.
@@ -37,13 +37,13 @@ def _check(id_: str, label: str, status: str, detail: str, fix: str = "", level:
 
 
 def _writable(folder: Path) -> bool:
-    """Can AutoCV create files here? On Windows os.access ignores permissions (ACLs, Controlled Folder Access),
+    """Can TailorbirdCV create files here? On Windows os.access ignores permissions (ACLs, Controlled Folder Access),
     so try it with a temporary file that's removed at once."""
     if not IS_WINDOWS:
         return os.access(folder, os.W_OK)
     import tempfile  # pragma: no cover
     try:  # pragma: no cover
-        with tempfile.NamedTemporaryFile(dir=folder, prefix=".autocv-check-"):
+        with tempfile.NamedTemporaryFile(dir=folder, prefix=".tailorbirdcv-check-"):
             return True
     except OSError:  # pragma: no cover
         return False
@@ -53,10 +53,10 @@ def _data(private: Path) -> dict:
     target = next((p for p in [private, *private.parents] if p.exists()), None)
     if target is None or not _writable(target):
         return _check("data", "Data folder", "error", f"{private} isn't writable.",
-                      "Set AUTOCV_PRIVATE to a folder you can write to, then restart AutoCV.")
+                      "Set TAILORBIRDCV_PRIVATE to a folder you can write to, then restart TailorbirdCV.")
     if IS_WINDOWS and not _private_by_default(private):  # pragma: no cover
         return _check("data", "Data folder", "warn", f"{private} — outside your user folders, so other accounts on "
-                      "this PC may be able to read it.", "Unless you need it there, leave AUTOCV_PRIVATE unset (AutoCV "
+                      "this PC may be able to read it.", "Unless you need it there, leave TAILORBIRDCV_PRIVATE unset (TailorbirdCV "
                       "then uses your private AppData folder).", level="recommended")
     return _check("data", "Data folder", "ok", str(private))
 
@@ -73,7 +73,7 @@ def _profile(private: Path) -> dict:
     if (private / "profile.yaml").is_file():
         return _check("profile", "Master profile", "ok", "Found.")
     return _check("profile", "Master profile", "warn", "Not created yet.",
-                  "Open AutoCV and import your resume (or start a blank profile).", level="info")
+                  "Open TailorbirdCV and import your resume (or start a blank profile).", level="info")
 
 
 async def _engine(engine: Engine) -> dict:
@@ -99,7 +99,7 @@ async def _engine(engine: Engine) -> dict:
 def codex_version(binary: str | None = None) -> tuple[int, ...] | None:
     """Codex CLI's version (e.g. (0, 160, 0)), or None when it isn't installed or doesn't say."""
     from .engine import cli_version, find_cli
-    exe = binary or os.environ.get("AUTOCV_CODEX_BIN") or find_cli("codex")
+    exe = binary or os.environ.get("TAILORBIRDCV_CODEX_BIN") or find_cli("codex")
     return cli_version(exe) if exe else None
 
 
@@ -113,7 +113,7 @@ def _codex(engine_name: str | None) -> dict | None:
         return None  # the AI engine check already says it's missing
     shown = ".".join(map(str, version))
     if version[:2] < CODEX_MIN_VERSION:
-        return _check("codex", "Codex CLI version", "warn", f"Codex {shown} is older than AutoCV was tested with.",
+        return _check("codex", "Codex CLI version", "warn", f"Codex {shown} is older than TailorbirdCV was tested with.",
                       ("Update it: `brew upgrade --cask codex`" if IS_MAC else "Update it: `npm i -g @openai/codex`")
                       + " (or your installer's update command).")
     return _check("codex", "Codex CLI version", "ok", f"Codex {shown}.")
@@ -130,7 +130,7 @@ def _pdf(preferred: str | None) -> dict:
         return _check("pdf", "PDF engine", "error", "Neither Microsoft Word nor LibreOffice was found; "
                       "only the Word document can be built.", hint, level="recommended")
     test = {"kind": "test-pdf", "label": "Test PDF",
-            "hint": "" if chosen != "word" else ("Word runs hidden. The first time, look for a macOS prompt to let AutoCV control Word, and for "
+            "hint": "" if chosen != "word" else ("Word runs hidden. The first time, look for a macOS prompt to let TailorbirdCV control Word, and for "
                      "Word's “Grant File Access” window (click Select). Word must be activated." if IS_MAC else
                      "Word runs hidden. If Word has never been opened on this PC, open it once, sign in and close "
                      "its first-run prompts." if IS_WINDOWS else "")}
@@ -141,9 +141,9 @@ def _pdf(preferred: str | None) -> dict:
     if chosen == "libreoffice" and sandboxed and hidden:
         kind = "Snap" if sandboxed == "/snap/" else "Flatpak"
         return _check("pdf", "PDF engine", "warn", f"Using LibreOffice from a {kind} (found: {found}). {kind}s may "
-                      "not be able to read hidden folders such as AutoCV's data folder, so PDFs may fail.",
+                      "not be able to read hidden folders such as TailorbirdCV's data folder, so PDFs may fail.",
                       "Test PDF to be sure. If it fails, install LibreOffice from your distribution's packages "
-                      "(e.g. apt install libreoffice-writer), or set AUTOCV_PRIVATE to a non-hidden folder.",
+                      "(e.g. apt install libreoffice-writer), or set TAILORBIRDCV_PRIVATE to a non-hidden folder.",
                       level="recommended", action=test)
     return _check("pdf", "PDF engine", "ok", f"Using {pdf.NAMES[chosen]} (found: {found}).",
                   "Test PDF converts a sample page now (the first Word run may ask for permissions).",
@@ -218,7 +218,7 @@ def _browser() -> dict:
                                                  f"sudo {sys.executable} -m playwright install-deps chromium")
     return _check("browser", "Headless browser", "warn",
                   "Not installed: job pages that only render with JavaScript can't be fetched (paste the text instead).",
-                  "Install it (about 200 MB), or run `autocv install-browser`." + linux, level="optional",
+                  "Install it (about 200 MB), or run `tailorbirdcv install-browser`." + linux, level="optional",
                   action=action)
 
 
@@ -227,7 +227,7 @@ def _node() -> dict:
     exe = find_node()
     if not exe:
         return _check("node", "Node.js", "warn", "Not installed.",
-                      "Only needed to install Codex with npm (nodejs.org), or to build AutoCV from source.",
+                      "Only needed to install Codex with npm (nodejs.org), or to build TailorbirdCV from source.",
                       level="optional")
     try:
         out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10).stdout.strip()
@@ -241,12 +241,12 @@ def _keychain(needed: bool) -> dict:
     st = apikey.backend_status()
     if st["available"]:
         return _check("keychain", "Keychain for API keys", "ok", f"{st['backend']} is available.", level="optional")
-    fix = ("Install a Secret Service keychain (GNOME Keyring or KWallet) and log in again, or start AutoCV with the "
-           "key in an environment variable, e.g. OPENAI_API_KEY=… autocv serve."
+    fix = ("Install a Secret Service keychain (GNOME Keyring or KWallet) and log in again, or start TailorbirdCV with the "
+           "key in an environment variable, e.g. OPENAI_API_KEY=… tailorbirdcv serve."
            if not (IS_MAC or IS_WINDOWS) else
-           'Start AutoCV with the key in an environment variable instead: in PowerShell, $env:ANTHROPIC_API_KEY="…"; '
-           "autocv serve" if IS_WINDOWS else
-           "Start AutoCV with the key in an environment variable instead, e.g. ANTHROPIC_API_KEY=… autocv serve.")
+           'Start TailorbirdCV with the key in an environment variable instead: in PowerShell, $env:ANTHROPIC_API_KEY="…"; '
+           "tailorbirdcv serve" if IS_WINDOWS else
+           "Start TailorbirdCV with the key in an environment variable instead, e.g. ANTHROPIC_API_KEY=… tailorbirdcv serve.")
     return _check("keychain", "Keychain for API keys", "warn" if needed else "ok",
                   "No system keychain is available, so API keys can't be saved from the app.", fix,
                   level="recommended" if needed else "optional")
@@ -277,7 +277,7 @@ async def _ai_options() -> dict:
     if usable:
         return _check("ai_options", "AI", "ok", f"Ready to use: {', '.join(i['label'] for i in usable)}.",
                       "Choose one in the next step.", level="required", items=items)
-    return _check("ai_options", "AI", "warn", "Nothing set up yet. AutoCV needs one of these.",
+    return _check("ai_options", "AI", "warn", "Nothing set up yet. TailorbirdCV needs one of these.",
                   "Install and log in to Claude Code or Codex (your subscription), or add an API key in the next step.",
                   level="required", items=items)
 
@@ -310,7 +310,7 @@ async def run_checks(engine: Engine, private: Path, preferred_pdf: str | None, p
 
 def render(checks: list[dict]) -> str:
     mark = {"ok": "✓", "warn": "!", "error": "✗"}
-    lines = [f"AutoCV {version()} · Python {sys.version.split()[0]} · {sys.platform}"]
+    lines = [f"TailorbirdCV {version()} · Python {sys.version.split()[0]} · {sys.platform}"]
     for c in checks:
         lines.append(f"  {mark[c['status']]} {c['label']}: {c['detail']}")
         if c["fix"] and c["status"] != "ok":
@@ -321,6 +321,6 @@ def render(checks: list[dict]) -> str:
 def version() -> str:
     from importlib.metadata import PackageNotFoundError, version as pkg_version
     try:
-        return pkg_version("autocv-app")
+        return pkg_version("tailorbirdcv")
     except PackageNotFoundError:
         return "dev"

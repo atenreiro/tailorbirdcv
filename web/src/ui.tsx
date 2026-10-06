@@ -78,10 +78,10 @@ export function EngineBadge() {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     const load = () => api.engine().then(setStatus)
-      .catch(() => setStatus({ engine: '?', ready: false, detail: 'Backend unreachable — is `autocv serve` still running?' }))
+      .catch(() => setStatus({ engine: '?', ready: false, detail: 'Backend unreachable — is `tailorbirdcv serve` still running?' }))
     void load()
-    window.addEventListener('autocv:settings', load)  // the AI engine or key changed
-    return () => window.removeEventListener('autocv:settings', load)
+    window.addEventListener('tailorbirdcv:settings', load)  // the AI engine or key changed
+    return () => window.removeEventListener('tailorbirdcv:settings', load)
   }, [])
   const ready = status?.ready
   return (
@@ -135,7 +135,7 @@ export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabe
   )
 }
 
-/** The company's site icon, served by AutoCV from the application's folder. Decorative (the name is next to it);
+/** The company's site icon, served by TailorbirdCV from the application's folder. Decorative (the name is next to it);
  * if it can't be shown it disappears instead of leaving a broken image. */
 export function Favicon({ appId, size = 16, className = '' }: { appId: string; size?: number; className?: string }) {
   const [failed, setFailed] = useState(false)

@@ -55,9 +55,9 @@ export function statusLabel(status: string, closedAs?: string | null) {
   return status === 'closed' ? outcome(closedAs)?.label ?? 'Closed' : status
 }
 
-/** Sets the browser tab title to "<parts> · AutoCV" while the page is mounted. */
+/** Sets the browser tab title to "<parts> · TailorbirdCV" while the page is mounted. */
 export function useTitle(parts: (string | undefined)[]) {
-  const title = [...parts.filter((p): p is string => !!p?.trim()), 'AutoCV'].join(' · ')
+  const title = [...parts.filter((p): p is string => !!p?.trim()), 'TailorbirdCV'].join(' · ')
   useEffect(() => {
     const previous = document.title
     document.title = title

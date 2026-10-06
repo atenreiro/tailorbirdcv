@@ -7,18 +7,18 @@ is the default whenever both are installed).
 
 - **Word** is driven quietly and never touches the user's own documents:
   - macOS: AppleScript (JXA) through `osascript`. Word is launched hidden in the background,
-    our document is addressed only by its unique name, and Word is quit only if AutoCV started
+    our document is addressed only by its unique name, and Word is quit only if TailorbirdCV started
     it and nothing else is open. One fixed folder means Word's sandbox asks for file access
     ("Grant File Access") at most once.
   - Windows: PowerShell COM automation. Our document opens in an invisible window, is closed
-    through its own object, and Word is quit only if AutoCV created that Word instance and
+    through its own object, and Word is quit only if TailorbirdCV created that Word instance and
     nothing else is open in it.
   - Linux: not available.
 - **LibreOffice** runs headless (no window) with its own profile (`private/libreoffice/`), so it
   never touches a LibreOffice the user has open. The fonts the resume names (Georgia, Calibri,
   Aptos…) are linked into that profile (from the system and, on macOS, from inside Word), and when
   one is missing a metric-compatible open font stands in (Georgia → Gelasio, Calibri → Carlito, both
-  shipped with AutoCV), so line breaks and page counts match Word's.
+  shipped with TailorbirdCV), so line breaks and page counts match Word's.
   Number ranges ("2–4") are glued in LibreOffice's copy only, because it would otherwise break a
   line inside them where Word doesn't.
 
@@ -45,7 +45,7 @@ from pypdf import PdfReader
 from . import oscompat, paths
 from .oscompat import IS_MAC, IS_WINDOWS
 
-PDF_TIMEOUT = float(os.environ.get("AUTOCV_PDF_TIMEOUT", "120"))
+PDF_TIMEOUT = float(os.environ.get("TAILORBIRDCV_PDF_TIMEOUT", "120"))
 ENGINES = ("word", "libreoffice")  # order = default preference
 NAMES = {"word": "Microsoft Word", "libreoffice": "LibreOffice"}
 WORD_ID = "com.microsoft.Word"
@@ -89,15 +89,15 @@ function run(argv) {
 
 # Windows: Windows PowerShell 5.1 (.NET Framework, which has GetActiveObject) driving Word over COM.
 # Paths arrive in environment variables (no quoting, whatever characters they contain). When the script
-# starts its own Word, it writes that process id to AUTOCV_PIDFILE so a timeout can stop exactly that
+# starts its own Word, it writes that process id to TAILORBIRDCV_PIDFILE so a timeout can stop exactly that
 # hidden instance (COM starts it outside our process tree). Errors are printed as one plain line.
 _WORD_PS = r"""
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 try {
-  $src = $env:AUTOCV_SRC
-  $dst = $env:AUTOCV_DST
+  $src = $env:TAILORBIRDCV_SRC
+  $dst = $env:TAILORBIRDCV_DST
   $missing = [System.Reflection.Missing]::Value
   $word = $null
   $created = $false
@@ -105,11 +105,11 @@ try {
   if ($null -eq $word) {
     $before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
     # Recorded first: if Word blocks inside New-Object (first run, activation), a timeout can still find it.
-    Set-Content -LiteralPath ($env:AUTOCV_PIDFILE + '.before') -Value ($before -join ',') -Encoding ascii
+    Set-Content -LiteralPath ($env:TAILORBIRDCV_PIDFILE + '.before') -Value ($before -join ',') -Encoding ascii
     $word = New-Object -ComObject Word.Application
     $created = $true
     $new = @(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } | ForEach-Object { $_.Id })
-    if ($new.Count -eq 1) { Set-Content -LiteralPath $env:AUTOCV_PIDFILE -Value $new[0] -Encoding ascii }
+    if ($new.Count -eq 1) { Set-Content -LiteralPath $env:TAILORBIRDCV_PIDFILE -Value $new[0] -Encoding ascii }
     $word.Visible = $false
   }
   $alerts = $word.DisplayAlerts
@@ -141,11 +141,11 @@ def _private() -> Path:
 
 def work_dir() -> Path:
     """The one folder the engines read from and write to (inside private/, so it's never committed)."""
-    return Path(os.environ.get("AUTOCV_WORD_DIR", _private() / "word"))
+    return Path(os.environ.get("TAILORBIRDCV_WORD_DIR", _private() / "word"))
 
 
 def lo_profile() -> Path:
-    return Path(os.environ.get("AUTOCV_LO_PROFILE", _private() / "libreoffice"))
+    return Path(os.environ.get("TAILORBIRDCV_LO_PROFILE", _private() / "libreoffice"))
 
 
 # -- detection ------------------------------------------------------------------------
@@ -192,7 +192,7 @@ def word_app() -> Path | None:
 
 def soffice() -> Path | None:
     """The LibreOffice executable (soffice.com on Windows, which waits and reports errors)."""
-    if env := os.environ.get("AUTOCV_SOFFICE"):
+    if env := os.environ.get("TAILORBIRDCV_SOFFICE"):
         return Path(env) if Path(env).is_file() else None
     candidates: list[Path] = []
     if IS_MAC:
@@ -244,10 +244,10 @@ def test_conversion(engine: str | None = None) -> dict:
         chosen = resolve(engine)
     except RuntimeError as e:
         return {"ok": False, "engine": None, "seconds": 0, "detail": str(e)}
-    with tempfile.TemporaryDirectory(prefix="autocv-pdftest-") as tmp:
-        docx = Path(tmp) / "AutoCV test.docx"
+    with tempfile.TemporaryDirectory(prefix="tailorbirdcv-pdftest-") as tmp:
+        docx = Path(tmp) / "TailorbirdCV test.docx"
         doc = Document()
-        doc.add_paragraph("AutoCV PDF test — this page can be deleted.")
+        doc.add_paragraph("TailorbirdCV PDF test — this page can be deleted.")
         doc.save(str(docx))
         start = time.monotonic()
         try:
@@ -289,14 +289,14 @@ def to_pdf(docx: Path, pdf: Path | None = None, timeout: float = PDF_TIMEOUT, en
     with _lock, oscompat.FileLock(work / ".lock"):  # also serializes the CLI with a running server
         engine = resolve(engine)
         tag = uuid.uuid4().hex[:12]
-        src, dst = work / f"autocv-{tag}.docx", work / f"autocv-{tag}.pdf"
+        src, dst = work / f"tailorbirdcv-{tag}.docx", work / f"tailorbirdcv-{tag}.pdf"
         try:
             if engine == "word":
                 shutil.copyfile(docx, src)
-                pidfile = work / f"autocv-{tag}.pid"
+                pidfile = work / f"tailorbirdcv-{tag}.pid"
                 try:
                     _run(_command(src, dst), timeout, dst, engine, work,
-                         env={**os.environ, "AUTOCV_SRC": str(src), "AUTOCV_DST": str(dst), "AUTOCV_PIDFILE": str(pidfile)},
+                         env={**os.environ, "TAILORBIRDCV_SRC": str(src), "TAILORBIRDCV_DST": str(dst), "TAILORBIRDCV_PIDFILE": str(pidfile)},
                          pidfile=pidfile)
                 finally:
                     pidfile.unlink(missing_ok=True)
@@ -344,7 +344,7 @@ def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path, env
         if engine == "word":
             detail = lines[-1] if lines else _word_dialog_hint(work)
             if IS_MAC and ("-1743" in detail or "not authorized to send apple events" in detail.lower()):
-                detail = ("macOS isn't letting AutoCV control Word. Open System Settings → Privacy & Security → "
+                detail = ("macOS isn't letting TailorbirdCV control Word. Open System Settings → Privacy & Security → "
                           "Automation, and allow your terminal (or Python) to control Microsoft Word, then try again.")
         else:
             detail = lines[-1] if lines else "no output was produced."
@@ -354,7 +354,7 @@ def _run(cmd: list[str], timeout: float, dst: Path, engine: str, work: Path, env
 def _word_dialog_hint(work: Path) -> str:
     if IS_MAC:
         return (f"It may be waiting on a dialog: the first time, macOS asks Word for access to {work} "
-                "(“Grant File Access”, click Select), or to allow AutoCV to control Word; Word may also need to be "
+                "(“Grant File Access”, click Select), or to allow TailorbirdCV to control Word; Word may also need to be "
                 "activated (signed in). Open Word, answer any dialog, then rebuild.")
     return ("It may be waiting on a dialog (activation, sign-in or a repair prompt). Open Word once, "
             "answer it, then rebuild.")
@@ -382,7 +382,7 @@ def _kill_started_word(pidfile: Path | None) -> None:
 
 
 def _command(src: Path, dst: Path) -> list[str]:
-    """The Word command; on Windows the paths travel in AUTOCV_SRC / AUTOCV_DST (see to_pdf)."""
+    """The Word command; on Windows the paths travel in TAILORBIRDCV_SRC / TAILORBIRDCV_DST (see to_pdf)."""
     if IS_WINDOWS:
         script = _WORD_PS
         root = os.environ.get("SystemRoot", r"C:\Windows")
@@ -453,7 +453,7 @@ def font_dirs() -> list[Path]:
     """Folders whose matching fonts are linked into the LibreOffice profile.
 
     On macOS LibreOffice doesn't see the Supplemental fonts or the ones inside Word, so they're
-    linked in; on Windows and Linux it already sees the system fonts. AutoCV's own open fonts
+    linked in; on Windows and Linux it already sees the system fonts. TailorbirdCV's own open fonts
     (the substitutes) are linked everywhere."""
     return (system_font_dirs() if IS_MAC else []) + [DATA / "fonts"]
 
@@ -516,7 +516,8 @@ _XCU_EMPTY = ('<?xml version="1.0" encoding="UTF-8"?>\n<oor:items xmlns:oor="htt
               'xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
               '</oor:items>\n')
 _SUBST_PATH = "/org.openoffice.Office.Common/Font/Substitution"
-_OURS = re.compile(r'<item oor:path="' + re.escape(_SUBST_PATH) + r'(?:/FontPairs"><node oor:name="autocv-[^"]*"'
+# Our rules, including those written before the rename (named autocv-…), so an existing profile is never left with duplicates.
+_OURS = re.compile(r'<item oor:path="' + re.escape(_SUBST_PATH) + r'(?:/FontPairs"><node oor:name="(?:tailorbirdcv|autocv)-[^"]*"'
                    r'|"><prop oor:name="Replacement")[^\n]*?</item>\n?')
 
 
@@ -540,7 +541,7 @@ def configure_substitutes(profile: Path, families: set[str]) -> None:
                  "</prop></item>\n"]
         for family, sub in sorted(rules.items()):
             items.append(
-                f'<item oor:path="{_SUBST_PATH}/FontPairs"><node oor:name="autocv-{family.lower()}" oor:op="replace">'
+                f'<item oor:path="{_SUBST_PATH}/FontPairs"><node oor:name="tailorbirdcv-{family.lower()}" oor:op="replace">'
                 '<prop oor:name="Always" oor:op="fuse"><value>true</value></prop>'
                 '<prop oor:name="OnScreenOnly" oor:op="fuse"><value>false</value></prop>'
                 f'<prop oor:name="ReplaceFont" oor:op="fuse"><value>{family}</value></prop>'

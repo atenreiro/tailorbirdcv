@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from autocv import importer
-from autocv.api import create_app
-from autocv.engine import FakeEngine
-from autocv.schema import MasterProfile
-from autocv.store import Store
+from tailorbirdcv import importer
+from tailorbirdcv.api import create_app
+from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.schema import MasterProfile
+from tailorbirdcv.store import Store
 from conftest import client_for
 
 FIX = Path(__file__).parent / "fixtures"
@@ -53,7 +53,7 @@ TRANSCRIPTION = {
 }
 
 
-def test_the_ai_only_transcribes_and_autocv_assigns_ids():
+def test_the_ai_only_transcribes_and_tailorbirdcv_assigns_ids():
     profile = importer.build_profile(TRANSCRIPTION)
     MasterProfile.model_validate(profile)  # valid as is
     role = profile["roles"][0]
@@ -147,8 +147,8 @@ def test_without_a_headline_line_the_latest_title_is_used():
 
 
 def test_the_demo_engine_works_for_a_brand_new_user(tmp_path, monkeypatch):
-    from autocv.demo import demo_engine
-    monkeypatch.setenv("AUTOCV_PRIVATE", str(tmp_path / "private"))
+    from tailorbirdcv.demo import demo_engine
+    monkeypatch.setenv("TAILORBIRDCV_PRIVATE", str(tmp_path / "private"))
     client = client_for(create_app(Store(tmp_path / "private"), demo_engine()))
     draft = client.post("/api/profile/import", json={"text": RESUME}).json()
     assert draft["profile"]["contact"]["name"] == "Jordan Rivera"

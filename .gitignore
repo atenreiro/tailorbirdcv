@@ -1,4 +1,4 @@
-# ---- AutoCV: personal data never enters the repository ----------------------------------
+# ---- TailorbirdCV: personal data never enters the repository ----------------------------------
 # The data folder (profile, applications, settings, access key) and the owner's local notes.
 private/
 CLAUDE.local.md
@@ -6,7 +6,7 @@ CLAUDE.local.md
 # Resumes and their outputs anywhere in the tree; the only Word file shipped is the empty template.
 *.pdf
 *.docx
-!autocv/data/templates/base.docx
+!tailorbirdcv/data/templates/base.docx
 *.doc
 *.rtf
 *.odt

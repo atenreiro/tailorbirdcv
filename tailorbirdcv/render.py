@@ -28,7 +28,7 @@ W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 R_NS = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
-SECTION_TITLES = themes.CLASSIC.titles  # the Classic headings (what `autocv ingest` reads)
+SECTION_TITLES = themes.CLASSIC.titles  # the Classic headings (what `tailorbirdcv ingest` reads)
 
 _SPACING = '<w:spacing w:before="{before}" w:after="{after}" w:line="240" w:lineRule="auto"/>'
 
@@ -144,7 +144,7 @@ def _set(el, **attrs) -> None:
 
 
 # The design for renders in this request/task: (theme, paper). Set from Settings by the API/CLI.
-_DESIGN: ContextVar[tuple[Theme | None, str | None]] = ContextVar("autocv_design", default=(None, None))
+_DESIGN: ContextVar[tuple[Theme | None, str | None]] = ContextVar("tailorbirdcv_design", default=(None, None))
 
 
 def use_design(theme: str | None, paper: str | None, text_size: str | None = None):

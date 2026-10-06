@@ -36,7 +36,7 @@ def no_update_checks(monkeypatch):
     """Tests never ask PyPI for the latest version; test_update.py swaps in its own answers."""
     async def offline(transport=None):
         raise OSError("tests are offline")
-    from autocv import update
+    from tailorbirdcv import update
     monkeypatch.setattr(update, "fetch_latest", offline)
 
 
@@ -45,12 +45,12 @@ def no_favicon_fetches(monkeypatch):
     """Tests never contact company sites for icons; test_favicon.py drives the fetcher with fake sites."""
     async def none(job_url, sites=None, client=None):
         return None
-    from autocv import favicon
+    from tailorbirdcv import favicon
     monkeypatch.setattr(favicon, "fetch", none)
 
 
 def client_for(app) -> TestClient:
-    """A client that behaves like the AutoCV UI: allowed host + the X-AutoCV header."""
-    client = TestClient(app, base_url="http://127.0.0.1", headers={"X-AutoCV": "1"})
-    client.cookies.set(app.state.cookie_name, app.state.access_key)  # like a browser opened from `autocv serve`'s link
+    """A client that behaves like the TailorbirdCV UI: allowed host + the X-TailorbirdCV header."""
+    client = TestClient(app, base_url="http://127.0.0.1", headers={"X-TailorbirdCV": "1"})
+    client.cookies.set(app.state.cookie_name, app.state.access_key)  # like a browser opened from `tailorbirdcv serve`'s link
     return client
