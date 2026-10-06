@@ -145,7 +145,9 @@ def inspect(path: Path) -> Contents:
             if rel not in manifest["files"]:
                 raise BackupError("That backup is damaged (it has files its manifest doesn't list).")
         for rel in manifest["files"]:
-            if f"data/{_relative('data/' + rel)}" not in names:
+            if not isinstance(rel, str) or _relative("data/" + rel) != rel:  # only exact, canonical paths
+                raise BackupError("That backup is damaged or unsafe (it has a file outside the data folder).")
+            if f"data/{rel}" not in names:
                 raise BackupError("That backup is incomplete (files listed in it are missing).")
         if "profile.yaml" not in manifest["files"]:
             raise BackupError("That backup has no profile, so there's nothing to restore.")
@@ -174,11 +176,15 @@ def restore(store, path: Path) -> dict:
     staging.mkdir(parents=True)
     try:
         with zipfile.ZipFile(path) as z:
+            root = staging.resolve()
             for rel, info in contents.manifest["files"].items():
-                data = z.read(f"data/{_relative('data/' + rel)}")
-                if _sha(data) != info.get("sha256"):
+                safe = _relative("data/" + rel)  # == rel (inspect), checked again where it's written
+                data = z.read(f"data/{safe}")
+                if not isinstance(info, dict) or _sha(data) != info.get("sha256"):
                     raise BackupError("That backup is damaged (a file doesn't match its checksum).")
-                target = staging / rel
+                target = (staging / safe).resolve()
+                if safe != rel or not target.is_relative_to(root):
+                    raise BackupError("That backup is damaged or unsafe (it has a file outside the data folder).")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
             keys = json.loads(z.read(KEYS)) if KEYS in z.namelist() else {}

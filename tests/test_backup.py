@@ -116,6 +116,9 @@ def rewrite(src: Path, dst: Path, change) -> Path:
     (lambda e: e.pop(backup.MANIFEST), "isn't a TailorbirdCV backup"),
     (lambda e: e.__setitem__("data/../evil.txt", b"x"), "unsafe"),
     (lambda e: e.__setitem__("data/word/x.docx", b"x"), "unsafe"),
+    (lambda e: e.__setitem__(backup.MANIFEST, json.dumps({**json.loads(e[backup.MANIFEST]), "files": {
+        **json.loads(e[backup.MANIFEST])["files"], "applications/./x.txt": {"size": 1, "sha256": "0"}}}).encode()),
+     "unsafe"),
     (lambda e: e.__setitem__("data/profile.yaml", e["data/profile.yaml"] + b"\n# changed"), "checksum"),
     (lambda e: e.pop("data/settings.json"), "incomplete"),
     (lambda e: e.__setitem__(backup.MANIFEST, json.dumps({**json.loads(e[backup.MANIFEST]), "format": 99}).encode()),
