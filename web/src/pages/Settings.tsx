@@ -5,6 +5,7 @@ import { cx, fmtDate, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { setUnsaved } from '../unsaved'
 import { ErrorNote, Spinner } from '../ui'
+import BackupCard from './Backup'
 import SystemCheck from './SystemCheck'
 
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em]'
@@ -637,6 +638,8 @@ export default function Settings() {
       )}
 
       {s && <ApplicationsSettings settings={s} onSaved={onSaved} />}
+
+      <BackupCard />
 
       <SystemCheck />
 

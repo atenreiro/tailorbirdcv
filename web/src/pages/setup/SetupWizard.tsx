@@ -6,6 +6,7 @@ import { cacheSettings, loadSettings } from '../../settings'
 import { markSetupDone } from '../../setup'
 import { confirmLeave } from '../../unsaved'
 import { ErrorNote, Spinner } from '../../ui'
+import { RestoreBackup } from '../Backup'
 import { AIEngine, ResumeDesign, YourTargets } from '../Settings'
 import SystemCheck from '../SystemCheck'
 import ReviewProfile from './ReviewProfile'
@@ -250,6 +251,10 @@ export default function SetupWizard() {
           ))}
         </ol>
         <p className="max-w-[760px] text-[13px] text-muted">Your profile and applications stay on this computer. Only what the AI needs to read or write your resume is sent to the AI you choose.</p>
+        <div className="flex max-w-[760px] flex-col gap-2 border-t border-line pt-4">
+          <p className="text-sm text-ink"><span className="font-semibold">Moving from another computer?</span> Restore a TailorbirdCV backup instead of setting up again.</p>
+          <RestoreBackup replaces={false} onRestored={() => window.location.assign('/')} />
+        </div>
       </Panel>
     )
   } else if (step === 'computer') {

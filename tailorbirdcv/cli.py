@@ -11,6 +11,8 @@
                  [--no-browser]
     tailorbirdcv doctor                    check this machine: data folder, AI engine, PDF engine, fonts, browser
     tailorbirdcv install-browser           install the headless browser used for JavaScript-only job pages
+    tailorbirdcv backup [file]             save your data as one .zip (--include-keys: also your API keys)
+    tailorbirdcv restore <file> [--yes]    replace your data with a backup (the current data is kept aside)
     tailorbirdcv --version
 """
 
@@ -380,6 +382,45 @@ def cmd_install_browser(args) -> int:
     return code
 
 
+def cmd_backup(args) -> int:
+    from . import backup
+    out = Path(args.file or backup.file_name()).expanduser().resolve()
+    info = backup.create(STORE, out, include_keys=args.include_keys)
+    keys = f", API keys: {', '.join(info['keys'])}" if info["keys"] else ""
+    print(f"Saved {out} ({info['files']} files{keys}).")
+    if args.include_keys and not info["keys"]:
+        print("(No API keys are saved in the keychain, so none were included.)")
+    print("\nWARNING: " + backup.warning(bool(info["keys"])))
+    return 0
+
+
+def cmd_restore(args) -> int:
+    from . import backup
+    path = Path(args.file).expanduser()
+    try:
+        summary = backup.inspect(path).summary
+    except (backup.BackupError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"Backup from {summary['created']} (TailorbirdCV {summary['version']}): {summary['applications']} "
+          f"applications, {summary['files']} files" + (", API keys" if summary["keys"] else "") + ".")
+    print(f"This replaces the data in {PRIVATE} (it's kept in {backup.KEPT}/, not deleted). "
+          "Stop TailorbirdCV first if it's running.")
+    if not args.yes and input("Restore? [y/N] ").strip().lower() not in ("y", "yes"):
+        print("Nothing was changed.")
+        return 1
+    try:
+        result = backup.restore(STORE, path)
+    except (backup.BackupError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print("Restored." + (f" Your previous data is in {PRIVATE / result['kept']}." if result["kept"] else ""))
+    if result["keys_failed"]:
+        print("API keys that couldn't be saved (no keychain): " + ", ".join(result["keys_failed"])
+              + ". Set them again in Settings → AI engine.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     from .doctor import version
     parser = argparse.ArgumentParser(prog="tailorbirdcv", description=__doc__,
@@ -398,6 +439,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_serve)
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
     sub.add_parser("install-browser").set_defaults(fn=cmd_install_browser)
+    p = sub.add_parser("backup"); p.add_argument("file", nargs="?")
+    p.add_argument("--include-keys", action="store_true", help="also include the API keys saved in the keychain")
+    p.set_defaults(fn=cmd_backup)
+    p = sub.add_parser("restore"); p.add_argument("file"); p.add_argument("--yes", action="store_true")
+    p.set_defaults(fn=cmd_restore)
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
@@ -407,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
     from .render import use_design
     ai.use_context(ai.Context.from_settings(settings["targets"], PRIVATE))
     use_design(settings["theme"], settings["paper"], settings["text_size"])
-    if args.cmd not in ("serve", "doctor", "install-browser"):  # serve migrates when the API starts
+    if args.cmd not in ("serve", "doctor", "install-browser", "backup", "restore"):  # serve migrates when it starts
         try:
             for old, new in STORE.migrate_layout().items():
                 print(f"moved application {old} → {STORE.app_path(new).relative_to(STORE.apps_dir)}")

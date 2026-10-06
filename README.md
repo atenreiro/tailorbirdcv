@@ -142,6 +142,12 @@ For each application made from a job link, TailorbirdCV fetches the company's si
 
 In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
 
+### Backup and restore
+Because everything lives only on your computer, keep a backup. **Settings → Backup & restore → Download backup** saves your profile, memory, applications (including the copies you sent), settings and history as one `.zip`. On a new computer, choose **Restore from a backup** on the first setup page (or later in Settings). Restoring never deletes anything: the data it replaces is kept in a `before-restore` folder inside your data folder. From a terminal: `tailorbirdcv backup [file]` and `tailorbirdcv restore <file>`.
+
+> [!WARNING]
+> **A backup isn't encrypted.** Anyone who has the file can read your CV, contact details and applications, and use your API keys if you chose to include them (they're left out unless you tick **Include my API keys**). Keep it somewhere private, such as an encrypted drive or your own cloud folder, and don't share it.
+
 ## For developers
 ```bash
 uv run pytest                                        # tests

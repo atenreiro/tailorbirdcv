@@ -225,29 +225,71 @@ async function req<T>(method: string, path: string, body?: unknown, extraHeaders
   } catch {
     throw new ApiError(0, 'Can’t reach the TailorbirdCV server. Is `tailorbirdcv serve` still running? Your inputs are kept, so retry once it’s back.')
   }
-  if (!res.ok) {
-    let msg = res.statusText
-    let code: string | undefined
-    let detail: Record<string, unknown> | undefined
-    try {
-      const data = await res.json()
-      if (typeof data.detail === 'string') msg = data.detail
-      else if (data.detail && typeof data.detail.message === 'string') {
-        msg = data.detail.message; code = data.detail.code; detail = data.detail
-      } else if (Array.isArray(data.detail)) {
-        // Validation errors: show what's wrong, never the submitted value (it can be a whole file).
-        msg = data.detail.map((d: { msg?: string; loc?: unknown[] }) =>
-          [d.loc?.slice(1).join('.'), d.msg].filter(Boolean).join(': ')).join('; ') || 'Invalid request'
-      } else msg = 'Request failed'
-    } catch { /* not json */ }
-    if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('tailorbirdcv:no-profile'))
-    if (res.status === 401 && code === 'locked') window.dispatchEvent(new Event('tailorbirdcv:locked'))
-    throw new ApiError(res.status, msg, code, detail)
-  }
+  if (!res.ok) throw await failure(res)
   return res.status === 204 ? (undefined as T) : res.json()
 }
 
+/** The error a failed response carries (the server's message, never the submitted data). */
+async function failure(res: Response): Promise<ApiError> {
+  let msg = res.statusText
+  let code: string | undefined
+  let detail: Record<string, unknown> | undefined
+  try {
+    const data = await res.json()
+    if (typeof data.detail === 'string') msg = data.detail
+    else if (data.detail && typeof data.detail.message === 'string') {
+      msg = data.detail.message; code = data.detail.code; detail = data.detail
+    } else if (Array.isArray(data.detail)) {
+      // Validation errors: show what's wrong, never the submitted value (it can be a whole file).
+      msg = data.detail.map((d: { msg?: string; loc?: unknown[] }) =>
+        [d.loc?.slice(1).join('.'), d.msg].filter(Boolean).join(': ')).join('; ') || 'Invalid request'
+    } else msg = 'Request failed'
+  } catch { /* not json */ }
+  if (res.status === 409 && msg.startsWith('No master profile')) window.dispatchEvent(new Event('tailorbirdcv:no-profile'))
+  if (res.status === 401 && code === 'locked') window.dispatchEvent(new Event('tailorbirdcv:locked'))
+  return new ApiError(res.status, msg, code, detail)
+}
+
+const OFFLINE = 'Can’t reach the TailorbirdCV server. Is `tailorbirdcv serve` still running?'
+
+/** What a backup holds (also the summary a restore returns). */
+export interface BackupSummary { created: string | null; version: string | null; files: number; applications: number; keys: string[] }
+export interface RestoreResult extends BackupSummary { kept: string | null; keys_restored: string[]; keys_failed: string[] }
+
+/** Downloads a backup .zip (saved by the browser). Returns its file name and the providers whose API keys it holds. */
+async function downloadBackup(keys: boolean): Promise<{ name: string; keys: string[] }> {
+  let res: Response
+  try {
+    res = await fetch(`/api/backup?keys=${keys}`)
+  } catch {
+    throw new ApiError(0, OFFLINE)
+  }
+  if (!res.ok) throw await failure(res)
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'TailorbirdCV-backup.zip'
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  return { name, keys: (res.headers.get('x-backup-keys') ?? '').split(',').filter(Boolean) }
+}
+
+/** Replaces the data with a backup .zip (sent as the request body). */
+async function restoreBackup(file: File): Promise<RestoreResult> {
+  let res: Response
+  try {
+    res = await fetch('/api/restore', { method: 'POST', body: file, headers: { 'X-TailorbirdCV': '1', 'Content-Type': 'application/zip' } })
+  } catch {
+    throw new ApiError(0, OFFLINE)
+  }
+  if (!res.ok) throw await failure(res)
+  return res.json()
+}
+
 export const api = {
+  downloadBackup,
+  restoreBackup,
   engine: () => req<EngineStatus>('GET', '/engine'),
   settings: () => req<Settings>('GET', '/settings'),
   doctor: (phase: 'all' | 'setup' = 'all') => req<DoctorCheck[]>('GET', `/doctor?phase=${phase}`),

@@ -17,12 +17,13 @@ from typing import Literal
 
 import yaml
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Request
+from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import ai, ats, critique as hm, factcheck, favicon, fit, oscompat, paths, pdf as pdfmod, themes, update
+from . import ai, ats, backup, critique as hm, factcheck, favicon, fit, oscompat, paths, pdf as pdfmod, themes, update
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, default_engine
@@ -486,6 +487,50 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return setup_payload()
 
     browser_install: dict = {"state": "idle", "detail": ""}
+
+    # -- backup and restore --------------------------------------------------------------------------------
+    MAX_UPLOAD = 600_000_000  # a backup .zip (a real one is a few MB)
+
+    @api.get("/backup")
+    async def download_backup(keys: bool = False):
+        """The data folder as one .zip (backup.py). API keys only when asked (`keys=true`). The X-Backup-Keys
+        header lists the providers whose keys are inside, for the warning the UI shows afterwards."""
+        fd, tmp = tempfile.mkstemp(dir=store.private, prefix=".backup-", suffix=".zip")
+        os.close(fd)
+        try:
+            info = await asyncio.to_thread(backup.create, store, Path(tmp), keys)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        return FileResponse(tmp, media_type="application/zip", filename=backup.file_name(),
+                            content_disposition_type="attachment",
+                            headers={"X-Backup-Keys": ",".join(info["keys"]), "Cache-Control": "no-store"},
+                            background=BackgroundTask(lambda: Path(tmp).unlink(missing_ok=True)))
+
+    @api.post("/restore")
+    async def restore_backup(request: Request):
+        """Replace the data with a backup (the request body is the .zip). Refused while anything else runs; the
+        data it replaces is kept in before-restore/<time>/."""
+        if app.state.upgrade or app.state.busy > 1 or browser_install["state"] == "running":
+            raise HTTPException(409, "TailorbirdCV is busy (an AI run, build or download is still going). Try again "
+                                     "when it has finished.")
+        fd, tmp = tempfile.mkstemp(dir=store.private, prefix=".restore-upload-", suffix=".zip")
+        size = 0
+        try:
+            with os.fdopen(fd, "wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_UPLOAD:
+                        raise HTTPException(413, "That file is too large to be a TailorbirdCV backup.")
+                    f.write(chunk)
+            if not size:
+                raise HTTPException(422, "Choose a backup file (.zip).")
+            try:
+                return await asyncio.to_thread(backup.restore, store, Path(tmp))
+            except backup.BackupError as e:
+                raise HTTPException(422, str(e)) from e
+        finally:
+            Path(tmp).unlink(missing_ok=True)
 
     # -- updates ---------------------------------------------------------------------------------------
     def update_view(cache: dict | None = None) -> dict:
