@@ -41,6 +41,7 @@
 
 /* The waiting animation (ui.tsx Stitching): the stitch is sewn left to right while the bird hops along. */
 @keyframes stitch-sew { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+.stitch-sew { animation: stitch-sew var(--sew, 2.6s) linear infinite; }
 @keyframes stitch-walk { from { transform: translateX(0); } to { transform: translateX(52px); } }
 @keyframes stitch-hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 
@@ -129,5 +130,13 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+/* …except the waiting stitch: a line drawing itself in place (no movement across the screen), so a long AI wait
+   still shows that something is happening. The bird stays still. */
+@media (prefers-reduced-motion: reduce) {
+  .stitch-sew {
+    animation-duration: var(--sew, 2.6s) !important;
+    animation-iteration-count: infinite !important;
   }
 }

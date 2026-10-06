@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.2.0 — unreleased
-- **A friendlier wait:** while the AI works, the tailorbird hops along its leaf sewing the stitch; while documents are built, the stitch runs around a page. With the system's *reduce motion* setting on, it shows the finished stitch, still.
+- **A friendlier wait:** while the AI works, the tailorbird hops along its leaf sewing the stitch; while documents are built, the stitch runs around a page. With the system's *reduce motion* setting on, the stitch still sews but the bird stands still.
 - **AutoCV is now TailorbirdCV**, with a new logo and colours. The PyPI package and the command are both `tailorbirdcv` (`tailorbirdcv serve`), environment variables start with `TAILORBIRDCV_`, and the repository is github.com/atenreiro/tailorbirdcv. API keys saved in the keychain under the old name move over the first time they're used.
 - **Company icons:** applications made from a job link show the company's site icon on the board, in the table and in the detail panel, fetched once from the company's own website (never a job board's logo). SVG icons work too, and sites that block plain requests are read through the headless browser when it's installed. Without one, nothing changes. Settings → Applications → Show company icons turns them off (and stops fetching).
 - **Fixes from an architecture review:** marking an application applied or freezing a copy while it builds no longer hangs TailorbirdCV (lock order and the server loop); a draft that fails the fact-check no longer makes compose fail with an error; Claude Code is checked before every AI call and never used on a pay-per-use login (Console, Bedrock, Vertex); the private link only ever redirects within TailorbirdCV; the request log masks the link's key.

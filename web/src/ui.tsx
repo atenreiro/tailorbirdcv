@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, STATUSES, type EngineStatus, type Outcome } from './api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, statusStyle } from './lib'
@@ -13,11 +13,10 @@ export function Spinner({ className = '' }: { className?: string }) {
   )
 }
 
-const SEW = { animation: 'stitch-sew 2.6s linear infinite' }
 
 /** The waiting animation, from the brand mark: the tailorbird hops along its leaf sewing the stitch while the AI
- *  works ("ai"), or the stitch runs around a page while documents are built ("build"). With "reduce motion" on it
- *  shows the finished stitch, still. */
+ *  works ("ai"), or the stitch runs around a page while documents are built ("build"). With "reduce motion" on only
+ *  the stitch keeps sewing (a line drawing itself, nothing moves across the screen); the bird stands still. */
 export function Stitching({ mode, className }: { mode: 'ai' | 'build'; className?: string }) {
   const mask = useId()
   return (
@@ -25,7 +24,7 @@ export function Stitching({ mode, className }: { mode: 'ai' | 'build'; className
       {mode === 'ai' ? (
         <>
           <mask id={mask}>
-            <path d="M22 80 C44 78 72 80 96 74" pathLength={100} fill="none" stroke="#fff" strokeWidth="6" strokeDasharray="100" style={SEW} />
+            <path d="M22 80 C44 78 72 80 96 74" pathLength={100} fill="none" stroke="#fff" strokeWidth="6" strokeDasharray="100" className="stitch-sew" />
           </mask>
           <path d="M12 76 C28 62 66 62 104 72 C88 98 40 102 12 76 Z" fill="#8CCB7A" />
           <path d="M22 80 C44 78 72 80 96 74" fill="none" stroke="#0F3D2E" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="5 4" mask={`url(#${mask})`} />
@@ -48,7 +47,7 @@ export function Stitching({ mode, className }: { mode: 'ai' | 'build'; className
         <>
           <mask id={mask}>
             <rect x="34" y="10" width="52" height="68" rx="5" pathLength={100} fill="none" stroke="#fff" strokeWidth="7" strokeDasharray="100"
-              style={{ animation: 'stitch-sew 3s linear infinite' }} />
+              className="stitch-sew" style={{ '--sew': '3s' } as CSSProperties} />
           </mask>
           <rect x="34" y="10" width="52" height="68" rx="5" fill="#F4F7F5" />
           <rect x="34" y="10" width="52" height="68" rx="5" fill="none" stroke="#0F3D2E" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="5 4" mask={`url(#${mask})`} />
