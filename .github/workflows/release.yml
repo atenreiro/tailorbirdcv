@@ -97,7 +97,7 @@ jobs:
       - name: Absolute image links in the PyPI description (relative ones only work on GitHub)
         env:
           VERSION: ${{ needs.decide.outputs.version }}
-        run: sed -i -E "s#(src=\"|\]\()docs/#\1https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/v${VERSION}/docs/#g" README.md
+        run: sed -i -E "s#(src=\"|srcset=\"|\]\()docs/#\1https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/v${VERSION}/docs/#g" README.md
       - run: uv build
       - name: The packages carry the VERSION
         env:

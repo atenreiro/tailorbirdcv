@@ -7,6 +7,7 @@ import '@fontsource-variable/instrument-sans/wdth-italic.css'
 import '@fontsource/geist-mono/400.css'
 import '@fontsource/geist-mono/500.css'
 import '@fontsource/geist-mono/600.css'
+import '@fontsource/outfit/latin-600.css'  // the TailorbirdCV wordmark only
 import './index.css'
 import App from './App'
 

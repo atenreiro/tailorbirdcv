@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480" role="img" aria-label="TailorbirdCV app icon">
-  <title>TailorbirdCV app icon</title>
-  <rect width="480" height="480" rx="108" fill="#0F3D2E"/>
-  <g transform="translate(80 80) scale(2.6667)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="960" height="480" role="img" aria-label="TailorbirdCV logo, dark background">
+  <title>TailorbirdCV (dark)</title>
+  <rect width="960" height="480" fill="#0F3D2E"/>
+  <g transform="translate(62 140) scale(1.6667)">
     <path d="M12 76 C28 62 66 62 104 72 C88 98 40 102 12 76 Z" fill="#8CCB7A"/>
     <path d="M22 80 C44 78 72 80 96 74" fill="none" stroke="#0F3D2E" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="5 4"/>
     <path d="M44 52 L30 20 L38 19 L53 47 Z" fill="#F4F7F5"/>
@@ -13,4 +13,5 @@
     <path d="M52 52 C58 58 68 58 74 50" fill="none" stroke="#8CCB7A" stroke-width="2.5" stroke-linecap="round"/>
     <path d="M60 63 L60 67 M68 63 L68 67" stroke="#F4F7F5" stroke-width="2" stroke-linecap="round"/>
   </g>
+  <text x="298" y="270" font-family="Outfit, Sora, 'Helvetica Neue', Arial, sans-serif" font-size="88" font-weight="600" letter-spacing="-2.6" fill="#F4F7F5">Tailorbird<tspan fill="#F2A93B">CV</tspan></text>
 </svg>

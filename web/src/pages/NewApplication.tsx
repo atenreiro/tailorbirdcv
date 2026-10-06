@@ -77,7 +77,7 @@ export default function NewApplication() {
           {(['url', 'paste'] as const).map((m) => (
             <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)}
               className={cx('h-[34px] cursor-pointer rounded-md px-3.5 font-medium transition-colors',
-                mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+                mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
               {m === 'paste' ? 'Paste the description' : 'Fetch from a URL'}
             </button>
           ))}
@@ -111,7 +111,7 @@ export default function NewApplication() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <button onClick={submit} aria-disabled={!ready || busy}
               className={cx('inline-flex h-11 items-center gap-2.5 rounded-lg px-5 text-[15px] font-semibold text-white transition-colors',
-                ready || busy ? 'bg-accent' : 'bg-[#c3cad6]', ready && !busy ? 'cursor-pointer hover:bg-accent-strong' : 'cursor-default')}>
+                ready || busy ? 'bg-accent' : 'bg-[#c0ccc5]', ready && !busy ? 'cursor-pointer hover:bg-accent-strong' : 'cursor-default')}>
               {busy && <Spinner />}{busy ? (paste ? 'Saving…' : 'Fetching the posting…') : 'Analyze this role →'}
             </button>
             <span className="text-sm text-muted">Company and title are detected automatically.</span>
@@ -129,8 +129,8 @@ export default function NewApplication() {
               </span>
             </div>
             <div className="flex flex-col gap-1">
-              <p className={cx('font-display text-[30px] leading-none tracking-[-0.01em]', det ? 'text-ink' : 'text-[#c3cad6]')}>{det?.company ?? 'Company'}</p>
-              <p className={cx('text-[15px]', det ? 'text-body' : 'text-[#aeb7c6]')}>{det?.role ?? 'Role title'}</p>
+              <p className={cx('font-display text-[30px] leading-none tracking-[-0.01em]', det ? 'text-ink' : 'text-[#c0ccc5]')}>{det?.company ?? 'Company'}</p>
+              <p className={cx('text-[15px]', det ? 'text-body' : 'text-[#a9b8b0]')}>{det?.role ?? 'Role title'}</p>
             </div>
             <p className="text-[13px] leading-[1.45] text-faint text-pretty">
               {det ? 'A first guess from the opening line. The analysis confirms both.'
@@ -144,7 +144,7 @@ export default function NewApplication() {
               {det && <span className="font-mono text-xs text-faint">{similar.length}</span>}
             </div>
             {similar.map((a) => (
-              <Link key={a.id} to={`/a/${a.id}`} className="flex items-center gap-3 border-t border-[#eef0f4] px-[22px] py-3 text-ink hover:bg-wash hover:text-ink">
+              <Link key={a.id} to={`/a/${a.id}`} className="flex items-center gap-3 border-t border-[#e9efeb] px-[22px] py-3 text-ink hover:bg-wash hover:text-ink">
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold">{a.company}</span>
                   <span className="block truncate text-[13px] text-muted">{a.role}</span>

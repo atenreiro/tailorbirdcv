@@ -23,10 +23,10 @@ const card = 'rounded-[14px] border border-rule bg-sheet'
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em] text-muted'
 const cardTitle = 'font-display text-[22px] text-ink'
 // Soft grey input that turns white on focus.
-const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(31_63_209/0.15)]'
+const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(200_67_29/0.15)]'
 // Looks like plain text until hovered or focused (fields that are rarely edited).
 const quiet = 'rounded-lg border border-transparent bg-transparent outline-none transition-colors hover:border-rule focus:border-accent focus:bg-sheet'
-const addBtn = 'h-8 cursor-pointer self-start rounded-lg px-2.5 font-medium text-accent hover:bg-[#eef1fd]'
+const addBtn = 'h-8 cursor-pointer self-start rounded-lg px-2.5 font-medium text-accent hover:bg-[#fdf2ed]'
 
 function Grow({ value, onChange, className, label, placeholder, autoFocus }: {
   value: string; onChange: (v: string) => void; className?: string; label: string; placeholder?: string; autoFocus?: boolean
@@ -76,7 +76,7 @@ function EvidenceRow({ e, scope, idCol, onChange, onDelete, placeholder, autoFoc
 }) {
   const source = e.source ?? 'resume'
   return (
-    <div className={cx('grid items-start gap-3 border-b border-[#eef0f4] py-2 xl:gap-3.5', idCol)}>
+    <div className={cx('grid items-start gap-3 border-b border-[#e9efeb] py-2 xl:gap-3.5', idCol)}>
       <div className="col-span-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-[3px] sm:col-span-1 sm:flex-col sm:flex-nowrap sm:items-start sm:pt-2">
         <span className="break-all font-mono text-[11px] text-accent">{hideId ? (scope ? 'scope' : 'bullet') : e.id}</span>
         <span className={cx('font-mono text-[10px] uppercase tracking-[0.06em]', source === 'resume' ? 'text-faint' : 'text-[#7a4700]')}>
@@ -297,7 +297,7 @@ export default function Profile() {
                   <button key={key} aria-current={on ? 'page' : undefined} disabled={blocked(key)} onClick={() => setTab(key)}
                     title={blocked(key) ? (yamlDirty ? 'Save or discard your YAML edits first' : 'Save or discard your edits first') : undefined}
                     className={cx('flex h-9 shrink-0 cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 text-left transition-colors hover:bg-sheet disabled:cursor-not-allowed disabled:opacity-40',
-                      on ? 'bg-sheet font-semibold text-ink shadow-[inset_3px_0_0_var(--color-accent),0_1px_2px_rgb(14_20_34/0.06)]' : 'text-body')}>
+                      on ? 'bg-sheet font-semibold text-ink shadow-[inset_3px_0_0_var(--color-accent),0_1px_2px_rgb(15_61_46/0.06)]' : 'text-body')}>
                     <span>{name}</span>
                     <span className={cx('font-mono text-[11px]', on ? 'text-accent' : count.includes('new') ? 'text-[#7a4700]' : 'text-faint')}>{count}</span>
                   </button>
@@ -335,7 +335,7 @@ export default function Profile() {
             const isNew = !savedRoleIds.has(r.id)
             const ghost = isNew ? 'border-rule bg-wash placeholder:text-faint' : ''
             return (
-            <section key={r.id} className={cx(card, 'animate-rise overflow-hidden', isNew && 'border-accent/50 shadow-[0_0_0_3px_rgb(31_63_209/0.08)]')} style={{ animationDelay: `${i * 50}ms` }}>
+            <section key={r.id} className={cx(card, 'animate-rise overflow-hidden', isNew && 'border-accent/50 shadow-[0_0_0_3px_rgb(200_67_29/0.08)]')} style={{ animationDelay: `${i * 50}ms` }}>
               <div className="flex flex-col gap-3 border-b border-line px-4 pb-[18px] pt-5 sm:px-6">
                 {isNew && <p className={cx(label, 'text-accent')}>New role · company, location, dates, title, scope and 1–{MAX_BULLETS} resume bullets</p>}
                 <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
@@ -439,7 +439,7 @@ export default function Profile() {
                   <div className="flex min-w-0 flex-col gap-2.5">
                     <div className="flex flex-wrap gap-1.5">
                       {g.items.map((item, ii) => (
-                        <span key={ii} className="inline-flex h-7 items-center gap-2 rounded-md bg-[#e6e9ef] pl-2.5 pr-1.5 font-mono text-xs text-ink">
+                        <span key={ii} className="inline-flex h-7 items-center gap-2 rounded-md bg-[#e3eae6] pl-2.5 pr-1.5 font-mono text-xs text-ink">
                           {item}
                           <button onClick={() => edit((d) => { d.skills[gi].items.splice(ii, 1) })} aria-label={`Remove ${item}`} className="size-[18px] cursor-pointer rounded text-faint hover:bg-sheet hover:text-bad">×</button>
                         </span>
@@ -468,7 +468,7 @@ export default function Profile() {
                       const on = h.tracks.includes(t)
                       return (
                         <button key={t} aria-pressed={on}
-                          className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors', on ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}
+                          className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors', on ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}
                           onClick={() => edit((d) => { const tr = d.headlines[hi].tracks; d.headlines[hi].tracks = on ? tr.filter((x) => x !== t) : [...tr, t] })}>
                           {t}
                         </button>
@@ -526,7 +526,7 @@ export default function Profile() {
           {view === 'yaml' && (
             <>
               <p className="text-sm text-muted">The raw file (<span className="font-mono text-xs">profile.yaml</span> in your data folder; Settings → System check shows where). It’s validated on save, and duplicate ids or a bad structure are rejected.</p>
-              <textarea className="min-h-[640px] resize-y rounded-[14px] border border-ink bg-ink px-5 py-[18px] font-mono text-[13px] leading-[1.65] text-[#dfe5fb] outline-none focus:shadow-[0_0_0_3px_rgb(77_107_255/0.45)]" aria-label="Profile YAML" spellCheck={false} value={yaml} onChange={(e) => setYaml(e.target.value)} />
+              <textarea className="min-h-[640px] resize-y rounded-[14px] border border-ink bg-ink px-5 py-[18px] font-mono text-[13px] leading-[1.65] text-[#f6dacf] outline-none focus:shadow-[0_0_0_3px_rgb(77_107_255/0.45)]" aria-label="Profile YAML" spellCheck={false} value={yaml} onChange={(e) => setYaml(e.target.value)} />
             </>
           )}
         </div>

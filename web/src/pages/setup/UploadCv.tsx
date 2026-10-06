@@ -69,7 +69,7 @@ export default function UploadCv({ onImported, onBlank }: {
         {(['file', 'paste'] as const).map((m) => (
           <button key={m} aria-pressed={mode === m} onClick={() => { setMode(m); setError(null) }}
             className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors',
-              mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+              mode === m ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
             {m === 'file' ? 'Upload a file' : 'Paste text'}
           </button>
         ))}

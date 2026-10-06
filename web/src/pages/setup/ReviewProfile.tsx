@@ -133,7 +133,7 @@ export default function ReviewProfile({ draft, onSaved, onRestart }: {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="sticky top-14 z-10 -mx-1 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-rule bg-sheet/95 px-4 py-3 shadow-[0_8px_24px_-18px_rgb(14_20_34/0.5)] backdrop-blur">
+      <div className="sticky top-14 z-10 -mx-1 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-rule bg-sheet/95 px-4 py-3 shadow-[0_8px_24px_-18px_rgb(15_61_46/0.5)] backdrop-blur">
         <span className="text-[13px] text-body">
           {p.roles.length} role{p.roles.length === 1 ? '' : 's'} · {bullets} achievement{bullets === 1 ? '' : 's'} · {p.skills.length} skill group{p.skills.length === 1 ? '' : 's'}
         </span>

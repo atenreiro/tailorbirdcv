@@ -25,7 +25,7 @@ export interface ReviewActions {
 export function ReviewIssue({ issue, actions, compact = false }: { issue: CritiqueIssue; actions: ReviewActions; compact?: boolean }) {
   const editable = issue.action !== 'advice'
   return (
-    <div className={cx('rounded-lg border border-accent/25 bg-[#f3f5fe] p-3 text-xs', !compact && 'mt-2')}>
+    <div className={cx('rounded-lg border border-accent/25 bg-[#fdf4f0] p-3 text-xs', !compact && 'mt-2')}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold uppercase tracking-[0.08em] text-accent">Hiring manager</span>
         <span className={cx('rounded-full px-2 py-0.5 text-[10px] font-semibold', SEV[issue.severity])}>{KIND_LABEL[issue.kind] ?? issue.kind}</span>

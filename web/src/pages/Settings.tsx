@@ -45,20 +45,20 @@ function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
   return (
     <label className={cx('relative flex min-w-0 flex-col gap-3 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
       !e.available ? 'cursor-not-allowed border-rule bg-wash' : chosen
-        ? 'cursor-pointer border-accent bg-sheet shadow-[0_0_0_3px_rgb(31_63_209/0.12)]'
-        : 'cursor-pointer border-rule bg-sheet hover:border-[#9aa3b5]')}>
+        ? 'cursor-pointer border-accent bg-sheet shadow-[0_0_0_3px_rgb(200_67_29/0.12)]'
+        : 'cursor-pointer border-rule bg-sheet hover:border-[#a3bcb0]')}>
       <input type="radio" name="pdf-engine" value={e.id} className="sr-only" checked={chosen}
         aria-label={`${e.name}${e.available ? (e.version ? `, version ${e.version}` : '') : ', not installed'}`}
         disabled={!e.available} onChange={() => { if (!busy) onChoose() }} />
       <span className="flex items-start gap-3">
         <span aria-hidden className={cx('mt-[3px] grid size-[18px] flex-none place-items-center rounded-full border-2',
-          chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+          chosen ? 'border-accent' : 'border-[#b4c2ba]')}>
           {chosen && <span className="size-2 rounded-full bg-accent" />}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span className={cx('font-display text-[22px] leading-none', e.available ? 'text-ink' : 'text-faint')}>{e.name}</span>
-            {e.id === 'word' && <span className="rounded bg-[#e6e9ef] px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-body">Default</span>}
+            {e.id === 'word' && <span className="rounded bg-[#e3eae6] px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-body">Default</span>}
             {effective && <span className="rounded bg-accent-soft px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-accent">In use</span>}
           </span>
           <span className={cx('flex items-center gap-1.5 font-mono text-[11px]', e.available ? 'text-ok' : 'text-faint')}>
@@ -90,7 +90,7 @@ function Segmented<T extends string | number>({ label: name, options, value, onC
       {options.map(([k, text]) => (
         <button key={String(k)} type="button" aria-pressed={value === k} onClick={() => onChange(k)}
           className={cx('h-[30px] cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors',
-            value === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+            value === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
           {text}
         </button>
       ))}
@@ -192,7 +192,7 @@ function ThemeSample({ t }: { t: ThemeInfo }) {
       <span style={{ fontFamily: FONT_STACK[t.name_font] ?? body, color: `#${t.ink}` }} className="text-[15px] font-bold leading-none">Alex Morgan</span>
       <span style={{ fontFamily: body, color: `#${t.accent}` }} className="text-[8px] font-bold">Senior Product Manager</span>
       <span style={{ fontFamily: body, color: `#${t.accent}`, borderColor: `#${t.rule}` }} className="mt-1 border-b pb-[2px] text-[7px] font-bold tracking-[0.04em]">PROFESSIONAL EXPERIENCE</span>
-      {[92, 80, 86].map((w) => <span key={w} className="h-[3px] rounded-full bg-[#d9dde3]" style={{ width: `${w}%` }} />)}
+      {[92, 80, 86].map((w) => <span key={w} className="h-[3px] rounded-full bg-[#d6dfda]" style={{ width: `${w}%` }} />)}
     </span>
   )
 }
@@ -244,12 +244,12 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
           const chosen = t.id === theme
           return (
             <label key={t.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-3 rounded-xl border px-4 py-4 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
-              chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
+              chosen ? 'border-accent shadow-[0_0_0_3px_rgb(200_67_29/0.12)]' : 'border-rule hover:border-[#a3bcb0]')}>
               <input type="radio" name="theme" className="sr-only" checked={chosen} aria-label={t.name}
                 onChange={() => chooseTheme(t.id)} />
               <ThemeSample t={t} />
               <span className="flex items-center gap-2">
-                <span aria-hidden className={cx('grid size-4 flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+                <span aria-hidden className={cx('grid size-4 flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b4c2ba]')}>
                   {chosen && <span className="size-1.5 rounded-full bg-accent" />}
                 </span>
                 <span className="font-display text-xl leading-none text-ink">{t.name}</span>
@@ -354,11 +354,11 @@ export function AIEngine({ settings, onSaved, bare }: { settings: SettingsData; 
                 const copy = ENGINE_COPY[e.id]
                 return (
                   <label key={e.id} className={cx('flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border px-5 py-[18px] transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent',
-                    chosen ? 'border-accent shadow-[0_0_0_3px_rgb(31_63_209/0.12)]' : 'border-rule hover:border-[#9aa3b5]')}>
+                    chosen ? 'border-accent shadow-[0_0_0_3px_rgb(200_67_29/0.12)]' : 'border-rule hover:border-[#a3bcb0]')}>
                     <input type="radio" name="ai-engine" className="sr-only" checked={chosen} aria-label={e.label}
                       onChange={() => choose(e.id)} />
                     <span className="flex flex-wrap items-center gap-2.5">
-                      <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b8c0cc]')}>
+                      <span aria-hidden className={cx('grid size-[18px] flex-none place-items-center rounded-full border-2', chosen ? 'border-accent' : 'border-[#b4c2ba]')}>
                         {chosen && <span className="size-2 rounded-full bg-accent" />}
                       </span>
                       <span className="font-display text-[22px] leading-none text-ink">{e.label}</span>

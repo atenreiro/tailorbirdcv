@@ -56,7 +56,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
     }
   }
 
-  const row = 'grid items-center gap-x-4 gap-y-2 border-b border-[#eef0f4] px-5 py-3 sm:grid-cols-[170px_minmax(0,1fr)_auto]'
+  const row = 'grid items-center gap-x-4 gap-y-2 border-b border-[#e9efeb] px-5 py-3 sm:grid-cols-[170px_minmax(0,1fr)_auto]'
   const small = 'btn h-8 px-3 py-0 text-[13px]'
 
   return (
@@ -69,7 +69,7 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
         <div className="inline-flex h-10 gap-0.5 rounded-lg bg-lane p-[3px]" role="group" aria-label="Show the history of">
           {(['profile', 'knowledge'] as const).map((k) => (
             <button key={k} aria-pressed={kind === k} onClick={() => switchKind(k)}
-              className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors', kind === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+              className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors', kind === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
               {k === 'profile' ? 'Master profile' : 'Answers & preferences'}
             </button>
           ))}
@@ -101,14 +101,14 @@ export function HistoryPanel({ onRestored, hasUnsaved }: { onRestored: (kind: Hi
                 </div>
               </div>
               {open?.id === e.id && (
-                <div className="animate-rise border-b border-[#eef0f4] bg-wash px-5 pb-[18px] pt-3.5">
+                <div className="animate-rise border-b border-[#e9efeb] bg-wash px-5 pb-[18px] pt-3.5">
                   <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-accent">Changed since this version</p>
                   <ul className="mt-2 space-y-1 text-sm text-body">{open.summary.map((l, i) => <li key={i}>• {l}</li>)}</ul>
                   <details className="mt-3">
                     <summary className="cursor-pointer text-[13px] text-muted hover:text-ink">Line-by-line diff</summary>
                     <pre className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-line bg-sheet p-3 font-mono text-[12px] leading-[1.6]">
                       {open.diff.split('\n').map((line, i) => (
-                        <div key={i} className={line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#eef7f2] text-ok' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#fbe9e7] text-bad' : 'text-muted'}>{line || ' '}</div>
+                        <div key={i} className={line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#eef7f2] text-ok' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#fce8ec] text-bad' : 'text-muted'}>{line || ' '}</div>
                       ))}
                     </pre>
                   </details>

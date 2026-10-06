@@ -5,7 +5,7 @@ import { cx, fmtDate } from '../lib'
 
 type KnowledgeEdit = { k: Knowledge; setK: (k: Knowledge) => void }
 
-const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(31_63_209/0.15)]'
+const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(200_67_29/0.15)]'
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em] text-muted'
 
 export function AnswersPanel({ k, setK }: KnowledgeEdit) {
@@ -29,7 +29,7 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
           <p className={label}>Known gaps · {gaps.length}</p>
           <ul className="overflow-hidden rounded-[14px] border border-rule bg-sheet">
             {gaps.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eef0f4] px-5 py-3.5 last:border-b-0">
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e9efeb] px-5 py-3.5 last:border-b-0">
                 <div className="flex flex-col gap-0.5">
                   <p className="text-[15px] font-semibold text-ink">{a.topic}</p>
                   <p className="text-[13px] text-muted">No real experience · {a.company ?? 'unknown role'} · {fmtDate(a.date)}</p>
@@ -115,7 +115,7 @@ export function PreferencesPanel({ k, setK }: KnowledgeEdit) {
       <div className="flex gap-2">
         <input className="field h-10 min-w-0 flex-1" placeholder="Add your own, e.g. “Prefer ‘led’ over ‘spearheaded’”" value={newText}
           onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} />
-        <button className="btn btn-primary h-10 px-[18px] disabled:border-[#c3cad6] disabled:bg-[#c3cad6] disabled:opacity-100" disabled={!newText.trim()} onClick={add}>Add</button>
+        <button className="btn btn-primary h-10 px-[18px] disabled:border-[#c0ccc5] disabled:bg-[#c0ccc5] disabled:opacity-100" disabled={!newText.trim()} onClick={add}>Add</button>
       </div>
     </div>
   )

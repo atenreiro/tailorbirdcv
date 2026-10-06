@@ -30,7 +30,7 @@ function Segmented<T extends string>({ label, options, value, onChange }: { labe
       {options.map(([k, name]) => (
         <button key={k} aria-pressed={value === k} onClick={() => onChange(k)}
           className={cx('h-[34px] cursor-pointer rounded-md px-3 font-medium transition-colors',
-            value === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+            value === k ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
           {name}
         </button>
       ))}
@@ -38,7 +38,7 @@ function Segmented<T extends string>({ label, options, value, onChange }: { labe
   )
 }
 
-const barColor = (k: Stage, on: boolean) => (k === 'offer' ? (on ? 'bg-ok' : 'bg-[#5fae86]') : on ? 'bg-accent' : 'bg-[#8fa2f2]')
+const barColor = (k: Stage, on: boolean) => (k === 'offer' ? (on ? 'bg-ok' : 'bg-[#5fae86]') : on ? 'bg-accent' : 'bg-[#e6a690]')
 const RING = 'shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--color-ink)]'
 const EASE = 'duration-[350ms] ease-[cubic-bezier(.2,.7,.2,1)]'
 
@@ -116,8 +116,8 @@ export default function Funnel() {
                 </div>
                 {i < stages.length - 1 && (
                   <div className="relative h-[280px] w-[84px] flex-none" aria-hidden>
-                    <div className={cx('absolute inset-0 bg-[#dfe5fb] transition-[clip-path]', EASE)} style={{ clipPath: s.clip }} />
-                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-[#cfd8f7] bg-sheet px-2 py-1 font-mono text-xs font-medium text-accent">{s.conv}</span>
+                    <div className={cx('absolute inset-0 bg-[#f6dacf] transition-[clip-path]', EASE)} style={{ clipPath: s.clip }} />
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-[#f0c9b9] bg-sheet px-2 py-1 font-mono text-xs font-medium text-accent">{s.conv}</span>
                   </div>
                 )}
               </div>
@@ -157,7 +157,7 @@ export default function Funnel() {
           <div className="overflow-hidden rounded-[14px] border border-rule bg-sheet">
             {list.map((a) => (
               <Link key={a.id} to={`/a/${a.id}`}
-                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-5 gap-y-1.5 border-b sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] border-[#eef0f4] px-5 py-[13px] text-ink last:border-b-0 hover:bg-wash hover:text-ink">
+                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-5 gap-y-1.5 border-b sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] border-[#e9efeb] px-5 py-[13px] text-ink last:border-b-0 hover:bg-wash hover:text-ink">
                 <span className="min-w-0">
                   <span className="block truncate text-[15px] font-semibold">{a.company}</span>
                   <span className="block truncate text-[13px] text-muted">{a.role}</span>
@@ -168,7 +168,7 @@ export default function Funnel() {
                     : <span className="font-mono text-[11px] text-faint">still open</span>}
                 </span>
                 {a.track
-                  ? <span className="rounded bg-[#e6e9ef] px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-body">{a.track}</span>
+                  ? <span className="rounded bg-[#e3eae6] px-[7px] py-[3px] font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-body">{a.track}</span>
                   : <span />}
                 <span className="min-w-14 text-right font-mono text-[11px] text-faint" title={`Reached ${title.toLowerCase()} stage`}>{short(a.reached_at)}</span>
               </Link>

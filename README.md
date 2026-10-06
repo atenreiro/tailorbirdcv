@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" alt="TailorbirdCV" width="240"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png"><img src="docs/logo.png" alt="TailorbirdCV" width="420"></picture></p>
 
 # TailorbirdCV
 

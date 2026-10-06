@@ -1,29 +1,34 @@
 @import "tailwindcss";
 
-/* v3 design system: cool greys, one blue accent, Instrument Sans (condensed for display) + Geist Mono. */
+/* TailorbirdCV brand (docs/brand/logo.md): forest-green ink and masthead, one rust accent, green-tinted greys,
+   Instrument Sans (condensed for display) + Geist Mono; Outfit for the wordmark only. */
 @theme {
   --font-sans: "Instrument Sans Variable", "Instrument Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-brand: "Outfit", "Instrument Sans Variable", system-ui, sans-serif;
 
-  --color-paper: #e9ecf1;      /* page */
+  --color-paper: #e8eeea;      /* page */
   --color-sheet: #ffffff;      /* cards, panels */
-  --color-ink: #0e1422;
-  --color-body: #2a3242;
-  --color-muted: #5a6475;
-  --color-faint: #8b94a3;
-  --color-rule: #d6dbe3;
-  --color-line: #e3e7ed;       /* hairlines inside panels */
-  --color-wash: #f5f7fa;       /* subtle fills */
-  --color-lane: #dfe3ea;       /* board columns, segmented controls */
-  --color-accent: #1f3fd1;
-  --color-accent-strong: #1832a8;
-  --color-accent-soft: #e8ecfc;
-  --color-ok: #17643f;
-  --color-ok-soft: #e4f2ea;
+  --color-ink: #0f3d2e;        /* brand forest: text, masthead */
+  --color-body: #2b3f37;
+  --color-muted: #56685f;
+  --color-faint: #86968e;
+  --color-rule: #d2dcd6;
+  --color-line: #e1e8e4;       /* hairlines inside panels */
+  --color-wash: #f4f7f5;       /* subtle fills */
+  --color-lane: #dce4df;       /* board columns, segmented controls */
+  --color-accent: #c8431d;     /* brand rust */
+  --color-accent-strong: #a3361a;
+  --color-accent-soft: #fbebe4;
+  --color-ok: #18794a;
+  --color-ok-soft: #e2f3e9;
   --color-warn: #8a5200;
   --color-warn-soft: #fbf1dc;
-  --color-bad: #b42318;
-  --color-bad-soft: #f9e0dd;
+  --color-bad: #b4153a;        /* crimson, kept apart from the rust accent */
+  --color-bad-soft: #fbe2e7;
+  --color-leaf: #8ccb7a;       /* brand accents for dark backgrounds */
+  --color-amber: #f2a93b;
+  --color-mist: #f4f7f5;
 
   --animate-rise: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-stamp: stamp 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both;
@@ -55,7 +60,7 @@
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }
-  ::selection { background: #dfe5fb; color: var(--color-accent); }
+  ::selection { background: #f6dacf; color: var(--color-accent); }
   :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
   textarea, input, select { font: inherit; color: inherit; }
   textarea::placeholder, input::placeholder { color: var(--color-faint); }
@@ -73,17 +78,17 @@
   .field {
     width: 100%;
     background: var(--color-sheet);
-    border: 1px solid #cfd5de;
+    border: 1px solid #cbd6cf;
     border-radius: 8px;
     padding: 8px 12px;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
-  .field:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 3px rgb(31 63 209 / 0.15); }
+  .field:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 3px rgb(200 67 29 / 0.15); }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 8px 14px; border-radius: 8px;
     font-weight: 500; font-size: 14px;
-    border: 1px solid #cfd5de;
+    border: 1px solid #cbd6cf;
     background: var(--color-sheet); color: var(--color-ink);
     transition: background 0.15s, border-color 0.15s, transform 0.1s;
     cursor: pointer;
@@ -100,7 +105,7 @@
   .sheet {
     background: var(--color-sheet);
     border: 1px solid var(--color-rule);
-    box-shadow: 0 1px 2px rgb(14 20 34 / 0.05);
+    box-shadow: 0 1px 2px rgb(15 61 46 / 0.05);
   }
   .chip {
     display: inline-flex; align-items: center; gap: 4px;

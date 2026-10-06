@@ -93,7 +93,7 @@ export default function UpdateBanner() {
         <button className={quiet} onClick={() => hide(`upgrade:${last.at}`)}>Dismiss</button>
       </div>
     ) : (
-      <div role="alert" className={`${banner} border-[#f1c9c4] bg-bad-soft`}>
+      <div role="alert" className={`${banner} border-[#f1c4ce] bg-bad-soft`}>
         <span className="flex-1"><strong>The upgrade to {last.target} didn’t finish.</strong> {last.error}</span>
         {status.log && <button className={quiet} onClick={() => api.revealUpgradeLog().catch((e) => setError((e as Error).message))}>Show the log</button>}
         <button className={quiet} onClick={() => hide(`upgrade:${last.at}`)}>Dismiss</button>
@@ -110,7 +110,7 @@ export default function UpdateBanner() {
     api.upgrade().then(() => setPhase('upgrading')).catch((e) => { setError((e as Error).message); setPhase('idle') })
   }
   return (
-    <div role="status" className={`${banner} border-[#cfd8f7] bg-accent-soft`}>
+    <div role="status" className={`${banner} border-[#f0c9b9] bg-accent-soft`}>
       <span className="flex-1">
         <strong>TailorbirdCV {latest} is available</strong> (you have {status.current}).
         {status.kind === 'uv-tool' && phase === 'confirm' &&

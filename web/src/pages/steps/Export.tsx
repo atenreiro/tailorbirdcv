@@ -198,7 +198,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
         {docx && <StyleCoach app={app} />}
 
         {docx && (
-          <div className="animate-rise flex flex-col gap-1 rounded-lg border border-rule bg-[#eef1f5] px-4 py-3.5 text-[13px] text-muted">
+          <div className="animate-rise flex flex-col gap-1 rounded-lg border border-rule bg-[#eef3f0] px-4 py-3.5 text-[13px] text-muted">
             <p className="font-medium text-ink">Before you send it</p>
             <p>Read it once, end to end. The fact-check guarantees numbers and names, but only you can confirm the emphasis sounds like you.</p>
           </div>
@@ -217,7 +217,7 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
               key={app.meta.updated}
               title="PDF preview"
               src={api.fileUrl(app.id, pdf)}
-              className={cx('aspect-[1/1.414] w-full max-w-[760px] bg-white shadow-[0_8px_24px_-12px_rgb(14_20_34/0.35)] transition-opacity', stale && 'opacity-55')}
+              className={cx('aspect-[1/1.414] w-full max-w-[760px] bg-white shadow-[0_8px_24px_-12px_rgb(15_61_46/0.35)] transition-opacity', stale && 'opacity-55')}
             />
           ) : app.tailored ? (
             <PagePreview t={app.tailored} p={profile.profile} />
@@ -245,7 +245,7 @@ function PagePreview({ t, p }: { t: Tailored; p: Profile }) {
       return x && <p key={id} className="flex gap-1.5 text-[11px] leading-[1.4] text-body"><span className="text-faint">•</span><span><span className="font-semibold">{x.label}</span> {text ?? x.text}</span></p>
     })
   return (
-    <div className="flex w-full max-w-[640px] flex-col gap-3 bg-white px-5 py-7 shadow-[0_8px_24px_-12px_rgb(14_20_34/0.35)] sm:px-12 sm:py-11"
+    <div className="flex w-full max-w-[640px] flex-col gap-3 bg-white px-5 py-7 shadow-[0_8px_24px_-12px_rgb(15_61_46/0.35)] sm:px-12 sm:py-11"
       style={{ fontFamily: "Calibri, Carlito, sans-serif" }} aria-label="Approximate resume preview">
       <div className="flex flex-col gap-0.5 text-center">
         <p className="text-lg font-semibold uppercase tracking-[0.04em] text-ink">{p.contact.name}</p>

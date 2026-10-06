@@ -24,7 +24,7 @@ interface Next { text: string; short?: string; tone: Tone; cta?: string; kind?: 
 // text colour, dot colour, soft background
 const TONE: Record<Tone, [string, string, string]> = {
   warn: ['text-[#7a4700]', 'bg-[#c47a00]', 'bg-warn-soft'], act: ['text-accent', 'bg-accent', 'bg-accent-soft'],
-  ok: ['text-ok', 'bg-ok', 'bg-ok-soft'], mute: ['text-muted', 'bg-[#b8c0cd]', 'bg-[#f2f4f7]'],
+  ok: ['text-ok', 'bg-ok', 'bg-ok-soft'], mute: ['text-muted', 'bg-[#b4c2ba]', 'bg-[#f1f5f2]'],
 }
 // progress meter segment colours
 const BAR = { ok: 'bg-ok', warn: 'bg-[#c47a00]', act: 'bg-accent', bad: 'bg-bad', off: 'bg-rule' }
@@ -361,7 +361,7 @@ export default function Applications() {
             {(['board', 'table'] as const).map((v) => (
               <button key={v} aria-pressed={view === v} onClick={() => setView(v)}
                 className={cx('h-[34px] cursor-pointer rounded-md px-3.5 font-medium capitalize transition-colors',
-                  view === v ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(14_20_34/0.12)]' : 'text-muted hover:text-ink')}>
+                  view === v ? 'bg-sheet text-ink shadow-[0_1px_2px_rgb(15_61_46/0.12)]' : 'text-muted hover:text-ink')}>
                 {v}
               </button>
             ))}
@@ -370,9 +370,9 @@ export default function Applications() {
             value={query} onChange={(e) => setQuery(e.target.value)} />
           <button aria-pressed={needs} onClick={() => setNeeds((x) => !x)}
             className={cx('inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3.5 font-medium transition-colors',
-              needs ? 'border-ink bg-ink text-white' : 'border-[#cfd5de] bg-sheet text-ink hover:border-ink')}>
+              needs ? 'border-ink bg-ink text-white' : 'border-[#cbd6cf] bg-sheet text-ink hover:border-ink')}>
             <span>Needs you</span>
-            <span className={cx('inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px]', needs ? 'bg-[#4d6bff] text-white' : 'bg-accent-soft text-accent')}>{needsCount}</span>
+            <span className={cx('inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px]', needs ? 'bg-[#c8431d] text-white' : 'bg-accent-soft text-accent')}>{needsCount}</span>
           </button>
           <button className="btn h-10 px-3.5" onClick={identify.pick}
             title="Which application did a resume PDF come from? Compared with your sent copies; the PDF is never stored">
@@ -421,8 +421,8 @@ export default function Applications() {
                         onDragEnd={() => { setDrag(null); setOver(null) }}
                         onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
                         onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
-                        className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#aeb7c6]',
-                          on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(14_20_34/0.05)]', dim(x))}>
+                        className={cx('flex cursor-pointer flex-col gap-2.5 rounded-[10px] border border-rule bg-sheet px-3.5 pb-3 pt-3.5 transition hover:border-[#a9b8b0]',
+                          on ? 'shadow-[0_0_0_2px_var(--color-accent)]' : 'shadow-[0_1px_2px_rgb(15_61_46/0.05)]', dim(x))}>
                         <div className="flex items-center justify-between gap-2.5">
                           <div className="flex min-w-0 items-center gap-2">
                             {icon(x) && <Favicon appId={x.id} size={16} />}
@@ -439,7 +439,7 @@ export default function Applications() {
                     )
                   })}
                   {rows.length === 0 && (
-                    <div className="rounded-[10px] border-[1.5px] border-dashed border-[#b8c0cd] px-3 py-[22px] text-center text-[13px] text-faint">
+                    <div className="rounded-[10px] border-[1.5px] border-dashed border-[#b4c2ba] px-3 py-[22px] text-center text-[13px] text-faint">
                       {query ? 'No matches' : 'Drop a card here'}
                     </div>
                   )}
@@ -448,13 +448,13 @@ export default function Applications() {
                       {rows.length > limit && (
                         <button onClick={() => setShownIn((s) => ({ ...s, [k]: limit + LANE_LIMIT }))}
                           title={`${rows.length - limit} more in ${title}`}
-                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
+                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#a9b8b0] font-medium text-body hover:border-solid hover:bg-sheet">
                           Show {Math.min(LANE_LIMIT, rows.length - limit)} more
                         </button>
                       )}
                       {limit > LANE_LIMIT && (
                         <button onClick={() => setShownIn((s) => ({ ...s, [k]: LANE_LIMIT }))}
-                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#aeb7c6] font-medium text-body hover:border-solid hover:bg-sheet">
+                          className="h-9 flex-1 cursor-pointer rounded-lg border border-dashed border-[#a9b8b0] font-medium text-body hover:border-solid hover:bg-sheet">
                           Show fewer
                         </button>
                       )}
@@ -482,8 +482,8 @@ export default function Applications() {
                   <div key={x.id} data-app-id={x.id} role="row" tabIndex={0} aria-haspopup="dialog" aria-current={on ? 'true' : undefined}
                     onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
                     onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && noModifier(e)) { e.preventDefault(); show(x.id, e.currentTarget) } }}
-                    className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#eef0f4] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
-                      on && 'bg-[#eef1fd] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
+                    className={cx('grid cursor-pointer grid-cols-[minmax(220px,1.6fr)_120px_110px_92px_minmax(200px,1.5fr)_72px] items-center gap-4 border-b border-[#e9efeb] px-5 py-[13px] transition last:border-b-0 hover:bg-wash',
+                      on && 'bg-[#fdf2ed] shadow-[inset_3px_0_0_var(--color-accent)]', dim(x))}>
                     <div role="cell" className="flex min-w-0 items-start gap-2.5">
                       {icon(x) && <Favicon appId={x.id} size={16} className="mt-[3px]" />}
                       <div className="min-w-0">
@@ -507,10 +507,10 @@ export default function Applications() {
       )}
 
       <div onClick={() => close()} aria-hidden
-        className={cx('fixed inset-0 z-40 bg-[rgb(14_20_34/0.28)] transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')} />
+        className={cx('fixed inset-0 z-40 bg-[rgb(15_61_46/0.28)] transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')} />
       <aside ref={panel} role="dialog" aria-modal="true" aria-labelledby="app-detail-title" aria-hidden={!open} inert={!open}
         className={cx('fixed inset-y-0 right-0 z-50 flex w-[min(480px,100%)] flex-col bg-sheet transition-[translate,box-shadow] duration-[280ms] ease-[cubic-bezier(.2,.7,.2,1)]',
-          open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(14_20_34/0.5)]' : 'translate-x-[105%] shadow-none')}>
+          open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgb(15_61_46/0.5)]' : 'translate-x-[105%] shadow-none')}>
         {shown && (
           <Sheet key={shown.id} a={shown} icon={icon(shown)} detail={shownDetail} busy={busy} notes={(draft?.id === shown.id ? draft.text : null) ?? shown.notes ?? ''}
             closeRef={closeBtn} deleteRef={deleteBtn} confirming={confirming} onConfirming={setConfirming}
@@ -682,7 +682,7 @@ function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, 
           </p>
           <div className="flex flex-wrap gap-2">
             <button autoFocus className="btn h-9 px-3.5" disabled={deleting} onClick={() => setConfirming(false)}>Cancel</button>
-            <button className="btn h-9 border-bad bg-bad px-3.5 font-semibold text-white hover:border-[#8f1c13] hover:bg-[#8f1c13]"
+            <button className="btn h-9 border-bad bg-bad px-3.5 font-semibold text-white hover:border-[#8c0f2b] hover:bg-[#8c0f2b]"
               disabled={deleting} onClick={onDelete}>
               {deleting && <Spinner />}{deleting ? 'Deleting…' : 'Delete permanently'}
             </button>

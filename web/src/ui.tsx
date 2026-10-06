@@ -87,7 +87,7 @@ export function EngineBadge() {
   return (
     <div className="relative">
       <button
-        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 font-mono text-[11px] uppercase tracking-[0.06em] text-[#9aa3b5] hover:text-white"
+        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 font-mono text-[11px] uppercase tracking-[0.06em] text-[#a3bcb0] hover:text-white"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label={`AI engine ${status === null ? 'checking' : ready ? 'ready' : 'offline'}`}
@@ -124,11 +124,11 @@ export function SaveDock({ dirty, text, busy, flash, onSave, onDiscard, saveLabe
   }
   if (!dirty) return null
   return (
-    <div className={cx(dock, 'flex max-w-[calc(100vw-32px)] items-center gap-3 rounded-xl bg-ink py-2.5 pl-5 pr-2.5 text-white shadow-[0_18px_40px_-16px_rgb(14_20_34/0.6)]')} role="region" aria-label="Unsaved changes">
+    <div className={cx(dock, 'flex max-w-[calc(100vw-32px)] items-center gap-3 rounded-xl bg-ink py-2.5 pl-5 pr-2.5 text-white shadow-[0_18px_40px_-16px_rgb(15_61_46/0.6)]')} role="region" aria-label="Unsaved changes">
       <span className="size-[7px] flex-none rounded-full bg-[#ffb547]" />
       <span className="truncate text-sm">{text}</span>
-      <button className="h-9 shrink-0 cursor-pointer rounded-lg border border-[#3a4356] px-3.5 text-[13px] font-medium hover:border-[#9aa3b5]" onClick={onDiscard} disabled={busy}>Discard</button>
-      <button className="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#4d6bff] px-4 text-[13px] font-semibold hover:bg-[#3d5bf0] disabled:opacity-60" onClick={onSave} disabled={busy}>
+      <button className="h-9 shrink-0 cursor-pointer rounded-lg border border-[#2e5a4a] px-3.5 text-[13px] font-medium hover:border-[#a3bcb0]" onClick={onDiscard} disabled={busy}>Discard</button>
+      <button className="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#c8431d] px-4 text-[13px] font-semibold hover:bg-[#a3361a] disabled:opacity-60" onClick={onSave} disabled={busy}>
         {busy && <Spinner />}{busy ? 'Saving…' : saveLabel}
       </button>
     </div>

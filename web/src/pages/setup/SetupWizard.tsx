@@ -311,7 +311,7 @@ export default function SetupWizard() {
               <li key={k}>
                 <button disabled={!reachable(k, i) || i === at} onClick={() => go(k)} aria-current={i === at ? 'step' : undefined}
                   className={cx('flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-medium transition-colors',
-                    i === at ? 'bg-ink text-white' : done ? 'bg-accent-soft text-accent enabled:hover:bg-[#dbe1fb]' : 'bg-lane text-faint')}>
+                    i === at ? 'bg-ink text-white' : done ? 'bg-accent-soft text-accent enabled:hover:bg-[#f6dacf]' : 'bg-lane text-faint')}>
                   <span className="font-mono text-[11px]">{done && i !== at ? '✓' : i + 1}</span>{name}
                 </button>
               </li>

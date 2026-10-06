@@ -22,24 +22,24 @@ export function fmtDate(iso?: string) {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  draft: 'bg-[#e6e9ef] text-muted',
-  analyzed: 'bg-[#e6e9ef] text-ink',
+  draft: 'bg-[#e3eae6] text-muted',
+  analyzed: 'bg-[#e3eae6] text-ink',
   composed: 'bg-[#f6ead2] text-warn',
-  built: 'bg-[#dfe5fb] text-accent',
+  built: 'bg-[#f6dacf] text-accent',
   applied: 'bg-ink text-white',
   interview: 'bg-[#dcefe5] text-ok',
   offer: 'bg-ok text-white',
-  closed: 'bg-[#e6e9ef] text-faint',
+  closed: 'bg-[#e3eae6] text-faint',
 }
 
 /** Closing outcomes, grouped by who ended it. */
 export const OUTCOMES: { key: Outcome; label: string; who: 'them' | 'you' | 'success'; style: string }[] = [
   { key: 'rejected', label: 'Rejected', who: 'them', style: 'bg-bad-soft text-bad' },
-  { key: 'no_response', label: 'No response', who: 'them', style: 'bg-[#e6e9ef] text-muted' },
-  { key: 'role_closed', label: 'Role closed', who: 'them', style: 'bg-[#e6e9ef] text-muted' },
-  { key: 'withdrew', label: 'Withdrew', who: 'you', style: 'bg-[#e6e9ef] text-faint' },
+  { key: 'no_response', label: 'No response', who: 'them', style: 'bg-[#e3eae6] text-muted' },
+  { key: 'role_closed', label: 'Role closed', who: 'them', style: 'bg-[#e3eae6] text-muted' },
+  { key: 'withdrew', label: 'Withdrew', who: 'you', style: 'bg-[#e3eae6] text-faint' },
   { key: 'declined_offer', label: 'Declined offer', who: 'you', style: 'bg-[#dcefe5] text-ok' },
-  { key: 'did_not_apply', label: 'Didn’t apply', who: 'you', style: 'bg-[#e6e9ef] text-faint' },
+  { key: 'did_not_apply', label: 'Didn’t apply', who: 'you', style: 'bg-[#e3eae6] text-faint' },
   { key: 'accepted_offer', label: 'Accepted offer', who: 'success', style: 'bg-ok text-white' },
 ]
 export const OUTCOME_GROUPS: [('them' | 'you' | 'success'), string][] = [['them', 'Ended by them'], ['you', 'Ended by you'], ['success', 'Success']]

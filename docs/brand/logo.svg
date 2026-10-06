@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="960" height="480" role="img" aria-label="TailorbirdCV logo">
+  <title>TailorbirdCV</title>
+  <rect width="960" height="480" fill="#F4F7F5"/>
+  <g transform="translate(62 140) scale(1.6667)">
+    <path d="M12 76 C28 62 66 62 104 72 C88 98 40 102 12 76 Z" fill="#8CCB7A"/>
+    <path d="M22 80 C44 78 72 80 96 74" fill="none" stroke="#0F3D2E" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="5 4"/>
+    <path d="M44 52 L30 20 L38 19 L53 47 Z" fill="#0F3D2E"/>
+    <path d="M42 54 C42 41 54 34 66 37 C77 40 82 50 78 58 C74 65 56 66 47 61 C44 59 42 57 42 54 Z" fill="#0F3D2E"/>
+    <circle cx="74" cy="34" r="10" fill="#0F3D2E"/>
+    <path d="M65 31 C66 22 80 22 84 30 C78 27 70 27 65 31 Z" fill="#E4572E"/>
+    <circle cx="78" cy="33" r="1.8" fill="#F4F7F5"/>
+    <path d="M83 35 L94 37.5 L83 40 Z" fill="#F2A93B"/>
+    <path d="M52 52 C58 58 68 58 74 50" fill="none" stroke="#8CCB7A" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M60 63 L60 67 M68 63 L68 67" stroke="#0F3D2E" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="298" y="270" font-family="Outfit, Sora, 'Helvetica Neue', Arial, sans-serif" font-size="88" font-weight="600" letter-spacing="-2.6" fill="#0F3D2E">Tailorbird<tspan fill="#C8431D">CV</tspan></text>
+</svg>

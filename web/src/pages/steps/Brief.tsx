@@ -92,7 +92,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
             const q = r.status !== 'strong' ? questionFor(r.text, questions) : undefined
             const settled = q && ['approved', 'no_experience'].includes(gapState(answers[q.id], drafts, q.id))
             return (
-              <div key={i} className="grid items-start gap-x-3.5 gap-y-1.5 border-b border-[#eef0f4] py-3 md:grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1fr)]">
+              <div key={i} className="grid items-start gap-x-3.5 gap-y-1.5 border-b border-[#e9efeb] py-3 md:grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1fr)]">
                 <span className="flex items-center gap-2 pt-0.5 text-xs font-medium text-ink">
                   <span className={cx('size-2 rounded-full', STATUS_DOT[r.status])} />
                   {STATUS_LABEL[r.status]}
