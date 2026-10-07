@@ -110,7 +110,9 @@ jobs:
 
   smoke:
     # The exact files about to be published: installed in a clean environment, checked outside the checkout.
+    # always(): on the automatic path `test` is skipped, and a skipped job anywhere upstream would skip this one too.
     needs: build
+    if: always() && needs.build.result == 'success'
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]

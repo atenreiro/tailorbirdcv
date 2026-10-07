@@ -1,4 +1,4 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/logo-dark.png"><img src="https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/logo.png" alt="TailorbirdCV" width="420"></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png"><img src="docs/logo.png" alt="TailorbirdCV" width="420"></picture></p>
 
 # TailorbirdCV
 
@@ -14,10 +14,10 @@ A built-in fact-check makes sure every line comes from your own CV: no made-up n
 
 TailorbirdCV runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by the AI you choose.
 
-![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/screenshots/review.png)
+![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
 
 ## How it works
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/how-it-works-dark.png"><img src="https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/how-it-works.png" alt="How TailorbirdCV works. You give it your CV once, then a job posting and your answers to its questions. On your computer, TailorbirdCV keeps your master profile (the only source of facts), reads the job, asks about gaps, writes a draft, fact-checks every line against your profile and builds a Word document and PDF of your tailored resume and cover letter. The AI you choose (Claude or ChatGPT with your subscription, or an API key from Anthropic, OpenAI or OpenRouter) sees only the job and your CV's content; Privacy mode (optional and experimental) replaces your name, email, phone and links with placeholders before anything is sent."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.png"><img src="docs/how-it-works.png" alt="How TailorbirdCV works. You give it your CV once, then a job posting and your answers to its questions. On your computer, TailorbirdCV keeps your master profile (the only source of facts), reads the job, asks about gaps, writes a draft, fact-checks every line against your profile and builds a Word document and PDF of your tailored resume and cover letter. The AI you choose (Claude or ChatGPT with your subscription, or an API key from Anthropic, OpenAI or OpenRouter) sees only the job and your CV's content; Privacy mode (optional and experimental) replaces your name, email, phone and links with placeholders before anything is sent."></picture>
 
 Everything except the AI runs on your computer. Your CV becomes your **master profile**, the only place facts come from. The AI reads the job and writes the draft; TailorbirdCV checks every line against your profile before you see it.
 
@@ -85,7 +85,7 @@ Your CV is copied word for word, never rewritten. Nothing is saved until you've 
 
 Moving from another computer? Choose **Restore from a backup** on the wizard's first page.
 
-![The setup wizard's review step: the CV as TailorbirdCV read it, checked line by line against the file](https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/screenshots/setup.png)
+![The setup wizard's review step: the CV as TailorbirdCV read it, checked line by line against the file](docs/screenshots/setup.png)
 
 ## Tailoring a resume
 1. Click **New tailoring** and paste the job posting's link (or its text).
@@ -97,9 +97,9 @@ Moving from another computer? Choose **Restore from a backup** on the wizard's f
 
 Then track it under **Applications**. Marking an application *applied* keeps a read-only copy of exactly what you sent. Found one of your resumes and not sure which version it is? **Identify a PDF** tells you which application it came from.
 
-![The brief: what the role wants, and how your evidence stacks up against each requirement](https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/screenshots/brief.png)
+![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
 
-![Gap questions: TailorbirdCV asks about what the job wants and your profile doesn't show](https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/docs/screenshots/gaps.png)
+![Gap questions: TailorbirdCV asks about what the job wants and your profile doesn't show](docs/screenshots/gaps.png)
 
 The screenshots use a fictional profile and job posting.
 
