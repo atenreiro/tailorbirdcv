@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Every page now ends with a footer linking to the source code on GitHub.
 - Fixed: leaving the Gaps step right after typing an answer no longer leaves a false "Leave site? Changes may not be saved" warning behind once the answer has saved; if that save fails, the application page now says so.
 - Fixed: the CV file picker offers only the formats TailorbirdCV can read (.docx, .pdf, .txt, .md).
 

@@ -15,6 +15,7 @@ import { useUnsavedGuard } from './unsaved'
 
 // The v3 design uses a 1480px frame on every page.
 const FRAME = 'max-w-[1480px] px-4 sm:px-7'
+const REPO = 'https://github.com/atenreiro/tailorbirdcv'
 
 /** The brand mark (docs/brand): a tailorbird on a stitched leaf, drawn for the dark masthead. */
 function Mark({ className }: { className?: string }) {
@@ -85,6 +86,21 @@ function Masthead() {
   )
 }
 
+/** The foot of every page: where TailorbirdCV's source code lives. */
+function Footer() {
+  return (
+    <footer className="border-t border-rule">
+      <div className={cx('mx-auto flex flex-wrap items-center gap-x-3 gap-y-1 py-6 text-[13px] text-muted', FRAME)}>
+        <span>TailorbirdCV</span>
+        <span aria-hidden="true">·</span>
+        <a href={REPO} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline">
+          {REPO.replace(/^https:\/\//, '')}
+        </a>
+      </div>
+    </footer>
+  )
+}
+
 /** Shown once after the setup wizard: where to start. */
 function FirstTip() {
   const [params, setParams] = useSearchParams()
@@ -126,7 +142,7 @@ export default function App() {
   useUnsavedGuard()
   useFirstRun()
   const locked = useLocked()
-  if (locked) return <><Masthead /><main className={cx('mx-auto pb-24 pt-10', FRAME)}><Locked /></main></>
+  if (locked) return <><Masthead /><main className={cx('mx-auto pb-24 pt-10', FRAME)}><Locked /></main><Footer /></>
   return (
     <>
       <Masthead />
@@ -144,6 +160,7 @@ export default function App() {
           <Route path="/welcome" element={<Navigate to="/setup" replace />} />
         </Routes>
       </main>
+      <Footer />
     </>
   )
 }
