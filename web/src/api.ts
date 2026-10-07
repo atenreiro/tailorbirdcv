@@ -137,6 +137,7 @@ export const isLetterFile = (name: string) => /_Cover_Letter\.[a-z]+$/i.test(nam
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
   letter: CoverLetter | null; letter_report: Report | null; letter_stale: boolean
+  learning_style?: boolean  // style preferences are being learned from it in the background (after applying)
   letter_notes: { id: string; text: string }[]
   tailored: Tailored | null; report: Report | null; ats: Ats | null
   answers: AppAnswer[]; edits: number
@@ -190,13 +191,13 @@ export interface Settings {
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
   text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
-  openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean
+  openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean; learn_style: boolean
   hide_personal: boolean; private_address: string
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
 export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
-  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean; hide_personal?: boolean; private_address?: string }
+  openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean; learn_style?: boolean; hide_personal?: boolean; private_address?: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
 }

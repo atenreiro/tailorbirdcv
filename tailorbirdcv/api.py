@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import difflib
+import hashlib
+import json
 import logging
 import os
 import tempfile
@@ -101,6 +103,7 @@ class SettingsPatch(BaseModel):
     openrouter_zdr: bool | None = None
     update_check: bool | None = None
     company_icons: bool | None = None
+    learn_style: bool | None = None
     hide_personal: bool | None = None
     private_address: str | None = Field(None, max_length=300)
 
@@ -247,6 +250,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             store.profile()
     except Exception as e:  # noqa: BLE001
         log.warning("TailorbirdCV: private/profile.yaml doesn't validate (%s). Fix it in Master profile → YAML.", e)
+    try:  # answers remembered more than once (before merging existed): keep the newest per topic
+        store.compact_knowledge()
+    except Exception as e:  # noqa: BLE001 — memory housekeeping never stops the app
+        log.warning("TailorbirdCV: couldn't merge repeated answers (%s)", e)
     engine = PrivateEngine(engine or default_engine(store), store)  # every AI call: contact details hidden
     app = FastAPI(title="TailorbirdCV", docs_url="/api/docs", openapi_url="/api/openapi.json")
     import hmac
@@ -893,6 +900,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                "edits": 0, "report": None, "ats": None, "length": None, "critique": critique_payload(app_id),
                "sent": store.sent_copies(app_id, fingerprints=True),
                "letter": None, "letter_report": None, "letter_stale": store.letter_stale(app_id),
+               "learning_style": app_id in style_pending,
                "letter_notes": letter_notes(app_id)}
         letter = store.letter(app_id)
         if letter:
@@ -906,6 +914,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         ai_draft = store.ai_tailored(app_id)
         if ai_draft and tailored:
             out["edits"] = len(ai.edited_claims(ai_draft, tailored))
+        ai_letter = store.ai_letter(app_id)
+        if ai_letter and letter:
+            out["edits"] += len(ai.edited_letter(ai_letter, letter))
         if tailored and store.profile_path.exists():
             profile = store.profile()
             report = factcheck.check(profile, tailored)
@@ -962,8 +973,14 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return critique_payload(app_id)
 
     @api.patch("/applications/{app_id}")
-    def patch_application(app_id: str, body: MetaPatch):
+    async def patch_application(app_id: str, body: MetaPatch):
         app_id = need_app(app_id)
+        meta = await asyncio.to_thread(change_application, app_id, body)  # waits on locks: off the event loop
+        if body.status == "applied":
+            queue_style_learning(app_id)
+        return meta
+
+    def change_application(app_id: str, body: MetaPatch) -> dict:
         # The application's lock comes before the store's (as in builds and freezes): taking them the other way
         # round could deadlock against a build of this application.
         with store.app_lock(app_id), store.lock:
@@ -1280,6 +1297,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         try:  # in a worker thread: waiting for a build of this application must never stall the server
             if mark_applied:
                 await asyncio.to_thread(store.mark_applied, app_id)  # freezes once; clears any closed outcome
+                queue_style_learning(app_id)
             else:
                 await asyncio.to_thread(store.freeze, app_id, "manual copy")
         except NeedsBuild as e:
@@ -1373,23 +1391,32 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except (ValidationError, RetiredIdReused, IncompleteRole) as e:
             raise HTTPException(422, str(e))
 
-    @api.post("/applications/{app_id}/preferences")
-    async def suggest_preferences(app_id: str):
-        """Propose style preferences from this application's guidance and Review edits."""
-        app_id = need_app(app_id)
+    def style_material(app_id: str) -> tuple[list[dict], list[str], list[dict]]:
+        """What the user changed from the AI's drafts (resume and cover letter), the guidance they
+        gave, and the review suggestions they rejected: what style preferences are learned from."""
         ai_draft, current = store.ai_tailored(app_id), store.tailored(app_id)
         edits = ai.edited_claims(ai_draft, current) if ai_draft and current else []
+        ai_letter, letter = store.ai_letter(app_id), store.letter(app_id)
+        if ai_letter and letter:
+            edits += ai.edited_letter(ai_letter, letter)
         guidance = [store.meta(app_id).get("guidance") or ""]
-        existing = [p for p in store.knowledge().preferences if p.status != "dismissed"]
         review = store.critique(app_id)
         rejected = [{"line": i.get("original", {}).get("text", i.get("where")), "suggested": i["rewrite"]["text"],
                      "problem": i.get("problem", "")}
                     for run in review["runs"] for i in run["result"].get("issues", [])
                     if review["decisions"].get(i["id"]) == "rejected" and i.get("rewrite")]
-        try:
-            proposals = await ai.learn_preferences(engine, edits, guidance, existing, rejected)
-        except EngineError as e:
-            raise _engine_call(e)
+        return edits, guidance, rejected
+
+    def style_fingerprint(material) -> str:
+        return hashlib.sha256(json.dumps(material, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+    async def learn_style(app_id: str) -> tuple[int, int]:
+        """Propose style preferences from this application (never active until the user approves
+        them). Returns (edits seen, preferences proposed)."""
+        material = await asyncio.to_thread(style_material, app_id)
+        edits, guidance, rejected = material
+        existing = [p for p in store.knowledge().preferences if p.status != "dismissed"]
+        proposals = await ai.learn_preferences(engine, edits, guidance, existing, rejected)
         today = f"{dt.date.today():%Y-%m-%d}"
         with store.editing_knowledge(cause="preferences suggested") as knowledge:  # fresh copy after the AI call
             for prop in proposals:
@@ -1397,7 +1424,43 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 knowledge.preferences.append(Preference(
                     id=next_id("p", taken), text=prop["text"].strip(), rationale=prop.get("rationale", ""),
                     status="proposed", source_app=app_id, date=today))
-        return {"edits": len(edits), "proposed": len(proposals), "knowledge": knowledge_payload()}
+        await asyncio.to_thread(store.update_meta, app_id, style_learned=style_fingerprint(material))
+        return len(edits), len(proposals)
+
+    # Marking an application applied studies what the user changed before sending it, in the
+    # background (Settings → Applications → learn_style). Each version of the edits is studied once.
+    style_pending: set[str] = set()
+    style_tasks: set = set()  # keeps the running tasks referenced
+
+    async def learn_style_quietly(app_id: str) -> None:
+        try:
+            material = await asyncio.to_thread(style_material, app_id)
+            edits, guidance, rejected = material
+            if (edits or rejected or any(g.strip() for g in guidance)) and \
+                    store.meta(app_id).get("style_learned") != style_fingerprint(material):
+                await learn_style(app_id)
+        except Exception as e:  # noqa: BLE001 — a suggestion is never worth an error; the button still works
+            log.info("TailorbirdCV: learning style from %s failed (%s)", app_id, e)
+        finally:
+            style_pending.discard(app_id)
+
+    def queue_style_learning(app_id: str) -> None:
+        if app_id in style_pending or not store.settings()["learn_style"]:
+            return
+        style_pending.add(app_id)
+        task = asyncio.get_running_loop().create_task(learn_style_quietly(app_id))  # keeps this request's context
+        style_tasks.add(task)
+        task.add_done_callback(style_tasks.discard)
+
+    @api.post("/applications/{app_id}/preferences")
+    async def suggest_preferences(app_id: str):
+        """Propose style preferences from this application's guidance and Review edits."""
+        app_id = need_app(app_id)
+        try:
+            edits, proposed = await learn_style(app_id)
+        except EngineError as e:
+            raise _engine_call(e)
+        return {"edits": edits, "proposed": proposed, "knowledge": knowledge_payload()}
 
     @api.post("/applications/{app_id}/reveal", status_code=204)
     def reveal(app_id: str, snapshot: str | None = None):

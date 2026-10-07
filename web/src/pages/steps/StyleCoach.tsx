@@ -1,24 +1,53 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Application, type Preference } from '../../api'
 import { cx } from '../../lib'
 import { ErrorNote, Spinner } from '../../ui'
 
-/** Turns this application's Review edits + guidance into proposed style preferences. */
+/** Turns this application's edits (resume and cover letter) + guidance into proposed style
+ *  preferences. Marking the application applied does this by itself in the background; the
+ *  button does it on demand. Nothing is used until the user approves it. */
 export default function StyleCoach({ app }: { app: Application }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [proposals, setProposals] = useState<Preference[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [learning, setLearning] = useState(!!app.learning_style)
   const guidance = app.meta.guidance?.trim()
+  const mine = (ps: Preference[]) => ps.filter((p) => p.source_app === app.id && p.status !== 'dismissed')
 
-  if (!app.edits && !guidance) return null
+  // Suggestions already made for this application (e.g. when it was marked applied) show up by themselves.
+  useEffect(() => {
+    let live = true
+    api.knowledge().then((k) => { if (live && mine(k.preferences).length) setProposals(mine(k.preferences)) }).catch(() => {})
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.id])
+
+  // Learning in the background: check back until it's done, then show what it suggested.
+  useEffect(() => { setLearning(!!app.learning_style) }, [app.learning_style])
+  useEffect(() => {
+    if (!learning) return
+    const timer = window.setInterval(async () => {
+      try {
+        if ((await api.get(app.id)).learning_style) return
+        setLearning(false)
+        const found = mine((await api.knowledge()).preferences)
+        setProposals(found)
+        if (!found.length) setNote('Nothing new to learn from this one. Your edits were factual or already covered.')
+      } catch { /* try again on the next tick */ }
+    }, 5000)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [learning, app.id])
+
+  if (!app.edits && !guidance && !proposals?.length && !learning) return null
 
   async function suggest() {
     setBusy(true); setError(null); setNote(null)
     try {
       const res = await api.suggestPreferences(app.id)
-      setProposals(res.knowledge.preferences.filter((p) => p.status === 'proposed' && p.source_app === app.id))
+      setProposals(mine(res.knowledge.preferences))
       if (!res.proposed) setNote('Nothing new to learn from this one. Your edits were factual or already covered.')
     } catch (e) {
       setError((e as Error).message)
@@ -31,7 +60,7 @@ export default function StyleCoach({ app }: { app: Application }) {
     try {
       const k = await api.knowledge()
       const saved = await api.saveKnowledge({ ...k, preferences: k.preferences.map((x) => (x.id === p.id ? { ...x, status, text } : x)) })
-      setProposals(saved.preferences.filter((x) => x.source_app === app.id && x.status !== 'dismissed'))
+      setProposals(mine(saved.preferences))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -41,11 +70,15 @@ export default function StyleCoach({ app }: { app: Application }) {
     <section className="animate-rise flex flex-col gap-2.5 rounded-xl border border-rule bg-sheet px-[18px] py-4 text-[13px]" style={{ animationDelay: '120ms' }}>
       <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Teach TailorbirdCV your style</p>
       <p className="text-muted">
-        You changed {app.edits} claim{app.edits === 1 ? '' : 's'} from the AI draft{guidance ? ' and gave guidance' : ''}.
-        TailorbirdCV can turn that into style preferences for future roles. Nothing is applied until you approve it.
+        {app.edits
+          ? <>You changed {app.edits} line{app.edits === 1 ? '' : 's'} from the AI’s draft{guidance ? ' and gave guidance' : ''}. </>
+          : guidance ? <>You gave guidance for this draft. </> : null}
+        TailorbirdCV turns that into style preferences for future drafts. Nothing is applied until you approve it.
       </p>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
-      {proposals === null ? (
+      {learning && proposals === null ? (
+        <p className="flex items-center gap-2 text-muted"><Spinner /> Studying what you changed before sending…</p>
+      ) : proposals === null ? (
         <button className="btn self-start px-3.5 py-1.5 text-[13px]" disabled={busy} onClick={suggest}>{busy ? <><Spinner /> Studying your edits…</> : 'Suggest preferences'}</button>
       ) : (
         <ul className="flex flex-col gap-2">

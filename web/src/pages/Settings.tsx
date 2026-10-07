@@ -460,29 +460,41 @@ const KIND_LABEL: Record<UpdateStatus['kind'], string> = {
   other: 'Installed some other way: upgrade with the command below',
 }
 
-/** Settings → Applications: the company icons on the application board. */
+/** Settings → Applications: company icons on the board, and learning style preferences when applying. */
 function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const toggle = (on: boolean) => {
+  const save = (patch: { company_icons?: boolean; learn_style?: boolean }) => {
     setBusy(true); setError(null)
-    api.saveSettings({ company_icons: on }).then(onSaved).catch((e) => setError((e as Error).message)).finally(() => setBusy(false))
+    api.saveSettings(patch).then(onSaved).catch((e) => setError((e as Error).message)).finally(() => setBusy(false))
   }
   return (
     <section aria-labelledby="apps-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
       <div className="flex flex-col gap-1.5">
         <p className={cx(label, 'text-accent')}>Applications</p>
-        <h2 id="apps-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Company icons</h2>
+        <h2 id="apps-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Icons and learning</h2>
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       <label className="flex cursor-pointer items-start gap-2.5 text-sm">
         <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.company_icons} disabled={busy}
-          onChange={(e) => toggle(e.target.checked)} />
+          onChange={(e) => save({ company_icons: e.target.checked })} />
         <span className="flex flex-col gap-0.5">
           <span className="font-medium text-ink">Show company icons</span>
           <span className="text-muted text-pretty">
             Shows each company’s site icon on your applications. TailorbirdCV fetches it once from the company’s own website
             (never a job board’s logo); turn this off to show no icons and fetch none.
+          </span>
+        </span>
+      </label>
+      <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+        <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.learn_style} disabled={busy}
+          onChange={(e) => save({ learn_style: e.target.checked })} />
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium text-ink">Learn my style when I apply</span>
+          <span className="text-muted text-pretty">
+            When you mark an application applied, TailorbirdCV compares what you sent with the AI’s drafts (resume and
+            cover letter) and suggests style preferences for future drafts, using your AI once. Nothing is used until you
+            approve it in Master profile → Style preferences.
           </span>
         </span>
       </label>

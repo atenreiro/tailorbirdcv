@@ -5,6 +5,14 @@ import { cx, fmtDate } from '../lib'
 
 type KnowledgeEdit = { k: Knowledge; setK: (k: Knowledge) => void }
 
+/** A "no real experience" answer is asked again once it's this old (ai.KNOWN_GAP_DAYS). */
+const KNOWN_GAP_DAYS = 180
+const askAgainOn = (date: string) => {
+  const d = new Date(`${date}T00:00:00`)
+  d.setDate(d.getDate() + KNOWN_GAP_DAYS + 1)
+  return d
+}
+
 const soft = 'w-full rounded-lg border border-line bg-wash outline-none transition-[border-color,background-color,box-shadow] focus:border-accent focus:bg-sheet focus:shadow-[0_0_0_3px_rgb(200_67_29/0.15)]'
 const label = 'font-mono text-[11px] uppercase tracking-[0.08em] text-muted'
 
@@ -12,6 +20,7 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
   const edit = (id: string, patch: Partial<KnowledgeAnswer>) =>
     setK({ ...k, answers: k.answers.map((a) => (a.id === id ? { ...a, ...patch } : a)) })
   const forget = (id: string) => setK({ ...k, answers: k.answers.filter((x) => x.id !== id) })
+  const [today] = useState(() => new Date())
   const gaps = k.answers.filter((a) => a.kind === 'no_experience')
   const experience = k.answers.filter((a) => a.kind === 'experience')
 
@@ -19,7 +28,9 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
     <div className="flex flex-col gap-5">
       <p className="max-w-[760px] text-sm leading-[1.5] text-muted text-pretty">
         Everything you’ve answered on the Gaps step. Analysis reads this, so known gaps aren’t asked again and
-        similar questions are pre-filled. These are <em>not</em> resume facts: only approved evidence in your profile can be cited.
+        similar questions are pre-filled. A known gap is asked about again after six months, in case you’ve gained the experience
+        since, and a newer answer on the same topic replaces the older one. These are <em>not</em> resume facts: only approved
+        evidence in your profile can be cited.
       </p>
       {k.answers.length === 0 && (
         <div className="rounded-[14px] border border-rule bg-sheet px-6 py-10 text-center text-muted">No answers yet. They’ll appear here after your first Gaps step.</div>
@@ -32,7 +43,10 @@ export function AnswersPanel({ k, setK }: KnowledgeEdit) {
               <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e9efeb] px-5 py-3.5 last:border-b-0">
                 <div className="flex flex-col gap-0.5">
                   <p className="text-[15px] font-semibold text-ink">{a.topic}</p>
-                  <p className="text-[13px] text-muted">No real experience · {a.company ?? 'unknown role'} · {fmtDate(a.date)}</p>
+                  <p className="text-[13px] text-muted">
+                    No real experience · {a.company ?? 'unknown role'} · {fmtDate(a.date)} ·{' '}
+                    {askAgainOn(a.date) <= today ? 'asked again on your next application' : `asked again from ${askAgainOn(a.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                  </p>
                 </div>
                 <button className="h-8 cursor-pointer rounded-lg border border-rule bg-sheet px-3 text-[13px] font-medium text-accent hover:border-accent" onClick={() => forget(a.id)}>No longer true. Forget it</button>
               </li>

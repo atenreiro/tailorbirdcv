@@ -383,6 +383,7 @@ export default function Applications() {
         </div>
       </div>
       {identify.panel}
+      <StyleSuggestions refresh={apps} />
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {apps === null && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>}
@@ -697,5 +698,28 @@ function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, 
         </div>
       )}
     </>
+  )
+}
+
+/** Style preferences TailorbirdCV suggested (when an application was marked applied, or on request)
+ *  that are still waiting for the user's yes or no. */
+function StyleSuggestions({ refresh }: { refresh: unknown }) {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    let live = true
+    const load = () => api.knowledge()
+      .then((k) => { if (live) setCount(k.preferences.filter((p) => p.status === 'proposed').length) })
+      .catch(() => {})
+    void load()
+    const timer = window.setInterval(load, 60_000)  // learning after "applied" runs in the background
+    window.addEventListener('focus', load)
+    return () => { live = false; window.clearInterval(timer); window.removeEventListener('focus', load) }
+  }, [refresh])
+  if (!count) return null
+  return (
+    <p className="animate-rise flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-accent/30 bg-accent-soft px-3.5 py-2.5 text-sm text-ink">
+      <span>TailorbirdCV suggested {count} style preference{count === 1 ? '' : 's'} from what you changed before applying.</span>
+      <Link to="/profile?tab=prefs" className="font-medium text-accent hover:underline">Review {count === 1 ? 'it' : 'them'} →</Link>
+    </p>
   )
 }

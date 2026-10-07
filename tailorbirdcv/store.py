@@ -194,6 +194,41 @@ LETTER_SUFFIX = "_Cover_Letter"  # <Name>_Cover_Letter.docx/.pdf (the resume is 
 LEGACY_IDS = ".moved.json"  # old flat-layout ids → new ids, so old links keep working
 
 
+def topic_key(text: str) -> str:
+    """A requirement or question compared loosely: case, punctuation and spacing ignored."""
+    return " ".join(re.findall(r"[a-z0-9+#]+", (text or "").lower()))
+
+
+def merge_answers(answers: list[KnowledgeAnswer], links: dict[str, str] | None = None) -> list[KnowledgeAnswer]:
+    """One remembered answer per topic, in the original order. A newer answer replaces older
+    ones from other applications on the same topic or question, and an answer given to a
+    pre-filled question (`links`: its id → the id it was pre-filled from) replaces that one,
+    except that "no experience" on a related topic never replaces an older answer describing
+    some experience: that one holds detail the newer one doesn't, so both are kept."""
+    def newest(k: KnowledgeAnswer):
+        return (k.date, int(k.id[1:]) if k.id[1:].isdigit() else 0)
+
+    links = links or {}
+    by_id = {k.id: k for k in answers}
+    seen: dict[str, str | None] = {}  # topic/question key → the application of the answer kept for it
+    dropped: set[str] = set()
+    kept: set[str] = set()
+    for k in sorted(answers, key=newest, reverse=True):  # newest first: it wins
+        if k.id in dropped:
+            continue
+        keys = {f"t:{topic_key(k.topic)}", f"q:{topic_key(k.question)}"} - {"t:", "q:"}
+        if any(key in seen and seen[key] != k.app_id for key in keys):
+            dropped.add(k.id)
+            continue
+        kept.add(k.id)
+        for key in keys:
+            seen.setdefault(key, k.app_id)
+        old = by_id.get(links.get(k.id, ""))
+        if old and old.id not in kept and not (old.kind == "experience" and k.kind == "no_experience"):
+            dropped.add(old.id)
+    return [k for k in answers if k.id not in dropped]
+
+
 @dataclass
 class Store:
     private: Path
@@ -236,6 +271,7 @@ class Store:
         "openrouter_zdr": True,      # OpenRouter: only zero-data-retention providers (Claude via Google/Amazon)
         "update_check": True,        # ask PyPI (at most daily) whether a newer TailorbirdCV is out; off = never
         "company_icons": True,       # show each company's site icon (fetched once); off = none shown or fetched
+        "learn_style": True,         # on marking an application applied, propose style rules from what was changed
         "hide_personal": True,       # replace contact details with placeholders in everything sent to the AI
         "private_address": "",       # the user's street address, hidden from the AI too (never printed by us)
     }
@@ -1173,8 +1209,41 @@ class Store:
                 if len(kept) != len(knowledge.answers):
                     knowledge.answers = kept
                     changed = True
+        # One remembered answer per topic: the newest replaces older ones on the same topic.
+        merged = merge_answers(knowledge.answers, self._prefill_links(knowledge, {app_id: answers}))
+        if len(merged) != len(knowledge.answers):
+            knowledge.answers = merged
+            changed = True
         if changed:
             self.save_knowledge(knowledge, cause="gap answer")
+
+    @staticmethod
+    def _prefill_links(knowledge: Knowledge, answers_by_app: dict[str, list[AppAnswer]]) -> dict[str, str]:
+        """remembered answer id → the older remembered answer its question was pre-filled from."""
+        ids = {(k.app_id, k.question): k.id for k in knowledge.answers}
+        return {ids[(app_id, a.question)]: a.prefill_from
+                for app_id, answers in answers_by_app.items() for a in answers
+                if a.prefill_from and a.status != "draft" and (app_id, a.question) in ids}
+
+    def compact_knowledge(self) -> bool:
+        """Merge answers remembered more than once (from before merging existed, or edited by
+        hand). Saved with history like any change; returns whether anything was merged."""
+        with _LOCK:
+            if not self.knowledge_path.exists():
+                return False
+            knowledge = self.knowledge()
+            by_app = {}
+            for app in self.list_apps():
+                try:
+                    by_app[app["id"]] = self.answers(app["id"])
+                except Exception:  # noqa: BLE001 — an unreadable application just contributes no links
+                    continue
+            merged = merge_answers(knowledge.answers, self._prefill_links(knowledge, by_app))
+            if len(merged) == len(knowledge.answers):
+                return False
+            knowledge.answers = merged
+            self.save_knowledge(knowledge, cause="merged repeated answers")
+            return True
 
     # -- sent copies (frozen when applying) ------------------------------------------------
     def sent_dir(self, app_id: str) -> Path:

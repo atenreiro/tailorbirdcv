@@ -90,12 +90,12 @@ Moving from another computer? Choose **Restore from a backup** on the wizard's f
 ## Tailoring a resume
 1. Click **New tailoring** and paste the job posting's link (or its text).
 2. **Brief:** see what the role wants and how your experience matches.
-3. **Gaps:** answer questions about what the job wants and your profile doesn't show. No experience? Say so: it stays a gap.
+3. **Gaps:** answer questions about what the job wants and your profile doesn't show. No experience? Say so: it stays a gap. TailorbirdCV remembers your answers, so it won't ask the same thing on your next application (it checks again after six months).
 4. **Review:** read the draft, click any line to edit it, and optionally ask for a hiring-manager review.
 5. **Cover letter** (optional): one page in the same design, in a Formal, Warm or Direct tone, checked sentence by sentence like your resume.
 6. **Export:** build the Word document and PDF. Too long? **Trim with AI**. Room to spare? **Fill the page with AI**. Both show their suggestions in Review before anything changes.
 
-Then track it under **Applications**. Marking an application *applied* keeps a read-only copy of exactly what you sent. Found one of your resumes and not sure which version it is? **Identify a PDF** tells you which application it came from.
+Then track it under **Applications**. Marking an application *applied* keeps a read-only copy of exactly what you sent, and TailorbirdCV studies what you changed from its drafts to suggest style preferences for next time (you approve each one; **Settings → Applications** turns this off). Found one of your resumes and not sure which version it is? **Identify a PDF** tells you which application it came from.
 
 ![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
 
