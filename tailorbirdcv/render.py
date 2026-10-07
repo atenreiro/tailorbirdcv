@@ -69,13 +69,16 @@ class _Builder:
         rpr = _rpr(color, size, font=font or self.t.body_font, **kw)
         return f'<w:r>{rpr}<w:t xml:space="preserve">{escape(clean_text(text))}</w:t></w:r>'
 
-    def _para(self, runs: str, *, before=0, after=None, rule=False, hang=False, tab=False, keep_next=False) -> str:
+    def _para(self, runs: str, *, before=0, after=None, rule=False, hang=False, tab=False, keep_next=False,
+              center=False) -> str:
         # keep_next: headings stay on the same page as the text under them (never stranded at a page bottom)
+        # center: the header (name, headline, contact line), centered in every design
         after = self.t.after if after is None else after
         spacing = _SPACING.format(before=before, after=after).replace(' w:before="0"', "")
         ppr = ("<w:keepNext/>" if keep_next else "") + "<w:keepLines/>" + (self._tab if tab else "") \
             + (self._rule if rule else "") + spacing
         ppr += self._hang if hang else ""
+        ppr += '<w:jc w:val="center"/>' if center else ""  # after spacing/ind, as the schema orders them
         return f"<w:p {W_NS} {R_NS}><w:pPr>{ppr}</w:pPr>{runs}</w:p>"
 
     def add(self, xml: str) -> None:
@@ -89,10 +92,10 @@ class _Builder:
     # paragraph types ------------------------------------------------------------
     def name(self, text):
         t = self.t
-        self.add(self._para(self._run(text, t.ink, t.name_size, bold=True, font=t.name_font), after=t.name_after))
+        self.add(self._para(self._run(text, t.ink, t.name_size, bold=True, font=t.name_font), after=t.name_after, center=True))
 
     def headline(self, text):
-        self.add(self._para(self._run(text, self.t.accent, self.t.headline_size, bold=True), after=self.t.name_after))
+        self.add(self._para(self._run(text, self.t.accent, self.t.headline_size, bold=True), after=self.t.name_after, center=True))
 
     def contact(self, parts: list[tuple[str, str | None]]):
         t, runs = self.t, []
@@ -105,7 +108,7 @@ class _Builder:
                 runs.append(self._run(sep, t.muted, t.contact_size))
             text = text.replace(" ", "\u00a0") if glue else text
             runs.append(self.hyperlink(text, url) if url else self._run(text, t.muted, t.contact_size))
-        self.add(self._para("".join(runs), after=t.contact_after))
+        self.add(self._para("".join(runs), after=t.contact_after, center=True))
 
     def section(self, title):
         t = self.t

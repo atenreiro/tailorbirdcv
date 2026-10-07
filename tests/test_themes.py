@@ -24,6 +24,7 @@ def xml(path: Path) -> str:
 
 
 def test_classic_is_the_original_design_byte_for_byte(tmp_path):
+    """The original design, plus the two deliberate changes: keepNext headings and the centered header."""
     out = render(PROFILE, TAILORED, tmp_path / "r.docx")  # default: Classic on Letter
     assert xml(out).encode() == (FIX / "golden_classic_document.xml").read_bytes()
     assert xml(render(PROFILE, TAILORED, tmp_path / "c.docx", theme="classic", paper="letter")) == xml(out)

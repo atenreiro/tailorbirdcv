@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The header of your resume and cover letter (your name, headline and contact line) is now centered in every design, as the preview always showed it.
 - **Leave while the AI works.** Reading the job, drafting evidence, writing the resume, trimming, filling, the hiring-manager review and the cover letter now keep going when you leave the page. Come back and you see it still working, with the right elapsed time, and its result appears by itself when it's done. Suggestions (evidence drafts, Trim and Fill) wait for you instead of being lost. The Applications board shows what's running, and the tab title tells you when it's ready.
 - **Stop** an AI step from its working screen: it ends at once and nothing is changed.
 - Starting the same AI step twice on one application is no longer possible (it used to cost a second AI call and the two could overwrite each other).
