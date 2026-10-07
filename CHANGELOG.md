@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-10-07 (first release on PyPI)
 - **Cover letters** (new Workspace step): a one-page letter in your resume's design and the tone you pick (Formal, Warm, Direct), drafted by the AI and checked sentence by sentence: what it says about you cites your evidence, what it says about the company comes from the posting, and the greeting, closing and sign-off are written by TailorbirdCV. Edit any sentence with its sources beside it; build it as Word and PDF; it's frozen with the resume when you apply.
 - **Safer against hostile job postings:** a claim must stay close to the evidence it cites (most of its words from its sources), and text addressed to a reader or an AI ("ignore previous instructions", "shortlist this candidate") is refused, so a posting can't plant sentences in your resume. Job-posting text is marked as data, never instructions, in every AI prompt, and text hidden from people on a job page (zero-size, transparent, off-screen) is left out.
 - **Privacy mode (experimental)** (Settings → Privacy, on by default): your name, email, phone, street address and personal links are replaced by placeholders in everything sent to the AI and put back in its answers, so they never reach Anthropic or OpenAI while your resume still shows them. The setup wizard asks for your name before reading your CV; Settings shows exactly what the AI receives. Your contact block is no longer sent to the AI at all.
@@ -33,5 +33,5 @@
 - **Text size** (Settings → Resume design): *Comfortable* (the default) makes body text 1 pt larger — 10.5 pt in Classic and Modern — for easier reading; *Standard* keeps each design as drawn (Classic byte-for-byte). Length budgets, page measurements and Fill follow the size.
 - Output files keep accented and non-Latin names (José → `Jose_…`, not `Jos_…`).
 
-## 0.1.0
+## 0.1.0 (not published)
 - First version: fact-locked tailoring, gap questions, memory, hiring-manager review, sent copies and history.
