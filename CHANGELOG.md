@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 2026-10-07
 - The top menu fits at every window size: on tablets and narrow windows it no longer scrolls sideways out of view (short labels until the window is wide enough), and it reads "Master profile" like the page itself.
 - Every page now ends with a footer linking to the source code on GitHub.
 - Fixed: leaving the Gaps step right after typing an answer no longer leaves a false "Leave site? Changes may not be saved" warning behind once the answer has saved; if that save fails, the application page now says so.
