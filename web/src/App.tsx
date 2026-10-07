@@ -40,7 +40,7 @@ function Logo() {
   return (
     <span aria-hidden="true" className="flex items-center gap-2">
       <Mark className="h-[26px] w-auto" />
-      <span className="hidden font-brand text-[21px] font-semibold leading-none tracking-[-0.03em] text-mist min-[400px]:inline">
+      <span className="hidden font-brand text-[21px] font-semibold leading-none tracking-[-0.03em] text-mist min-[480px]:inline">
         Tailorbird<span className="text-amber">CV</span>
       </span>
     </span>
@@ -60,16 +60,16 @@ function Masthead() {
     )
   }
   const link = ({ isActive }: { isActive: boolean }) =>
-    cx('flex shrink-0 items-center px-1.5 transition-colors sm:px-3', isActive ? 'text-white shadow-[inset_0_-3px_0_var(--color-amber)]' : 'text-[#a3bcb0] hover:text-white')
+    cx('flex shrink-0 items-center px-1.5 transition-colors max-[359px]:px-1 sm:px-3', isActive ? 'text-white shadow-[inset_0_-3px_0_var(--color-amber)]' : 'text-[#a3bcb0] hover:text-white')
   return (
     <header className="sticky top-0 z-30 bg-ink text-white">
-      <div className={cx('mx-auto flex h-14 items-center gap-3 sm:gap-9', FRAME)}>
+      <div className={cx('mx-auto flex h-14 items-center gap-3 max-[359px]:gap-2 sm:gap-5 lg:gap-9', FRAME)}>
         <NavLink to="/" aria-label="TailorbirdCV" className="flex items-center"><Logo /></NavLink>
         <nav className="flex h-full gap-0 overflow-x-auto sm:gap-1 whitespace-nowrap [scrollbar-width:none]">
-          <NavLink to="/" end className={link}><span className="sm:hidden">Apps</span><span className="hidden sm:inline">Applications</span></NavLink>
+          <NavLink to="/" end className={link}><span className="lg:hidden">Apps</span><span className="hidden lg:inline">Applications</span></NavLink>
           <NavLink to="/funnel" className={link}>Funnel</NavLink>
-          <NavLink to="/new" className={link}>New<span className="hidden sm:inline">&nbsp;tailoring</span></NavLink>
-          <NavLink to="/profile" className={link}><span className="hidden sm:inline">Master&nbsp;</span>Profile</NavLink>
+          <NavLink to="/new" className={link}>New<span className="hidden lg:inline">&nbsp;tailoring</span></NavLink>
+          <NavLink to="/profile" className={link}><span className="lg:hidden">Profile</span><span className="hidden lg:inline">Master profile</span></NavLink>
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           <EngineBadge />

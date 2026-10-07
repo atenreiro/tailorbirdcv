@@ -141,7 +141,7 @@ export function EngineBadge() {
         aria-label={`AI engine ${status === null ? 'checking' : ready ? 'ready' : 'offline'}`}
       >
         <span className={cx('size-[7px] rounded-full', status === null ? 'bg-faint' : ready ? 'bg-[#3ecf8e]' : 'bg-[#ff6b5e]')} />
-        <span className="hidden sm:inline">Engine {status === null ? '…' : ready ? 'ready' : 'offline'}</span>
+        <span className="hidden lg:inline">Engine {status === null ? '…' : ready ? 'ready' : 'offline'}</span>
       </button>
       {open && status && (
         <div className="sheet animate-rise absolute right-0 z-20 mt-2 w-80 rounded-lg p-4 text-sm text-ink">
