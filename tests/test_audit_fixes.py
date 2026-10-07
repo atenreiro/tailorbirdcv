@@ -1,6 +1,7 @@
 """Regression tests for the pre-launch audit findings (each test reproduces the original failure)."""
 
 import copy
+import datetime
 import os
 import shutil
 import sys
@@ -11,8 +12,10 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from tailorbirdcv import ai, factcheck
 from tailorbirdcv.api import create_app
 from tailorbirdcv.engine import FakeEngine
+from tailorbirdcv.schema import MasterProfile, TailoredResume
 from tailorbirdcv.store import Store
 from conftest import client_for
 
@@ -259,6 +262,52 @@ def test_a_trim_that_breaks_the_fact_check_is_discarded(env):
     assert data["report"]["ok"]                                   # the valid long draft is kept…
     assert len(data["tailored"]["experience"][0]["bullets"]) == len(long["experience"][0]["bullets"])
     assert data["length"]["lines"] > data["length"]["budget"]     # …and reported as still too long
+
+
+def _telco_ended_last_year(store):
+    """The fixture's older role (Telco Co) made recent, whatever year the tests run in."""
+    path = store.private / "profile.yaml"
+    year = datetime.date.today().year - 1
+    path.write_text(path.read_text(encoding="utf-8").replace("Mar 2009 – Jun 2019", f"Mar 2009 – Jun {year}"),
+                    encoding="utf-8")
+
+
+def test_which_roles_must_keep_a_bullet():
+    today = datetime.date(2026, 10, 7)
+    assert factcheck.end_year("Mar 2022 – Jun 2024") == 2024
+    assert factcheck.end_year("Aug 2024 – Present", today) == 2026
+    assert factcheck.end_year("2015") == 2015 and factcheck.end_year("") is None
+    profile = MasterProfile.model_validate(yaml.safe_load((FIX / "profile.yaml").read_text(encoding="utf-8")))
+    # Telco Co ended in 2019: within ten years in 2026, not in 2031; a role without evidence never counts.
+    assert [r.id for r in factcheck.bullet_roles(profile, today)] == ["acme-bank", "telco"]
+    assert [r.id for r in factcheck.bullet_roles(profile, datetime.date(2031, 1, 1))] == ["acme-bank"]
+    assert "Telco Co (telco)" in ai._keep_bullets_rule(profile)
+
+
+def test_a_recent_role_without_bullets_is_flagged(env):
+    _, store, _ = env
+    _telco_ended_last_year(store)
+    t = copy.deepcopy(TAILORED)
+    t["experience"][1]["bullets"] = []
+    report = factcheck.check(store.profile(), TailoredResume.model_validate(t))
+    assert report.ok                                              # a warning, never a blocker
+    assert any("Telco Co has no bullets" in w.message for w in report.warnings)
+    assert not any("no bullets" in w.message for w in factcheck.check(store.profile(), TailoredResume.model_validate(TAILORED)).warnings)
+
+
+def test_a_trim_that_empties_a_recent_role_is_discarded(env):
+    client, store, engine = env
+    _telco_ended_last_year(store)
+    long = long_tailored()
+    emptied = copy.deepcopy(TAILORED)
+    emptied["experience"][1]["bullets"] = []
+    engine.responses.update({"compose": long, "trim": emptied})
+    app_id = new_app(client)
+    client.post(f"/api/applications/{app_id}/analyze")
+    data = client.post(f"/api/applications/{app_id}/compose", json={}).json()
+    assert data["meta"]["trim_rounds"] == 1                       # the trim ran…
+    assert data["tailored"]["experience"][1]["bullets"]           # …but Telco Co keeps its bullet
+    assert len(data["tailored"]["experience"][0]["bullets"]) == len(long["experience"][0]["bullets"])
 
 
 def test_trim_endpoint_shortens_the_current_resume(env):

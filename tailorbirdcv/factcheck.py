@@ -41,6 +41,7 @@ bundled public-domain word list (data/words.txt.gz), so it behaves the same on e
 
 from __future__ import annotations
 
+import datetime as dt
 import gzip
 import re
 import unicodedata
@@ -48,7 +49,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from .schema import Claim, MasterProfile, TailoredResume
+from .schema import Claim, MasterProfile, Role, TailoredResume
 
 # --------------------------------------------------------------------------- number words
 
@@ -213,6 +214,28 @@ _ALLOWED_SYMBOLS = set(
     "€₹₩₫₦₱₽₺﹘﹣－"
 ) | {chr(c) for c in range(0x2000, 0x200B)}
 _DASH_RE = re.compile("[‐‑‒–—―−﹘﹣－]")
+
+
+# A role that ended within this many years, and has evidence, keeps at least one bullet: a recent job shown
+# as a scope line alone reads like a gap. Older roles may be just their scope line.
+RECENT_YEARS = 10
+_ONGOING = re.compile(r"\b(?:present|current|now|today|ongoing)\b", re.I)
+
+
+def end_year(dates: str, today: dt.date | None = None) -> int | None:
+    """The year a role ended ("Mar 2022 – Jun 2024" → 2024; "… – Present" → this year), or None if unknown."""
+    if _ONGOING.search(dates):
+        return (today or dt.date.today()).year
+    years = re.findall(r"\b(?:19|20)\d{2}\b", dates)
+    return int(years[-1]) if years else None
+
+
+def bullet_roles(profile: MasterProfile, today: dt.date | None = None) -> list[Role]:
+    """The roles a tailored resume must give at least one bullet: those with evidence that ended within
+    RECENT_YEARS (or whose dates don't say)."""
+    year = (today or dt.date.today()).year
+    return [r for r in profile.roles if r.achievements
+            and ((end := end_year(r.dates, today)) is None or end >= year - RECENT_YEARS)]
 
 
 @dataclass
@@ -1065,6 +1088,7 @@ class FactChecker:
                 self.check_skill(item, f"competencies[{i}].items[{j}]", report)
 
         role_ids = [r.id for r in p.roles]
+        need_bullets = {r.id for r in bullet_roles(p)}
         used = []
         for i, tr in enumerate(t.experience):
             where = f"experience[{i}]"
@@ -1088,6 +1112,9 @@ class FactChecker:
                     self.check_claim(sr.text, f"{where}.sub_roles[{j}]", report, role=tr.role, allowed={sr.id})
             if not tr.bullets and not tr.scope and not tr.sub_roles:
                 report.warn(where, "role has no content beyond the header")
+            elif not tr.bullets and tr.role in need_bullets:
+                report.warn(where, f"{role.employer} has no bullets: add at least one from its evidence "
+                                   f"(it's a recent role, and a scope line alone reads like a gap)")
 
         if used != [r for r in role_ids if r in used]:
             report.warn("experience", "roles are not in reverse-chronological (profile) order")
