@@ -100,7 +100,22 @@ function Meter({ a }: { a: AppSummary }) {
   )
 }
 
+/** An AI step of this application that runs in the background, or finished and hasn't been looked at. */
+const TASK_DONE: Record<string, string> = {
+  done: 'Ready: open it to see the result', failed: 'The AI step failed: open it to see why', stopped: 'Stopped',
+}
+
 function NextLine({ a, working }: { a: AppSummary; working: boolean }) {
+  const t = a.task
+  if (t && t.status !== 'stopped') {
+    const running = t.status === 'running'
+    return (
+      <p className={cx('flex min-w-0 items-center gap-2 text-[13px]', t.status === 'failed' ? 'text-bad' : 'text-accent-strong')}>
+        {running ? <Spinner className="size-[11px]" /> : <span className={cx('size-1.5 flex-none rounded-full', t.status === 'failed' ? 'bg-bad' : 'bg-accent')} />}
+        <span className="truncate">{running ? `${t.label}…` : TASK_DONE[t.status]}</span>
+      </p>
+    )
+  }
   const n = nextOf(a)
   return (
     <p className={cx('flex min-w-0 items-center gap-2 text-[13px]', TONE[n.tone][0])}>
@@ -165,6 +180,13 @@ export default function Applications() {
 
   const reload = useCallback(() => api.applications().then(setApps).catch((e) => setError(e.message)), [])
   useEffect(() => { void reload() }, [reload])
+  // An AI step running in the background: refresh until it's done.
+  const anyRunning = !!apps?.some((a) => a.task?.status === 'running')
+  useEffect(() => {
+    if (!anyRunning) return
+    const timer = window.setInterval(() => { void reload() }, 4000)
+    return () => window.clearInterval(timer)
+  }, [anyRunning, reload])
 
   const setView = (v: View) => { try { localStorage.setItem(VIEW_KEY, v) } catch { /* private mode */ } setViewState(v) }
 

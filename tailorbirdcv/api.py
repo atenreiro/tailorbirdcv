@@ -539,7 +539,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def restore_backup(request: Request):
         """Replace the data with a backup (the request body is the .zip). Refused while anything else runs; the
         data it replaces is kept in before-restore/<time>/."""
-        if app.state.upgrade or app.state.busy > 1 or browser_install["state"] == "running":
+        if app.state.upgrade or app.state.busy > 1 or tasks_running() or browser_install["state"] == "running":
             raise HTTPException(409, "TailorbirdCV is busy (an AI run, build or download is still going). Try again "
                                      "when it has finished.")
         fd, tmp = tempfile.mkstemp(dir=store.private, prefix=".restore-upload-", suffix=".zip")
@@ -597,7 +597,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         request_exit = getattr(app.state, "request_exit", None)
         if request_exit is None:
             raise HTTPException(409, "TailorbirdCV can only upgrade itself when it was started with `tailorbirdcv serve`.")
-        if app.state.busy > 1 or browser_install["state"] == "running":
+        if app.state.busy > 1 or tasks_running() or browser_install["state"] == "running":
             raise HTTPException(409, "TailorbirdCV is busy (an AI run, build or download is still going). Try again when "
                                      "it has finished.")
         app.state.upgrade = {"target": view["latest"], "uv": uv}
@@ -811,6 +811,102 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         return {"seniority": analysis.get("seniority"), "requirements": len(analysis.get("requirements", [])),
                 "gaps_open": gaps_open, "drafted": tailored is not None, "verified": verified, "critique": hm_summary}
 
+    # -- AI steps run as tasks: they keep going when the page is left, can be stopped, and are found again ------
+    # One per application at a time, held in memory (a restart ends them). A finished task stays until the page
+    # that shows its outcome acknowledges it (DELETE …/task), so a result is never lost by looking away; the
+    # three steps that only suggest (trim, fill, evidence proposals) keep their suggestion here until then.
+    tasks: dict[str, dict] = {}
+    RESULT_KINDS = {"trim", "fill", "proposals"}
+
+    def task_view(app_id: str, result: bool = True) -> dict | None:
+        t = tasks.get(app_id)
+        if not t:
+            return None
+        view = {k: t[k] for k in ("kind", "label", "status", "started", "finished", "error")}
+        if result and t["status"] == "done" and t["kind"] in RESULT_KINDS:
+            view["result"] = t["result"]
+        return view
+
+    def tasks_running() -> bool:
+        return any(t["status"] == "running" for t in tasks.values())
+
+    def _detail(e: Exception) -> str:
+        if isinstance(e, HTTPException):
+            return e.detail if isinstance(e.detail, str) else str((e.detail or {}).get("message", e.detail))
+        return str(e) or type(e).__name__
+
+    def refuse_if_running(app_id: str) -> None:
+        if (t := tasks.get(app_id)) and t["status"] == "running":
+            raise HTTPException(409, {"code": "running", "task": task_view(app_id, result=False),
+                                      "message": f"“{t['label']}” is still running for this application. "
+                                                 "Its result appears here when it's done."})
+
+    async def run_task(app_id: str, kind: str, label: str, work):
+        """Run `work()` (an AI step of this application) as a task the user can leave, stop and come back to.
+        The request still waits for it and answers as before; a second start while it runs is refused."""
+        refuse_if_running(app_id)
+        record = {"app_id": app_id, "kind": kind, "label": label, "status": "running", "error": None, "result": None,
+                  "started": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "finished": None}
+
+        async def body():
+            try:
+                record["result"] = await work()
+                record["status"] = "done"
+                return record["result"]
+            except asyncio.CancelledError:
+                record["status"] = "stopped"
+                raise
+            except Exception as e:
+                record["status"], record["error"] = "failed", _detail(e)
+                raise
+            finally:
+                record["finished"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+                final = record["result"].get("id") if isinstance(record["result"], dict) else None
+                if final and final != record["app_id"] and tasks.get(record["app_id"]) is record:  # renamed meanwhile
+                    del tasks[record["app_id"]]
+                    record["app_id"] = final
+                    tasks[final] = record
+
+        handle = asyncio.get_running_loop().create_task(body())  # keeps this request's context (targets, design)
+        record["handle"] = handle
+        tasks[app_id] = record
+        try:
+            return await asyncio.shield(handle)  # leaving the page never cancels it; only Stop does
+        except asyncio.CancelledError:
+            if handle.cancelled():
+                raise HTTPException(409, {"code": "stopped", "message": "Stopped. Nothing was changed."})
+            raise
+
+    @api.get("/tasks")
+    def list_tasks():
+        """Every running or not-yet-seen AI step, newest first (for the tab title and the board)."""
+        out = []
+        for app_id, t in tasks.items():
+            try:
+                meta = store.meta(app_id)
+            except Exception:  # noqa: BLE001 — deleted or unreadable meanwhile
+                meta = {}
+            out.append({"app_id": app_id, "company": meta.get("company") or "", "role": meta.get("role") or "",
+                        **task_view(app_id, result=False)})
+        return sorted(out, key=lambda t: t["started"], reverse=True)
+
+    @api.post("/applications/{app_id}/task/stop")
+    async def stop_task(app_id: str):
+        """Stop this application's running AI step. Nothing it was going to save is saved."""
+        app_id = need_app(app_id)
+        t = tasks.get(app_id)
+        if t and t["status"] == "running":
+            t["handle"].cancel()
+            await asyncio.wait([t["handle"]], timeout=15)  # the AI process is ended before answering
+        return {"task": task_view(app_id, result=False)}
+
+    @api.delete("/applications/{app_id}/task", status_code=204)
+    def clear_task(app_id: str):
+        """The page has shown this finished step's outcome: forget it."""
+        app_id = need_app(app_id)
+        if (t := tasks.get(app_id)) and t["status"] != "running":
+            del tasks[app_id]
+
     # -- the company's site icon: fetched in the background, once per application (favicon.py) ----------
     favicon_pending: set[str] = set()
     favicon_tasks: set = set()  # keeps the running tasks referenced
@@ -858,9 +954,10 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 a["sent"] = sent[0] if sent else None
                 a["progress"] = progress(a["id"], profile)
                 a["reached"], a["reached_at"] = store.reached(a["id"])
+                a["task"] = task_view(a["id"], result=False)
             except Exception:  # noqa: BLE001 — one unreadable application never breaks the list
                 a["outputs_stale"], a["sent"], a["progress"] = False, None, None
-                a["reached"], a["reached_at"] = None, None
+                a["reached"], a["reached_at"], a["task"] = None, None, None
         return apps
 
     @api.post("/applications", status_code=201)
@@ -892,7 +989,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     def get_application(app_id: str):
         app_id = need_app(app_id)
         tailored = store.tailored(app_id)
-        out = {"id": app_id, "meta": store.meta(app_id), "jd": store.jd(app_id),
+        out = {"id": app_id, "task": task_view(app_id), "meta": store.meta(app_id), "jd": store.jd(app_id),
                "analysis": store.analysis(app_id), "files": store.files(app_id),
                "outputs_stale": store.outputs_stale(app_id),
                "tailored": tailored.model_dump(exclude_none=True) if tailored else None,
@@ -956,15 +1053,18 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         profile = need_profile()
         if not factcheck.check(profile, tailored).ok:
             raise HTTPException(409, "Fix the fact-check errors first — the review assumes a valid draft.")
-        run_no = store.next_critique_run(app_id)  # unique forever, even though only 5 runs are kept
-        try:
-            result = await hm.critique(engine, profile, tailored, store.analysis(app_id) or {}, store.knowledge(), run_no)
-        except EngineError as e:
-            raise _engine_call(e)
-        except ValidationError as e:
-            raise HTTPException(502, f"The model returned an invalid review: {e}")
-        store.add_critique_run(app_id, result)
-        return get_application(app_id)
+
+        async def work():
+            run_no = store.next_critique_run(app_id)  # unique forever, even though only 5 runs are kept
+            try:
+                result = await hm.critique(engine, profile, tailored, store.analysis(app_id) or {}, store.knowledge(), run_no)
+            except EngineError as e:
+                raise _engine_call(e)
+            except ValidationError as e:
+                raise HTTPException(502, f"The model returned an invalid review: {e}")
+            store.add_critique_run(app_id, result)
+            return get_application(app_id)
+        return await run_task(app_id, "critique", "Reviewing as the hiring manager", work)
 
     @api.put("/applications/{app_id}/critique/decisions")
     def put_critique_decisions(app_id: str, body: Decisions):
@@ -1017,8 +1117,12 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.post("/applications/{app_id}/analyze")
     async def analyze(app_id: str):
         app_id = need_app(app_id)
+        profile = need_profile()
+        return await run_task(app_id, "analyze", "Reading the job description", lambda: analyze_work(app_id, profile))
+
+    async def analyze_work(app_id: str, profile):
         try:
-            analysis = await ai.analyze(engine, need_profile(), store.jd(app_id), store.knowledge())
+            analysis = await ai.analyze(engine, profile, store.jd(app_id), store.knowledge())
         except EngineError as e:
             raise _engine_call(e)
         store.save_analysis(app_id, analysis)
@@ -1040,10 +1144,15 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     @api.post("/applications/{app_id}/proposals")
     async def proposals(app_id: str, answers: list[Answer]):
         app_id = need_app(app_id)
-        try:
-            return await ai.propose_evidence(engine, need_profile(), [a.model_dump() for a in answers])
-        except EngineError as e:
-            raise _engine_call(e)
+        profile = need_profile()
+
+        async def work():
+            try:
+                return await ai.propose_evidence(engine, profile, [a.model_dump() for a in answers])
+            except EngineError as e:
+                raise _engine_call(e)
+        label = f"Drafting evidence from {len(answers)} answers" if len(answers) > 1 else "Drafting evidence from your answer"
+        return await run_task(app_id, "proposals", label, work)
 
     @api.post("/applications/{app_id}/compose")
     async def compose(app_id: str, body: ComposeIn):
@@ -1051,19 +1160,24 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         analysis = store.analysis(app_id)
         if not analysis:
             raise HTTPException(409, "Analyze the job description first.")
+        profile = need_profile()
+        refuse_if_running(app_id)  # before saving the guidance
         store.update_meta(app_id, guidance=body.guidance.strip())  # kept even if the AI call fails
-        try:
-            result = await ai.compose(engine, need_profile(), analysis, store.base_tailored(), body.guidance,
-                                      store.knowledge().active_preferences())
-        except EngineError as e:
-            raise _engine_call(e)
-        except ValidationError as e:
-            raise HTTPException(502, f"The model returned an invalid resume structure: {e}")
-        store.save_tailored(app_id, result["tailored"])
-        store.save_ai_tailored(app_id, result["tailored"])
-        store.update_meta(app_id, repair_rounds=result["repair_rounds"], trim_rounds=result["trim_rounds"])
-        store.advance_status(app_id, "composed")
-        return get_application(app_id)
+
+        async def work():
+            try:
+                result = await ai.compose(engine, profile, analysis, store.base_tailored(), body.guidance,
+                                          store.knowledge().active_preferences())
+            except EngineError as e:
+                raise _engine_call(e)
+            except ValidationError as e:
+                raise HTTPException(502, f"The model returned an invalid resume structure: {e}")
+            store.save_tailored(app_id, result["tailored"])
+            store.save_ai_tailored(app_id, result["tailored"])
+            store.update_meta(app_id, repair_rounds=result["repair_rounds"], trim_rounds=result["trim_rounds"])
+            store.advance_status(app_id, "composed")
+            return get_application(app_id)
+        return await run_task(app_id, "compose", "Composing your tailored resume", work)
 
     @api.post("/applications/{app_id}/trim")
     async def trim(app_id: str):
@@ -1079,19 +1193,22 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         current = ai.estimate_lines(profile, tailored)
         # The build overflowed, so aim clearly below both the budget and the current length.
         target = min(budget, current) - 6
-        try:
-            result = await ai.fit_to_length(engine, profile, tailored, analysis, target, max_rounds=1)
-        except EngineError as e:
-            raise _engine_call(e)
-        # Never saved here: the user reviews the shorter version and saves it (PUT /tailored).
-        proposal = None
-        trimmed = result["tailored"]
-        if result["trim_rounds"] and trimmed is not tailored and \
-                trimmed.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True) and \
-                factcheck.check(profile, trimmed).ok:
-            proposal = {"tailored": trimmed.model_dump(exclude_none=True), "lines": ai.estimate_lines(profile, trimmed),
-                        "budget": budget, "trim_rounds": result["trim_rounds"]}
-        return {**get_application(app_id), "trim_proposal": proposal}
+
+        async def work():
+            try:
+                result = await ai.fit_to_length(engine, profile, tailored, analysis, target, max_rounds=1)
+            except EngineError as e:
+                raise _engine_call(e)
+            # Never saved here: the user reviews the shorter version and saves it (PUT /tailored).
+            proposal = None
+            trimmed = result["tailored"]
+            if result["trim_rounds"] and trimmed is not tailored and \
+                    trimmed.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True) and \
+                    factcheck.check(profile, trimmed).ok:
+                proposal = {"tailored": trimmed.model_dump(exclude_none=True), "lines": ai.estimate_lines(profile, trimmed),
+                            "budget": budget, "trim_rounds": result["trim_rounds"]}
+            return {**get_application(app_id), "trim_proposal": proposal}
+        return await run_task(app_id, "trim", f"Trimming to {ai.pages_text()}", work)
 
     @api.post("/applications/{app_id}/fill")
     async def fill_page(app_id: str):
@@ -1112,15 +1229,18 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         profile = need_profile()
         if not factcheck.check(profile, tailored).ok:
             raise HTTPException(409, "Fix the fact-check errors first.")
-        try:
-            filled = await ai.fill(engine, profile, tailored, analysis, room, store.ai_tailored(app_id))
-        except EngineError as e:
-            raise _engine_call(e)
-        proposal = None
-        if filled is not None and filled.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True):
-            proposal = {"tailored": filled.model_dump(exclude_none=True), "room": room,
-                        "added_lines": ai.estimate_lines(profile, filled) - ai.estimate_lines(profile, tailored)}
-        return {**get_application(app_id), "fill_proposal": proposal}
+
+        async def work():
+            try:
+                filled = await ai.fill(engine, profile, tailored, analysis, room, store.ai_tailored(app_id))
+            except EngineError as e:
+                raise _engine_call(e)
+            proposal = None
+            if filled is not None and filled.model_dump(exclude_none=True) != tailored.model_dump(exclude_none=True):
+                proposal = {"tailored": filled.model_dump(exclude_none=True), "room": room,
+                            "added_lines": ai.estimate_lines(profile, filled) - ai.estimate_lines(profile, tailored)}
+            return {**get_application(app_id), "fill_proposal": proposal}
+        return await run_task(app_id, "fill", "Filling the last page", work)
 
     @api.put("/applications/{app_id}/tailored")
     def put_tailored(app_id: str, data: dict):
@@ -1201,17 +1321,20 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             raise HTTPException(409, "The resume doesn't pass the fact-check yet. Fix it first.")
         wanted = {n["id"]: n["text"] for n in letter_notes(app_id)}
         notes = [wanted[i] for i in body.notes if i in wanted]
-        try:
-            result = await ai.compose_letter(engine, profile, tailored, analysis, store.jd(app_id) or "", body.tone,
-                                             body.recipient, notes, store.knowledge().active_preferences())
-        except EngineError as e:
-            raise _engine_call(e)
-        except ValidationError as e:
-            raise HTTPException(502, f"The model returned an invalid letter: {e}")
-        store.save_letter(app_id, result["letter"])
-        store.save_ai_letter(app_id, result["letter"])
-        store.update_meta(app_id, letter_repair_rounds=result["repair_rounds"])
-        return get_application(app_id)
+
+        async def work():
+            try:
+                result = await ai.compose_letter(engine, profile, tailored, analysis, store.jd(app_id) or "", body.tone,
+                                                 body.recipient, notes, store.knowledge().active_preferences())
+            except EngineError as e:
+                raise _engine_call(e)
+            except ValidationError as e:
+                raise HTTPException(502, f"The model returned an invalid letter: {e}")
+            store.save_letter(app_id, result["letter"])
+            store.save_ai_letter(app_id, result["letter"])
+            store.update_meta(app_id, letter_repair_rounds=result["repair_rounds"])
+            return get_application(app_id)
+        return await run_task(app_id, "letter", "Writing your cover letter", work)
 
     @api.put("/applications/{app_id}/letter")
     def save_letter(app_id: str, letter: CoverLetter):

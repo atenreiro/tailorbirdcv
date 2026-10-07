@@ -6,6 +6,7 @@ import { ErrorNote, Spinner } from '../../ui'
 import { setPendingSave } from '../../unsaved'
 import type { StepProps } from '../Workspace'
 import { btn, btnPrimary, btnSm, btnSmPrimary, label, semi, sheetCard } from './v3'
+import { withProposals } from './taskResults'
 import { draftKey, gapQuestions, gapState, openGaps, REOPENED, type Draft, type GapState, type Question } from './gapState'
 
 const card = 'rounded-lg border border-rule bg-sheet'
@@ -158,11 +159,7 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
       'Checking it against your existing evidence…',
     ], async () => {
       const proposals = await api.proposals(app.id, qs.map((q) => ({ question_id: q.id, question: q.question, answer: answers[q.id].answer })))
-      const ids = new Set(qs.map((q) => q.id))
-      setDrafts((prev) => [
-        ...prev.filter((d) => !ids.has(d.question_id) || d.state === 'approved'),
-        ...proposals.map((p): Draft => ({ ...p, state: 'pending', uid: `${p.question_id}-${Date.now()}-${Math.random().toString(36).slice(2)}` })),
-      ])
+      setMemo((m) => withProposals({ ...m, gaps: m.gaps ?? gaps }, app, proposals, qs.map((q) => q.id)))
     })
 
   const questionFor = (qid: string) => questions.find((x) => x.id === qid)

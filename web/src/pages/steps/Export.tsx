@@ -6,6 +6,7 @@ import { fileManager, pageLimit, pagesText, pdfEngineName, showInFolder, useSett
 import { ErrorNote, Stamp } from '../../ui'
 import type { StepProps } from '../Workspace'
 import StyleCoach from './StyleCoach'
+import { FILL_NOTHING, TRIM_NOTHING, withFill, withTrim } from './taskResults'
 import { btn, btnPrimary, chip, label } from './v3'
 
 const card = 'rounded-xl border border-rule bg-sheet'
@@ -61,17 +62,8 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
       const { trim_proposal: proposal, ...next } = await api.trim(app.id)
       setApp(next)
       if (proposal === undefined) return  // an older server saved the trim itself
-      if (!proposal) {
-        throw new Error('The AI couldn’t find anything to cut without changing the facts. Trim it yourself in Review: remove the least relevant lines, then rebuild.')
-      }
-      const before = app.length ? `~${app.length.lines}` : 'the current length'
-      setMemo((m) => ({
-        ...m,
-        review: {
-          draft: proposal.tailored, rev: (m.review?.rev ?? 0) + 1,
-          notice: `AI trim suggestions — review the changes, then Save & check. Estimated ${before} → ~${proposal.lines} of ${proposal.budget} lines; edited lines are marked with a dot. Nothing is saved until you save, and Discard keeps the current version.`,
-        },
-      }))
+      if (!proposal) throw new Error(TRIM_NOTHING)
+      setMemo((m) => withTrim(m, proposal, app))
       go('review')
     })
 
@@ -84,16 +76,8 @@ export default function Export({ app, profile, setApp, go, run, memo, setMemo }:
     ], async () => {
       const { fill_proposal: proposal, ...next } = await api.fill(app.id)
       setApp(next)
-      if (!proposal) {
-        throw new Error('The AI found nothing relevant to add that fits without changing the facts. You can add evidence yourself in Review (“+ add … from evidence”).')
-      }
-      setMemo((m) => ({
-        ...m,
-        review: {
-          draft: proposal.tailored, rev: (m.review?.rev ?? 0) + 1,
-          notice: `AI additions to fill the last page — about ${proposal.added_lines} more lines of the ~${proposal.room} available, all from your profile. Review them, then Save & check and rebuild. Edited lines are marked with a dot; nothing is saved until you save, and Discard keeps the current version.`,
-        },
-      }))
+      if (!proposal) throw new Error(FILL_NOTHING)
+      setMemo((m) => withFill(m, proposal))
       go('review')
     })
 

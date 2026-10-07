@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
 import { cx } from '../../lib'
+import { renamed } from '../renamed'
 import type { StepProps } from '../Workspace'
 import Cite from './Cite'
 import { btn, btnPrimary, label, semi, sheetCard } from './v3'
@@ -29,7 +30,7 @@ export default function Brief({ app, profile, setApp, go, run, memo, setMemo }: 
     ], async () => {
       const next = await api.analyze(app.id)
       setApp(next)
-      if (next.id !== app.id) nav(`/a/${next.id}`, { replace: true })
+      if (next.id !== app.id) { renamed(app.id, next.id); nav(`/a/${next.id}`, { replace: true }) }
     })
 
   const jd = (

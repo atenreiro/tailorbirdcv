@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, isLetterFile, type Application, type CoverLetter, type Outcome, type AppAnswer, type ProfileResponse, type Tailored } from '../api'
+import { api, ApiError, isLetterFile, type Application, type AppAnswer, type CoverLetter, type FillProposal, type Outcome, type ProfileResponse,
+  type Proposal, type Tailored, type TaskKind, type TaskView, type TrimProposal } from '../api'
 import { NO_GUARD, setUnsaved } from '../unsaved'
 import { changeStatus, sentAsApplied } from '../status'
 import { cx, fmtDate, useTitle } from '../lib'
@@ -13,6 +14,8 @@ import Gaps from './steps/Gaps'
 import Review from './steps/Review'
 import { openIssues } from './steps/critique'
 import { gapQuestions, openGaps, type Draft } from './steps/gapState'
+import { pageKey, renamed } from './renamed'
+import { FILL_NOTHING, TRIM_NOTHING, withFill, withProposals, withTrim } from './steps/taskResults'
 
 const STEPS = [
   { key: 'brief', label: 'Brief' },
@@ -25,7 +28,7 @@ type Step = (typeof STEPS)[number]['key']
 const isStep = (s: string | null): s is Step => STEPS.some((x) => x.key === s)
 
 /** Work in progress that must survive switching steps (each step unmounts when hidden). */
-interface StepMemo {
+export interface StepMemo {
   // Unsaved Review edits; `notice` explains where they came from (e.g. an AI trim proposal).
   review: { draft: Tailored; rev: number; notice?: string } | null
   gaps: { answers: Record<string, AppAnswer>; proposals: Draft[]; guidance: string } | null
@@ -44,6 +47,31 @@ export interface StepProps {
   setMemo: (fn: (m: StepMemo) => StepMemo) => void
   /** Show an error on the application page, e.g. from a step that has already closed. */
   report: (message: string) => void
+}
+
+/** What the "working" panel says when this page picks up an AI step that's already running. */
+const TASK_LINES: Record<TaskKind, string[]> = {
+  analyze: ['Identifying the industry lens and track…', 'Matching every requirement to your evidence…', 'Picking out ATS keywords…',
+    'Drafting questions about gaps…'],
+  proposals: ['Turning your answer into a profile entry…', 'Checking it against your existing evidence…'],
+  compose: ['Choosing the headline and leading highlights…', 'Reordering evidence by relevance to this role…',
+    'Rephrasing in the job’s vocabulary — facts locked…', 'Running the fact-check and repairing any issues…'],
+  trim: ['Dropping the least relevant bullets, oldest roles first…', 'Re-running the fact-check…'],
+  fill: ['Finding relevant evidence the resume doesn’t use yet…', 'Re-running the fact-check…'],
+  critique: ['Reading it as the hiring manager for this role…', 'Skimming the top third like a recruiter…',
+    'Writing specific fixes and fact-checking each one…'],
+  letter: ['Choosing the evidence that fits this role…', 'Reading what the posting says about the company…',
+    'Checking every sentence against your profile…'],
+}
+/** Where a finished AI step's result is shown. */
+const TASK_STEP: Record<TaskKind, Step> = {
+  analyze: 'brief', proposals: 'gaps', compose: 'review', trim: 'review', fill: 'review', critique: 'review', letter: 'letter',
+}
+
+/** One page per application (see renamed.ts): a rename keeps the page, another application gets a new one. */
+export function WorkspacePage() {
+  const { id = '' } = useParams()
+  return <Workspace key={pageKey(id)} />
 }
 
 const enabledSteps = (a: Application): Record<Step, boolean> => ({
@@ -90,7 +118,7 @@ function stepNotes(app: Application, memo: StepMemo): Record<Step, [string, Tone
   }
 }
 
-export default function Workspace() {
+function Workspace() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
   const nav = useNavigate()
@@ -99,7 +127,13 @@ export default function Workspace() {
     setAppState((prev) => (typeof a === 'function' ? (prev ? a(prev) : prev) : a)), [])
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [step, setStep] = useState<Step>('brief')
-  const [working, setWorking] = useState<{ title: string; lines: string[]; ai: boolean } | null>(null)
+  const [working, setWorking] = useState<Working | null>(null)
+  const [following, setFollowing] = useState(false)  // checking on an AI step started before this page opened
+  const [arrived, setArrived] = useState<Application | null>(null)  // an application whose AI step just finished
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
+  const appId = useRef<string | null>(null)
+  appId.current = app?.id ?? null
   const [error, setError] = useState<string | null>(null)
   const [memo, setMemoState] = useState<StepMemo>({ review: null, gaps: null, gapFocus: null, letter: null })
   const autoRan = useRef(false)
@@ -119,21 +153,89 @@ export default function Workspace() {
   const questionsKey = useMemo(() => JSON.stringify(app?.analysis?.questions ?? []), [app?.analysis])
   useEffect(() => { setMemoState((m) => ({ ...m, gaps: null })) }, [questionsKey])
 
+  // An AI step finished while this page wasn't showing it: show its outcome, then let the server forget it.
+  useEffect(() => {
+    if (!arrived) return
+    setArrived(null)
+    const a = arrived
+    const t = a.task
+    if (appId.current && a.id !== appId.current) {  // the analysis renamed it
+      renamed(appId.current, a.id)
+      nav(`/a/${a.id}`, { replace: true, state: NO_GUARD })
+    }
+    setApp(a)
+    if (t?.status === 'failed') setError(t.error || 'The AI step failed.')
+    else if (t?.status === 'done') {
+      const r = (t.result ?? {}) as { trim_proposal?: TrimProposal | null; fill_proposal?: FillProposal | null }
+      if (t.kind === 'trim' && !r.trim_proposal) setError(TRIM_NOTHING)
+      else if (t.kind === 'fill' && !r.fill_proposal) setError(FILL_NOTHING)
+      else {
+        if (t.kind === 'trim') setMemoState((m) => withTrim(m, r.trim_proposal!, a))
+        if (t.kind === 'fill') setMemoState((m) => withFill(m, r.fill_proposal!))
+        if (t.kind === 'proposals') setMemoState((m) => withProposals(m, a, (t.result as Proposal[] | undefined) ?? []))
+        if (enabledSteps(a)[TASK_STEP[t.kind]]) setStep(TASK_STEP[t.kind])
+      }
+    }
+    if (t && t.status !== 'running') void api.clearTask(a.id).catch(() => {})
+  }, [arrived, nav, setApp])
+
   // Each step starts at the top (the previous one may have been scrolled far down).
   const shown = working ? 'working' : step
   useEffect(() => { if (window.scrollY > 240) window.scrollTo({ top: 0 }) }, [shown])
 
   const reloadProfile = useCallback(async () => setProfile(await api.profile()), [])
 
+  // An AI step that was already running (started before you came back, or from another tab): show it
+  // working, check on it every few seconds, and show its outcome when it's done.
+  const follow = useCallback((task: TaskView) => {
+    setWorking({ title: task.label, lines: TASK_LINES[task.kind] ?? [], ai: true, started: Date.parse(task.started), stoppable: true })
+    setFollowing(true)
+    window.dispatchEvent(new Event('tailorbirdcv:tasks'))
+  }, [])
+  useEffect(() => {
+    if (!following) return
+    const timer = window.setInterval(async () => {
+      try {
+        const a = await api.get(appId.current!)
+        if (a.task?.status === 'running') return
+        setFollowing(false)
+        setWorking(null)
+        setArrived(a)
+      } catch { /* the server may be busy or restarting: try again */ }
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [following])
+
   const run = useCallback(async (title: string, lines: string[], fn: () => Promise<void>, ai = true) => {
     setError(null)
-    setWorking({ title, lines, ai })
+    setWorking({ title, lines, ai, started: Date.now(), stoppable: ai })
+    if (ai) window.dispatchEvent(new Event('tailorbirdcv:tasks'))
+    let followed = false
     try {
       await fn()
     } catch (e) {
-      setError((e as Error).message)
+      const err = e as ApiError
+      if (err.code === 'stopped') { /* you pressed Stop: nothing was changed */ }
+      else if (err.code === 'running' && err.detail?.task && mounted.current) { followed = true; follow(err.detail.task as TaskView) }
+      else setError(err.message)
     } finally {
-      setWorking(null)
+      // Still on this page: its outcome has been shown, so the server can forget the finished step. If you
+      // left, it's kept, and the page shows it when you come back.
+      if (!followed && mounted.current) {
+        setWorking(null)
+        if (ai && appId.current) void api.clearTask(appId.current).catch(() => {})
+      }
+    }
+  }, [follow])
+
+  const stop = useCallback(async () => {
+    if (!window.confirm('Stop this AI step? What it has done so far is discarded; nothing is changed.')) return
+    setWorking((w) => (w ? { ...w, stopping: true } : w))
+    try {
+      await api.stopTask(appId.current!)
+    } catch (e) {
+      setError((e as Error).message)
+      setWorking((w) => (w ? { ...w, stopping: false } : w))
     }
   }, [])
 
@@ -150,6 +252,8 @@ export default function Workspace() {
         setStep(isStep(want) && enabledSteps(a)[want] ? want
           : a.tailored ? (a.files.length ? 'export' : 'review') : a.analysis ? 'gaps' : 'brief')
         if (want !== null) setParams((prev) => { const next = new URLSearchParams(prev); next.delete('step'); return next }, { replace: true })
+        if (a.task?.status === 'running') follow(a.task)
+        else if (a.task) setArrived(a)  // it finished while you were elsewhere
       })
       .catch((e) => { if (current) setError(e.message) })
     return () => { current = false }
@@ -169,7 +273,7 @@ export default function Workspace() {
     ], async () => {
       const next = await api.analyze(app.id)
       setApp(next)
-      if (next.id !== app.id) nav(`/a/${next.id}`, { replace: true, state: NO_GUARD })
+      if (next.id !== app.id) { renamed(app.id, next.id); nav(`/a/${next.id}`, { replace: true, state: NO_GUARD }) }
     })
   }, [app, params, setParams, run, nav, setApp])
 
@@ -188,7 +292,7 @@ export default function Workspace() {
     setError(null)
     try {
       const r = await changeStatus(app!.id, status, { alreadySent, outcome, onBuilding: (on) => setWorking(on ? {
-        title: 'Building & freezing the copy you send', ai: false,
+        title: 'Building & freezing the copy you send', ai: false, started: Date.now(),
         lines: ['Rendering your resume…', 'Converting to PDF…', 'Saving a read-only sent copy…'],
       } : null) })
       if (!r) return
@@ -258,7 +362,7 @@ export default function Workspace() {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
       {working ? (
-        <WorkingPanel title={working.title} lines={working.lines} ai={working.ai} />
+        <WorkingPanel working={working} onStop={working.stoppable ? stop : undefined} />
       ) : (
         <div key={step}>
           {step === 'brief' && <Brief {...props} />}
@@ -272,23 +376,44 @@ export default function Workspace() {
   )
 }
 
-/** "The AI is working" panel with elapsed time (engine calls take a minute or two). */
-function WorkingPanel({ title, lines, ai }: { title: string; lines: string[]; ai: boolean }) {
+interface Working {
+  title: string; lines: string[]; ai: boolean
+  started: number  // when the step began (ms), also when it began before this page opened
+  stoppable?: boolean; stopping?: boolean
+}
+
+/** "The AI is working" panel with elapsed time (engine calls take a minute or two). You can leave the page
+ *  meanwhile: the step keeps going, and its result is here when you come back. */
+function WorkingPanel({ working, onStop }: { working: Working; onStop?: () => void }) {
+  const { title, lines, ai, started, stopping } = working
   const runs = engineRuns(useSettings())
-  const [secs, setSecs] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    const t = setInterval(() => setSecs((x) => x + 1), 1000)
+    const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
+  const secs = Math.max(0, Math.floor((now - started) / 1000))
   const line = lines[Math.min(Math.floor(secs / 12), lines.length - 1)]
   return (
-    <div className="animate-rise flex flex-col items-center gap-2.5 rounded-[14px] border border-rule bg-sheet px-6 py-12 text-center sm:px-8" role="status" aria-live="polite">
+    <div className="animate-rise flex flex-col items-center gap-2.5 rounded-[14px] border border-rule bg-sheet px-6 py-12 text-center sm:px-8">
       <Stitching mode={ai ? 'ai' : 'build'} className="mb-1" />
-      <p className="font-display text-[32px] leading-tight tracking-[-0.01em] text-ink">{title}</p>
-      <p className="text-[15px] text-body">{line}</p>
-      <p className="mt-1.5 font-mono text-xs text-faint">
+      <div role="status" aria-live="polite" className="flex flex-col items-center gap-2.5">
+        <p className="font-display text-[32px] leading-tight tracking-[-0.01em] text-ink">{stopping ? 'Stopping…' : title}</p>
+        <p className="text-[15px] text-body">{stopping ? 'Ending the AI step. Nothing is changed.' : line}</p>
+      </div>
+      <p className="mt-1.5 font-mono text-xs text-muted" aria-hidden="true">
         {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')} elapsed{ai && runs && ` · ${runs}`}
       </p>
+      {onStop && (
+        <>
+          <p className="max-w-[460px] text-[13px] text-muted text-pretty">
+            You can leave this page: the AI keeps working, and the result is waiting here when you come back.
+          </p>
+          <button className="btn mt-1 px-4 py-1.5 text-[13px]" onClick={onStop} disabled={stopping}>
+            {stopping ? 'Stopping…' : 'Stop'}
+          </button>
+        </>
+      )}
     </div>
   )
 }

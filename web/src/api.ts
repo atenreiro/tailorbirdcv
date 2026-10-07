@@ -134,8 +134,20 @@ export interface LetterSentence { text: string; kind: LetterKind; sources: strin
 export interface CoverLetter { tone: LetterTone; recipient: string; paragraphs: { sentences: LetterSentence[] }[] }
 export const isLetterFile = (name: string) => /_Cover_Letter\.[a-z]+$/i.test(name)
 
+/** An AI step of one application, run as a task: it keeps going when you leave, and can be stopped.
+ *  A finished one stays until the page has shown its outcome (api.clearTask). */
+export type TaskKind = 'analyze' | 'proposals' | 'compose' | 'trim' | 'fill' | 'critique' | 'letter'
+export interface TaskView {
+  kind: TaskKind; label: string; status: 'running' | 'done' | 'failed' | 'stopped'
+  started: string; finished: string | null; error: string | null
+  /** Only for steps that suggest without saving (trim, fill, evidence proposals), once done. */
+  result?: unknown
+}
+export interface TaskSummary extends TaskView { app_id: string; company: string; role: string }
+
 export interface Application {
   id: string; meta: Meta; jd: string; analysis: Analysis | null; files: string[]
+  task?: TaskView | null
   letter: CoverLetter | null; letter_report: Report | null; letter_stale: boolean
   learning_style?: boolean  // style preferences are being learned from it in the background (after applying)
   letter_notes: { id: string; text: string }[]
@@ -159,6 +171,7 @@ export interface AppSummary extends Meta {
   id: string; industry?: string; track?: Track; files: string[]; outputs_stale?: boolean; sent?: SentCopy | null
   progress?: Progress | null
   reached?: 'built' | 'applied' | 'interview' | 'offer' | null; reached_at?: string | null
+  task?: TaskView | null
 }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 /** The AI engines (mirrors engine.ENGINES): two subscriptions through a local app, three API keys. */
@@ -343,6 +356,9 @@ export const api = {
   create: (b: { jd: string; url?: string; company?: string; role?: string }) =>
     req<{ id: string }>('POST', '/applications', b),
   get: (id: string) => req<Application>('GET', `/applications/${id}`),
+  tasks: () => req<TaskSummary[]>('GET', '/tasks'),
+  stopTask: (id: string) => req<{ task: TaskView | null }>('POST', `/applications/${id}/task/stop`),
+  clearTask: (id: string) => req<void>('DELETE', `/applications/${id}/task`),
   patch: (id: string, b: Partial<Meta>) => req<Meta>('PATCH', `/applications/${id}`, b),
   remove: (id: string) => req<void>('DELETE', `/applications/${id}`),
   analyze: (id: string) => req<Application>('POST', `/applications/${id}/analyze`),

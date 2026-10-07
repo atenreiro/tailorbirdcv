@@ -4,6 +4,8 @@ new facts: compose returns the base resume layout (or the whole profile) unchang
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 
 import yaml
@@ -173,8 +175,25 @@ def _letter(prompt: str) -> dict:
     return {"paragraphs": paragraphs + ([{"sentences": why}] if why else [])}
 
 
+class _SlowDemo(FakeEngine):
+    """The demo engine, taking `delay` seconds per call like a real AI (TAILORBIRDCV_DEMO_DELAY)."""
+
+    def __init__(self, responses, delay: float):
+        super().__init__(responses)
+        self.delay = delay
+
+    async def complete(self, system, prompt, schema):
+        await asyncio.sleep(self.delay)
+        return await super().complete(system, prompt, schema)
+
+
 def demo_engine() -> FakeEngine:
-    return FakeEngine({"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
-                       "repair": _compose, "trim": _trim, "fill": _fill, "learn_preferences": _learn, "critique": _critique,
-                       "letter": _letter, "letter_repair": _letter,
-                       "import": _import})
+    responses = {"analyze": _analyze, "propose_evidence": _propose, "compose": _compose,
+                 "repair": _compose, "trim": _trim, "fill": _fill, "learn_preferences": _learn, "critique": _critique,
+                 "letter": _letter, "letter_repair": _letter,
+                 "import": _import}
+    try:
+        delay = float(os.environ.get("TAILORBIRDCV_DEMO_DELAY") or 0)
+    except ValueError:
+        delay = 0
+    return _SlowDemo(responses, min(delay, 600)) if delay > 0 else FakeEngine(responses)

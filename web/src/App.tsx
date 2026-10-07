@@ -7,7 +7,8 @@ import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import SetupWizard from './pages/setup/SetupWizard'
 import UpdateBanner from './pages/UpdateBanner'
-import Workspace from './pages/Workspace'
+import { WorkspacePage } from './pages/Workspace'
+import { api, type TaskSummary } from './api'
 import { cx } from './lib'
 import { EngineBadge } from './ui'
 import { useFirstRun } from './setup'
@@ -101,6 +102,49 @@ function Footer() {
   )
 }
 
+const READY: Record<TaskSummary['kind'], string> = {
+  analyze: 'analysis ready', proposals: 'evidence drafts ready', compose: 'draft ready', trim: 'trim suggestions ready',
+  fill: 'fill suggestions ready', critique: 'review ready', letter: 'cover letter ready',
+}
+
+/** When an AI step finishes while you're on another page (or in another tab), the tab's title says so,
+ *  until you look at that application. Checks only while a step is running. */
+function useTaskTitle() {
+  useEffect(() => {
+    let live = true
+    let timer: number | undefined
+    const seen = new Map<string, string>()  // application → its step's last status
+    let shown: { path: string; base: string } | null = null  // a "✓ … ready" title, and the title it replaced
+    const looking = (path: string) => window.location.pathname === path && document.visibilityState === 'visible'
+    const tick = async () => {
+      window.clearTimeout(timer)
+      let list: TaskSummary[]
+      try { list = await api.tasks() } catch { return }
+      if (!live) return
+      for (const t of list) {
+        const path = `/a/${t.app_id}`
+        if (seen.get(t.app_id) === 'running' && t.status !== 'running' && t.status !== 'stopped' && !looking(path)) {
+          shown = { path, base: shown?.base ?? document.title }
+          document.title = t.status === 'done' ? `✓ ${t.company}: ${READY[t.kind]} · TailorbirdCV` : `! ${t.company}: the AI step failed · TailorbirdCV`
+        }
+        seen.set(t.app_id, t.status)
+      }
+      if (list.some((t) => t.status === 'running')) timer = window.setTimeout(tick, 3000)
+    }
+    const kick = () => { window.setTimeout(tick, 800) }  // a page just started (or found) a running step
+    const back = () => { if (shown && looking(shown.path)) { document.title = shown.base; shown = null } }
+    void tick()
+    window.addEventListener('tailorbirdcv:tasks', kick)
+    document.addEventListener('visibilitychange', back)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+      window.removeEventListener('tailorbirdcv:tasks', kick)
+      document.removeEventListener('visibilitychange', back)
+    }
+  }, [])
+}
+
 /** Shown once after the setup wizard: where to start. */
 function FirstTip() {
   const [params, setParams] = useSearchParams()
@@ -141,6 +185,7 @@ function Locked() {
 export default function App() {
   useUnsavedGuard()
   useFirstRun()
+  useTaskTitle()
   const locked = useLocked()
   if (locked) return <><Masthead /><main className={cx('mx-auto pb-24 pt-10', FRAME)}><Locked /></main><Footer /></>
   return (
@@ -153,7 +198,7 @@ export default function App() {
           <Route path="/" element={<Applications />} />
           <Route path="/funnel" element={<Funnel />} />
           <Route path="/new" element={<NewApplication />} />
-          <Route path="/a/:id" element={<Workspace />} />
+          <Route path="/a/:id" element={<WorkspacePage />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/setup" element={<SetupWizard />} />
