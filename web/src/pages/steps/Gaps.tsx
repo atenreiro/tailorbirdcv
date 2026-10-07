@@ -238,9 +238,9 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
             return (
               <button key={q.id} onClick={() => select(q.id)} aria-current={q.id === sel?.id ? 'true' : undefined}
                 className={cx('flex w-full cursor-pointer flex-col gap-1.5 border-b border-rule px-4 py-3.5 text-left transition-colors last:border-b-0 hover:bg-paper', q.id === sel?.id && 'bg-paper')}>
-                <span className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">{q.requirement}</span>
-                  <span className={cx('flex-none rounded-full px-2 py-px text-[10px] font-semibold uppercase tracking-[0.06em]', chipCls)}>{chip}</span>
+                <span className="flex items-start justify-between gap-2">
+                  <span className="line-clamp-2 min-w-0 text-[13px] leading-[1.4] text-body" title={q.requirement}>{q.requirement}</span>
+                  <span className={cx('mt-px flex-none rounded-full px-2 py-px text-[10px] font-semibold uppercase tracking-[0.06em]', chipCls)}>{chip}</span>
                 </span>
                 <span className={`text-base leading-[1.3] text-ink ${semi}`}>{q.question}</span>
               </button>
@@ -288,7 +288,10 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
 
         {sel ? (
           <section key={sel.id} className={`${sheetCard} animate-rise flex flex-col gap-3.5 p-5 sm:p-6`}>
-            <p className={label}>{sel.requirement}</p>
+            <div className="flex flex-col gap-1.5 rounded-lg border-l-[3px] border-accent bg-paper px-4 py-3">
+              <p className={label}>What the job asks for</p>
+              <p className="text-[15px] leading-[1.5] text-body text-pretty">{sel.requirement}</p>
+            </div>
             <p className={`text-2xl leading-[1.3] text-pretty text-ink ${semi}`}>{sel.question}</p>
             {prefill && st !== 'approved' && (
               <p className="text-xs text-muted">↺ Pre-filled from your answer{prefill.company ? ` for ${prefill.company}` : ''} on {fmt(prefill.date)}. Confirm or update it.</p>
