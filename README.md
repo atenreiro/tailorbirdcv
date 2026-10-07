@@ -1,4 +1,5 @@
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png"><img src="docs/logo.png" alt="TailorbirdCV" width="420"></picture></p>
+<p align="center"><em>Stitched to fit.</em></p>
 
 # TailorbirdCV
 

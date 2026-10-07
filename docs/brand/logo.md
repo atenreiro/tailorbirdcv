@@ -14,7 +14,7 @@ Brand assets for TailorbirdCV (tool that tailors a master CV to each job descrip
 
 A tailorbird (Orthotomus) perched on a leaf. Tailorbirds sew leaves together with plant fibre to build their nests, so the leaf carries a dashed running stitch. Metaphor: stitching one master CV into a custom fit for each role.
 
-Slogan candidate: "Stitched to fit."
+Slogan: "Stitched to fit." Used under the logo in the README and on the social preview (Outfit 600, leaf green `#8CCB7A` on deep green).
 
 ## Mark description
 
