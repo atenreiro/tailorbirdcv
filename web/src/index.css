@@ -132,11 +132,16 @@
     scroll-behavior: auto !important;
   }
 }
-/* …except the waiting stitch: a line drawing itself in place (no movement across the screen), so a long AI wait
-   still shows that something is happening. The bird stays still. */
+/* …except the waiting stitch (a line drawing itself in place, no movement across the screen) and spinners
+   (a small ring turning in place, slower), so a long AI wait still shows that something is happening.
+   The bird stays still. */
 @media (prefers-reduced-motion: reduce) {
   .stitch-sew {
     animation-duration: var(--sew, 2.6s) !important;
+    animation-iteration-count: infinite !important;
+  }
+  .spinner {
+    animation-duration: 1.6s !important;
     animation-iteration-count: infinite !important;
   }
 }

@@ -105,14 +105,20 @@ const TASK_DONE: Record<string, string> = {
   done: 'Ready: open it to see the result', failed: 'The AI step failed: open it to see why', stopped: 'Stopped',
 }
 
+/** The task to show on the card instead of the next step (a stopped one is just cleared). */
+const shownTask = (a: AppSummary) => (a.task && a.task.status !== 'stopped' ? a.task : null)
+const taskText = (t: NonNullable<AppSummary['task']>) => (t.status === 'running' ? `${t.label}…` : TASK_DONE[t.status])
+/** The card's next-step box: tinted for a task, else by the next step's tone. */
+const nextBox = (a: AppSummary) => { const t = shownTask(a); return t ? (t.status === 'failed' ? 'bg-bad-soft' : 'bg-accent-soft') : TONE[nextOf(a).tone][2] }
+
 function NextLine({ a, working }: { a: AppSummary; working: boolean }) {
-  const t = a.task
-  if (t && t.status !== 'stopped') {
+  const t = shownTask(a)
+  if (t) {
     const running = t.status === 'running'
     return (
-      <p className={cx('flex min-w-0 items-center gap-2 text-[13px]', t.status === 'failed' ? 'text-bad' : 'text-accent-strong')}>
-        {running ? <Spinner className="size-[11px]" /> : <span className={cx('size-1.5 flex-none rounded-full', t.status === 'failed' ? 'bg-bad' : 'bg-accent')} />}
-        <span className="truncate">{running ? `${t.label}…` : TASK_DONE[t.status]}</span>
+      <p className={cx('flex min-w-0 items-center gap-2 text-[13px]', t.status === 'failed' ? 'text-bad' : 'text-accent-strong', running && 'font-medium')}>
+        {running ? <Spinner className="size-[13px]" /> : <span className={cx('size-1.5 flex-none rounded-full', t.status === 'failed' ? 'bg-bad' : 'bg-accent')} />}
+        <span className="truncate">{taskText(t)}</span>
       </p>
     )
   }
@@ -439,7 +445,7 @@ export default function Applications() {
                     const on = open && x.id === sel
                     return (
                       <div key={x.id} data-app-id={x.id} draggable role="button" tabIndex={0} aria-haspopup="dialog" aria-current={on ? 'true' : undefined}
-                        aria-label={`${x.company}, ${x.role}. ${statusLabel(x.status, x.outcome)}. ${nextOf(x).short ?? nextOf(x).text}`}
+                        aria-label={`${x.company}, ${x.role}. ${statusLabel(x.status, x.outcome)}. ${shownTask(x) ? taskText(shownTask(x)!) : nextOf(x).short ?? nextOf(x).text}`}
                         onDragStart={(e: DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', x.id); setDrag(x.id) }}
                         onDragEnd={() => { setDrag(null); setOver(null) }}
                         onClick={(e) => show(x.id, e.currentTarget)} onDoubleClick={() => nav(`/a/${x.id}`)}
@@ -455,7 +461,7 @@ export default function Applications() {
                         </div>
                         <p className="text-[13px] leading-[1.3] text-muted text-pretty">{x.role}</p>
                         <div className="flex items-center gap-2.5"><StatusPill status={x.status} outcome={x.outcome} /><Meter a={x} /></div>
-                        <div className={cx('-mx-1 -mb-1 mt-0.5 rounded-md px-2 py-[7px]', TONE[nextOf(x).tone][2])}>
+                        <div className={cx('-mx-1 -mb-1 mt-0.5 rounded-md px-2 py-[7px]', nextBox(x))}>
                           <NextLine a={x} working={busy?.id === x.id} />
                         </div>
                       </div>

@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Applications: an AI step running in the background now stands out on its card (tinted box, larger spinner), and spinners keep turning when the system's "reduce motion" setting is on (they used to freeze, so a running step looked idle).
+
 ## 0.2.4 — 2026-10-07
 - Gaps: what the job asks for is now shown in normal, readable text (in a box above each question, and in the question list) instead of small grey capitals.
 

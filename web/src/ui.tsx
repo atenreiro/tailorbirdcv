@@ -7,7 +7,7 @@ import { ENGINE_NAMES } from './settings'
 export function Spinner({ className = '' }: { className?: string }) {
   return (
     <span
-      className={cx('inline-block size-3.5 rounded-full border-2 border-current border-r-transparent animate-spin', className)}
+      className={cx('spinner inline-block size-3.5 flex-none rounded-full border-2 border-current border-r-transparent animate-spin', className)}
       aria-hidden
     />
   )
