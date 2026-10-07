@@ -21,7 +21,7 @@ function fmt(date?: string) {
   return date ? new Date(date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
 }
 
-export default function Gaps({ app, profile, setApp, reloadProfile, go, run, memo, setMemo }: StepProps) {
+export default function Gaps({ app, profile, setApp, reloadProfile, go, run, memo, setMemo, report }: StepProps) {
   const limit = pageLimit(useSettings())
   const [knowledge, setKnowledge] = useState<Knowledge | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -52,11 +52,21 @@ export default function Gaps({ app, profile, setApp, reloadProfile, go, run, mem
     setMemo((m) => { const g = m.gaps ?? gaps; return { ...m, gaps: { ...g, proposals: fn(g.proposals) } } })
   const setGuidance = (g: string) => patchGaps({ guidance: g })
 
-  // Flush a debounced save if the step unmounts before it fires.
+  // Flush a debounced save if the step unmounts before it fires (switching steps or pages). Once it
+  // lands, closing the tab no longer warns; if it fails, the user is told and the warning stays (it's true).
   useEffect(() => () => {
     window.clearTimeout(saveTimer.current)
     const last = pendingSave.current
-    if (last) void saveChain.current.then(() => api.saveAnswers(app.id, Object.values(last))).catch(() => {})
+    if (!last) return
+    pendingSave.current = null
+    saveChain.current = saveChain.current
+      .then(() => api.saveAnswers(app.id, Object.values(last)))
+      .then((saved) => {
+        setApp((prev) => (prev.id === app.id ? { ...prev, answers: saved } : prev))
+        setPendingSave('gaps', false)
+      })
+      .catch((e) => report(`Your latest gap answer wasn’t saved. ${(e as Error).message}`))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.id])
 
   useEffect(() => { api.knowledge().then(setKnowledge).catch(() => setKnowledge({ answers: [], preferences: [] })) }, [])

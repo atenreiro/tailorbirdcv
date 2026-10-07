@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Fixed: leaving the Gaps step right after typing an answer no longer leaves a false "Leave site? Changes may not be saved" warning behind once the answer has saved; if that save fails, the application page now says so.
+- Fixed: the CV file picker offers only the formats TailorbirdCV can read (.docx, .pdf, .txt, .md).
+
 ## 0.2.1 — 2026-10-07
 - **TailorbirdCV is now free software** under the GNU AGPL v3.0 or later. Settings → About links to the source code.
 - **TailorbirdCV learns your style by itself.** When you mark an application applied, it compares what you sent with its drafts (the resume and, new, the cover letter) and suggests style preferences for next time, in the background. Nothing is used until you approve it: the suggestions appear in the application's Export step, and Applications shows a notice while any are waiting. Turn it off in Settings → Applications.

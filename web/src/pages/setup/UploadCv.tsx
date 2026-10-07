@@ -83,7 +83,7 @@ export default function UploadCv({ onImported, onBlank }: {
       {mode === 'file' ? (
         <>
           <input ref={input} type="file" className="sr-only" tabIndex={-1} aria-hidden
-            accept=".docx,.pdf,.txt,.md,.rtf,.doc,.odt,.pages,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept=".docx,.pdf,.txt,.md,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={(e) => { choose(e.target.files?.[0]); e.target.value = '' }} />
           <button type="button" onClick={() => input.current?.click()}
             onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); choose(e.dataTransfer.files[0]) }}

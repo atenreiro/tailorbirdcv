@@ -42,6 +42,8 @@ export interface StepProps {
   run: (title: string, lines: string[], fn: () => Promise<void>, ai?: boolean) => Promise<void>
   memo: StepMemo
   setMemo: (fn: (m: StepMemo) => StepMemo) => void
+  /** Show an error on the application page, e.g. from a step that has already closed. */
+  report: (message: string) => void
 }
 
 const enabledSteps = (a: Application): Record<Step, boolean> => ({
@@ -197,7 +199,7 @@ export default function Workspace() {
     }
   }
 
-  const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run, memo, setMemo }
+  const props: StepProps = { app, profile, setApp, reloadProfile, go: setStep, run, memo, setMemo, report: setError }
   // The posting the description came from (only http/https links are shown).
   const postingUrl = /^https?:\/\//i.test(app.meta.url ?? '') ? app.meta.url! : null
   const postingHost = postingUrl ? (() => { try { return new URL(postingUrl).host.replace(/^www\./, '') } catch { return '' } })() : ''
