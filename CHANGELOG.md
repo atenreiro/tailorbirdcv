@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Hiring-manager review: "Accept all" no longer appears to do nothing. It counts only fixes whose line is still in the draft, and a fix written for a line that has since changed says so (Dismiss only) instead of offering Accept; re-run the review for fixes to the current draft.
 - A recent job no longer ends up as just its one-line description. Every role from the last 10 years that has evidence in your profile keeps at least one bullet: the AI is told so when it writes and trims the resume, a trim that removes a role's last bullet is thrown away, and Review warns if one has none (older roles can still be just their description).
 - Applications: an AI step running in the background now stands out on its card (tinted box, larger spinner), and spinners keep turning when the system's "reduce motion" setting is on (they used to freeze, so a running step looked idle).
 

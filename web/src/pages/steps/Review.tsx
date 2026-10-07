@@ -290,6 +290,7 @@ export default function Review({ app, profile, setApp, go, run, memo, setMemo }:
     for (const i of open.filter((x) => x.action !== 'advice')) {
       if (findsTarget(next, i)) { applyIssue(next, i); decided[i.id] = 'accepted' }
     }
+    if (!Object.keys(decided).length) { setError('These fixes are for lines that have changed since the review. Re-run the review.'); return }
     setMemo((m) => ({ ...m, review: { ...m.review, draft: next, rev: (m.review?.rev ?? 0) + 1 } }))
     setFocus(null)
     void saveDecisions(decided)

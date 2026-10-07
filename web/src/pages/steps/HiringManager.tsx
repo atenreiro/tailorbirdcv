@@ -22,8 +22,9 @@ export interface ReviewActions {
 }
 
 /** One review issue, shown inline under its claim or in the card. */
-export function ReviewIssue({ issue, actions, compact = false }: { issue: CritiqueIssue; actions: ReviewActions; compact?: boolean }) {
-  const editable = issue.action !== 'advice'
+/** `gone`: the line this fix is for has changed since the review, so it can't be applied (only dismissed). */
+export function ReviewIssue({ issue, actions, compact = false, gone = false }: { issue: CritiqueIssue; actions: ReviewActions; compact?: boolean; gone?: boolean }) {
+  const editable = issue.action !== 'advice' && !gone
   return (
     <div className={cx('rounded-lg border border-accent/25 bg-[#fdf4f0] p-3 text-xs', !compact && 'mt-2')}>
       <div className="flex flex-wrap items-center gap-2">
@@ -41,6 +42,7 @@ export function ReviewIssue({ issue, actions, compact = false }: { issue: Critiq
       {(issue.action === 'remove' || issue.action === 'move_to_top') && (
         <p className="mt-2 font-medium text-ink">→ {ACTION_LABEL[issue.action]}</p>
       )}
+      {gone && <p className="mt-2 text-warn">The line this is for has changed since the review, so it can’t be applied. Re-run the review for fixes to the current draft.</p>}
       {issue.blocked && <p className="mt-2 text-faint">The AI’s rewrite was withheld: it didn’t pass the fact-check.</p>}
       {issue.question && (
         <p className="mt-2 text-ink">Needs your input: <span className="italic">{issue.question}</span></p>
@@ -61,7 +63,10 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
 }) {
   const open = openIssues(critique)
   const general = open.filter((i) => !isInline(i))
-  const acceptable = open.filter((i) => i.action !== 'advice').length
+  // Fixes whose line is still in the draft; the others were written for an older version of it.
+  const fixes = open.filter((i) => i.action !== 'advice')
+  const acceptable = fixes.filter(isInline).length
+  const gone = fixes.length - acceptable
   const r = critique?.latest
   return (
     <section className="rounded-xl border border-rule bg-sheet px-[18px] py-4">
@@ -108,8 +113,9 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
           )}
           <p className="mt-3 border-t border-rule pt-3 text-xs text-muted">
             {open.length ? `${open.length} open suggestion${open.length > 1 ? 's' : ''}.${open.length > general.length ? ' Line-specific ones are marked HM on the resume: click one to see it.' : ''}` : 'All suggestions handled.'}
+            {gone > 0 && ` ${gone === 1 ? 'One is' : `${gone} are`} for lines that have changed since the review: re-run it for fixes to the current draft.`}
           </p>
-          {general.length > 0 && <div className="mt-2 space-y-2">{general.map((i) => <ReviewIssue key={i.id} issue={i} actions={actions} compact />)}</div>}
+          {general.length > 0 && <div className="mt-2 space-y-2">{general.map((i) => <ReviewIssue key={i.id} issue={i} actions={actions} compact gone={i.action !== 'advice'} />)}</div>}
         </>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
