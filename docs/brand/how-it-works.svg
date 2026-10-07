@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1130 672" width="1130" height="672" role="img" aria-label="How TailorbirdCV works: your CV, a job posting and your answers go into TailorbirdCV on your computer, which reads the job, asks about gaps, writes a draft, fact-checks it against your master profile and builds Word and PDF files. Only the job and your CV's content go to the AI you choose, with your contact details hidden by Privacy mode.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1130 672" width="1130" height="672" role="img" aria-label="How TailorbirdCV works: your CV, a job posting and your answers go into TailorbirdCV on your computer, which reads the job, asks about gaps, writes a draft, fact-checks it against your master profile and builds Word and PDF files. Only the job and your CV's content go to the AI you choose, with your contact details hidden by Privacy mode (optional and experimental).">
   <title>How TailorbirdCV works</title>
   <!-- Source of docs/how-it-works.png and docs/how-it-works-dark.png (rendered with Outfit, Instrument Sans
        and Geist Mono; add class="dark" to the root for the dark variant). Colours follow docs/brand/logo.md. -->
@@ -31,6 +31,7 @@
     .arrow-out { fill: none; stroke: var(--accent); stroke-width: 2.2; }
     .head { fill: var(--ink); }
     .head-out { fill: var(--accent); }
+    .tag { font: 500 10px "Geist Mono", ui-monospace, monospace; letter-spacing: 0.02em; fill: var(--accent); }
     .ok { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
   </style>
   <defs>
@@ -125,6 +126,8 @@
   <!-- Privacy mode, at the edge of your computer -->
   <rect class="chip" x="756" y="196" width="136" height="212" rx="12"/>
   <path d="M774 214 l11 -4 l11 4 v8 c0 7 -5 11 -11 13 c-6 -2 -11 -6 -11 -13 Z" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
+  <text class="tag" x="804" y="220">EXPERIMENTAL</text>
+  <text class="tag" x="804" y="234">OPTIONAL</text>
   <text class="t" x="774" y="262" style="font-size: 17px">Privacy mode</text>
   <text class="s" x="774" y="288">Your name, email,</text>
   <text class="s" x="774" y="307">phone and links</text>
