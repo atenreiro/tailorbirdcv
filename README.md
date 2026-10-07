@@ -16,6 +16,11 @@ TailorbirdCV is a small web app that runs on your own computer (macOS, Windows o
 
 ![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
 
+## How it works
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.png"><img src="docs/how-it-works.png" alt="How TailorbirdCV works. You give it your CV once, then a job posting and your answers to its questions. On your computer, TailorbirdCV keeps your master profile (the only source of facts), reads the job, asks about gaps, writes a draft, fact-checks every line against your profile and builds a Word document and PDF of your tailored resume and cover letter. The AI you choose (Claude or ChatGPT with your subscription, or an API key from Anthropic, OpenAI or OpenRouter) sees only the job and your CV's content; Privacy mode replaces your name, email, phone and links with placeholders before anything is sent."></picture>
+
+Everything except the AI runs on your computer. The AI reads the job and writes the draft; TailorbirdCV checks every line it writes against your master profile before you see it.
+
 ## What you need
 - **An AI**, one of:
   - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.

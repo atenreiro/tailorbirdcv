@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1130 672" width="1130" height="672" role="img" aria-label="How TailorbirdCV works: your CV, a job posting and your answers go into TailorbirdCV on your computer, which reads the job, asks about gaps, writes a draft, fact-checks it against your master profile and builds Word and PDF files. Only the job and your CV's content go to the AI you choose, with your contact details hidden by Privacy mode.">
+  <title>How TailorbirdCV works</title>
+  <!-- Source of docs/how-it-works.png and docs/how-it-works-dark.png (rendered with Outfit, Instrument Sans
+       and Geist Mono; add class="dark" to the root for the dark variant). Colours follow docs/brand/logo.md. -->
+  <style>
+    svg { --bg: #F4F7F5; --panel: #FFFFFF; --ink: #0F3D2E; --body: #2B3F37; --muted: #56685F; --rule: #D2DCD6;
+          --accent: #C8431D; --accent-soft: #FBEBE4; --hero: #0F3D2E; --hero-ink: #F4F7F5; --hero-muted: #B9D2C3;
+          --chip: #E8EEEA; --num: #E8EEEA; }
+    svg.dark { --bg: #0B2E22; --panel: #123F30; --ink: #F4F7F5; --body: #D6E3DC; --muted: #9FB7AA; --rule: #2E6651;
+               --accent: #F2A93B; --accent-soft: #3A3A22; --hero: #8CCB7A; --hero-ink: #0F3D2E; --hero-muted: #24553F;
+               --chip: #0F3D2E; --num: #0F3D2E; }
+    .bg { fill: var(--bg); }
+    .card { fill: var(--panel); stroke: var(--rule); stroke-width: 1.2; }
+    .panel { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 7 6; stroke-linecap: round; }
+    .hero { fill: var(--hero); }
+    .gate { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; }
+    .out { fill: var(--panel); stroke: var(--accent); stroke-width: 1.8; }
+    .chip { fill: var(--chip); stroke: var(--rule); stroke-width: 1.2; }
+    .label { font: 500 13px "Geist Mono", ui-monospace, monospace; letter-spacing: 0.12em; fill: var(--muted); }
+    .t { font: 600 18px "Outfit", "Helvetica Neue", Arial, sans-serif; fill: var(--ink); letter-spacing: -0.01em; }
+    .d { font: 400 15px "Instrument Sans", "Helvetica Neue", Arial, sans-serif; fill: var(--body); }
+    .s { font: 400 14px "Instrument Sans", "Helvetica Neue", Arial, sans-serif; fill: var(--muted); }
+    .ht { font: 600 20px "Outfit", "Helvetica Neue", Arial, sans-serif; fill: var(--hero-ink); }
+    .hd { font: 400 15px "Instrument Sans", "Helvetica Neue", Arial, sans-serif; fill: var(--hero-ink); opacity: 0.85; }
+    .n { fill: var(--num); }
+    .nt { font: 500 14px "Geist Mono", ui-monospace, monospace; fill: var(--ink); text-anchor: middle; }
+    .gt { fill: var(--accent); }
+    .gn { fill: var(--accent); }
+    .gnt { font: 500 14px "Geist Mono", ui-monospace, monospace; fill: var(--accent-soft); text-anchor: middle; }
+    .arrow { fill: none; stroke: var(--ink); stroke-width: 1.8; }
+    .arrow-out { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+    .head { fill: var(--ink); }
+    .head-out { fill: var(--accent); }
+    .ok { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0 0 L10 5 L0 10 Z"/>
+    </marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="head-out" d="M0 0 L10 5 L0 10 Z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1130" height="672" rx="20"/>
+
+  <!-- Column labels -->
+  <text class="label" x="24" y="42">YOU</text>
+  <g transform="translate(296 18) scale(0.3)">
+    <path d="M12 76 C28 62 66 62 104 72 C88 98 40 102 12 76 Z" fill="#8CCB7A"/>
+    <path d="M22 80 C44 78 72 80 96 74" fill="none" stroke="#0F3D2E" stroke-width="3" stroke-linecap="round" stroke-dasharray="5 4"/>
+    <path d="M44 52 L30 20 L38 19 L53 47 Z" class="head"/>
+    <path d="M42 54 C42 41 54 34 66 37 C77 40 82 50 78 58 C74 65 56 66 47 61 C44 59 42 57 42 54 Z" class="head"/>
+    <circle cx="74" cy="34" r="10" class="head"/>
+    <path d="M65 31 C66 22 80 22 84 30 C78 27 70 27 65 31 Z" fill="#E4572E"/>
+    <path d="M83 35 L94 37.5 L83 40 Z" fill="#F2A93B"/>
+    <path d="M52 52 C58 58 68 58 74 50" fill="none" stroke="#8CCB7A" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+  <text class="label" x="336" y="42">TAILORBIRDCV · ON YOUR COMPUTER</text>
+  <text class="label" x="946" y="42">THE AI YOU CHOOSE</text>
+
+  <!-- You: inputs -->
+  <rect class="card" x="24" y="88" width="230" height="74" rx="12"/>
+  <text class="t" x="42" y="119">Your CV</text>
+  <text class="d" x="42" y="143">Once, at setup</text>
+
+  <rect class="card" x="24" y="196" width="230" height="60" rx="12"/>
+  <text class="t" x="42" y="221">A job posting</text>
+  <text class="d" x="42" y="243">Its link, or the text</text>
+
+  <rect class="card" x="24" y="272" width="230" height="60" rx="12"/>
+  <text class="t" x="42" y="297">Your answers</text>
+  <text class="d" x="42" y="319">Real experience only</text>
+
+  <!-- You: what you get -->
+  <rect class="out" x="24" y="472" width="230" height="116" rx="12"/>
+  <text class="label" x="42" y="500" style="fill: var(--accent)">READY TO SEND</text>
+  <text class="t" x="42" y="528">Tailored resume</text>
+  <text class="t" x="42" y="551">+ cover letter</text>
+  <text class="d" x="42" y="575">.docx  ·  .pdf</text>
+
+  <!-- On your computer -->
+  <rect class="panel" x="300" y="58" width="614" height="586" rx="18"/>
+
+  <rect class="hero" x="324" y="80" width="372" height="90" rx="12"/>
+  <text class="ht" x="344" y="112">Master profile</text>
+  <text class="hd" x="344" y="137">Your roles, achievements and skills:</text>
+  <text class="hd" x="344" y="157">the only source of facts</text>
+
+  <rect class="card" x="324" y="196" width="372" height="60" rx="12"/>
+  <circle class="n" cx="352" cy="226" r="15"/><text class="nt" x="352" y="231">1</text>
+  <text class="t" x="380" y="221">Read the job</text>
+  <text class="d" x="380" y="243">What the role cares about most</text>
+
+  <rect class="card" x="324" y="272" width="372" height="60" rx="12"/>
+  <circle class="n" cx="352" cy="302" r="15"/><text class="nt" x="352" y="307">2</text>
+  <text class="t" x="380" y="297">Ask about gaps</text>
+  <text class="d" x="380" y="319">Questions where your profile is thin</text>
+
+  <rect class="card" x="324" y="348" width="372" height="60" rx="12"/>
+  <circle class="n" cx="352" cy="378" r="15"/><text class="nt" x="352" y="383">3</text>
+  <text class="t" x="380" y="373">Write the draft</text>
+  <text class="d" x="380" y="395">Reorders and rephrases your real work</text>
+
+  <rect class="gate" x="324" y="424" width="372" height="60" rx="12"/>
+  <circle class="gn" cx="352" cy="454" r="15"/><text class="gnt" x="352" y="459">4</text>
+  <text class="t gt" x="380" y="449">Fact-check</text>
+  <text class="d" x="380" y="471">Blocks anything not in your profile</text>
+  <path class="ok" d="M662 448 l7 8 l13 -15"/>
+
+  <rect class="card" x="324" y="500" width="372" height="60" rx="12"/>
+  <circle class="n" cx="352" cy="530" r="15"/><text class="nt" x="352" y="535">5</text>
+  <text class="t" x="380" y="525">Build</text>
+  <text class="d" x="380" y="547">Word and PDF, in the design you choose</text>
+
+  <text class="s" x="324" y="594">Also kept here: your applications, copies of</text>
+  <text class="s" x="324" y="614">what you sent, what it learned, your backups</text>
+
+  <!-- Inputs in, documents out -->
+  <path class="arrow" marker-end="url(#a)" d="M254 125 H322"/>
+  <path class="arrow" marker-end="url(#a)" d="M254 226 H322"/>
+  <path class="arrow" marker-end="url(#a)" d="M254 302 H322"/>
+  <path class="arrow-out" marker-end="url(#o)" d="M324 530 H256"/>
+
+  <!-- Privacy mode, at the edge of your computer -->
+  <rect class="chip" x="756" y="196" width="136" height="212" rx="12"/>
+  <path d="M774 214 l11 -4 l11 4 v8 c0 7 -5 11 -11 13 c-6 -2 -11 -6 -11 -13 Z" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
+  <text class="t" x="774" y="262" style="font-size: 17px">Privacy mode</text>
+  <text class="s" x="774" y="288">Your name, email,</text>
+  <text class="s" x="774" y="307">phone and links</text>
+  <text class="s" x="774" y="326">become [NAME],</text>
+  <text class="s" x="774" y="345">[EMAIL]… and are</text>
+  <text class="s" x="774" y="364">put back in the</text>
+  <text class="s" x="774" y="383">answer</text>
+
+  <path class="arrow" marker-start="url(#a)" marker-end="url(#a)" d="M698 226 H754"/>
+  <path class="arrow" marker-start="url(#a)" marker-end="url(#a)" d="M698 378 H754"/>
+  <path class="arrow" marker-start="url(#a)" marker-end="url(#a)" d="M894 226 H944"/>
+  <path class="arrow" marker-start="url(#a)" marker-end="url(#a)" d="M894 378 H944"/>
+
+  <!-- The AI -->
+  <rect class="card" x="946" y="196" width="160" height="212" rx="12"/>
+  <text class="t" x="962" y="226">Claude or</text>
+  <text class="t" x="962" y="249">ChatGPT</text>
+  <text class="d" x="962" y="273">with your</text>
+  <text class="d" x="962" y="292">subscription</text>
+  <text class="s" x="962" y="328">or an API key:</text>
+  <text class="d" x="962" y="350">Anthropic,</text>
+  <text class="d" x="962" y="369">OpenAI,</text>
+  <text class="d" x="962" y="388">OpenRouter</text>
+
+  <text class="s" x="946" y="440">It sees only the job</text>
+  <text class="s" x="946" y="459">and your CV's content,</text>
+  <text class="s" x="946" y="478">and every line it writes</text>
+  <text class="s" x="946" y="497">is fact-checked</text>
+</svg>
