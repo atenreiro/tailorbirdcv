@@ -2,76 +2,72 @@
 
 # TailorbirdCV
 
-TailorbirdCV tailors your resume to a specific job, **without inventing anything**.
+**Tailor your resume to each job, without inventing anything.**
 
-You give it your CV once. It turns it into a *master profile*: every role, achievement and skill you have. For each job you apply to, paste the job posting's link (or its text). TailorbirdCV then:
+Give TailorbirdCV your CV once. Then, for each job, paste the posting's link. TailorbirdCV:
 - works out what the role cares about;
-- asks you about anything the job wants that your profile doesn't cover;
-- writes a tailored resume that reorders and rephrases your real experience to fit;
-- can write a matching one-page cover letter, checked the same way;
+- asks you about anything the job wants that your CV doesn't show;
+- writes a tailored resume from your real experience (and a cover letter, if you want one);
 - builds a Word document and a PDF, ready to send.
 
-Every line in a tailored resume must point back to something in your profile. A built-in fact-check blocks any number, tool, employer or claim that isn't there. Your name, employers, job titles, dates and education are always copied exactly as they appear in your profile.
+A built-in fact-check makes sure every line comes from your own CV: no made-up numbers, tools, employers or claims. Your name, employers, job titles, dates and education are copied exactly.
 
-TailorbirdCV is a small web app that runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by the AI you choose: Claude or ChatGPT through a subscription you already have, or an API key from Anthropic, OpenAI or OpenRouter.
+TailorbirdCV runs on your own computer (macOS, Windows or Linux) and opens in your browser. The writing is done by the AI you choose.
 
 ![A tailored resume in Review: every line traces back to the profile, and the fact-check has passed](docs/screenshots/review.png)
 
 ## How it works
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.png"><img src="docs/how-it-works.png" alt="How TailorbirdCV works. You give it your CV once, then a job posting and your answers to its questions. On your computer, TailorbirdCV keeps your master profile (the only source of facts), reads the job, asks about gaps, writes a draft, fact-checks every line against your profile and builds a Word document and PDF of your tailored resume and cover letter. The AI you choose (Claude or ChatGPT with your subscription, or an API key from Anthropic, OpenAI or OpenRouter) sees only the job and your CV's content; Privacy mode replaces your name, email, phone and links with placeholders before anything is sent."></picture>
 
-Everything except the AI runs on your computer. The AI reads the job and writes the draft; TailorbirdCV checks every line it writes against your master profile before you see it.
+Everything except the AI runs on your computer. Your CV becomes your **master profile**, the only place facts come from. The AI reads the job and writes the draft; TailorbirdCV checks every line against your profile before you see it.
 
 ## What you need
-- **An AI**, one of:
-  - **[Claude Code](https://claude.com/claude-code)**, logged in with your Claude subscription (run `claude`, then `/login`). No extra cost.
-  - **[Codex](https://github.com/openai/codex)**, logged in with your ChatGPT subscription (macOS: `brew install --cask codex`; Windows/Linux: `npm i -g @openai/codex`; then `codex login`). No extra cost.
-  - **An API key**, billed per use: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) (which uses the same Claude model by default). Keys are stored in your system's keychain, never in TailorbirdCV's files.
-- **Something to make PDFs**: Microsoft Word (macOS, Windows) or the free [LibreOffice](https://www.libreoffice.org/) (all systems). Without either, you still get the Word document.
+1. **An AI**, any one of:
+   - a **Claude** subscription, with [Claude Code](https://claude.com/claude-code) installed and logged in. No extra cost;
+   - a **ChatGPT** subscription, with [Codex](https://github.com/openai/codex) installed and logged in. No extra cost;
+   - an **API key** from [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/), paid per use. It's kept in your computer's keychain.
+2. **Something to make PDFs**: Microsoft Word, or the free [LibreOffice](https://www.libreoffice.org/). Without either, you still get the Word document.
+
+Not sure what you have? Install TailorbirdCV first: its setup wizard checks and shows how to add anything missing.
 
 ## Install
-> TailorbirdCV isn't on PyPI yet. Until the first release, use **From a copy of this repository** below.
+> [!NOTE]
+> TailorbirdCV isn't on PyPI yet. Until the first release, install it [from a copy of this repository](#for-developers).
 
-### macOS
-1. Open **Terminal** (press ⌘ Space and type *Terminal*).
-2. Paste this line and press Return:
-   ```bash
-   curl -LsSf https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.sh | sh
-   ```
-3. TailorbirdCV opens in your browser after a minute or two. Leave the Terminal window open while you use it.
+**macOS or Linux:** open **Terminal**, paste this line and press Return:
+```bash
+curl -LsSf https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.sh | sh
+```
 
-### Windows
-1. Open **PowerShell** (Start menu, type *PowerShell*). A normal window: no need to run it as administrator.
-2. Paste this line and press Enter:
-   ```powershell
-   irm https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.ps1 | iex
-   ```
-3. TailorbirdCV opens in your browser after a minute or two. Leave the PowerShell window open while you use it.
+**Windows:** open **PowerShell** (a normal window, not as administrator), paste this line and press Enter:
+```powershell
+irm https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.ps1 | iex
+```
 
-On Linux, the macOS command works too.
+After a minute or two, TailorbirdCV opens in your browser. Keep the Terminal or PowerShell window open while you use it.
 
-### What the installer does
-The scripts are short enough to read before you run them: [install.sh](https://github.com/atenreiro/tailorbirdcv/blob/main/install.sh) (macOS, Linux) and [install.ps1](https://github.com/atenreiro/tailorbirdcv/blob/main/install.ps1) (Windows). They:
-- install [uv](https://docs.astral.sh/uv/), Astral's open-source Python tool installer, if you don't already have it;
-- install TailorbirdCV from PyPI in its own environment, on a Python 3.13 that uv downloads for TailorbirdCV alone. Any Python already on your computer is left alone;
-- add the `tailorbirdcv` command to your PATH;
-- start TailorbirdCV.
+<details>
+<summary>What the installer does</summary>
 
-They need no administrator rights, write only inside your user folder, and use your computer's own certificate store, so they also work on company networks that inspect HTTPS.
+The scripts are short enough to read first: [install.sh](https://github.com/atenreiro/tailorbirdcv/blob/main/install.sh) and [install.ps1](https://github.com/atenreiro/tailorbirdcv/blob/main/install.ps1). They:
+- install [uv](https://docs.astral.sh/uv/) (Astral's open-source Python installer) if you don't have it;
+- install TailorbirdCV from PyPI in its own environment, with its own Python 3.13. Any Python already on your computer is left alone;
+- add the `tailorbirdcv` command and start it.
 
-### Using TailorbirdCV
-- **Start:** open Terminal or PowerShell and run `tailorbirdcv serve`. Your browser opens TailorbirdCV through a private link (it's also printed in the terminal, starting with `TailorbirdCV →`). The link unlocks TailorbirdCV in that browser only, so other programs on your computer can't read your data.
+They need no administrator rights, write only inside your user folder, and use your computer's own certificates, so they also work on company networks that inspect HTTPS.
+
+Prefer to do it yourself? Install uv (`brew install uv`, `winget install astral-sh.uv`, or [another way](https://docs.astral.sh/uv/getting-started/installation/)), open a new terminal, then run `uv tool install --python 3.13 tailorbirdcv` and `tailorbirdcv serve`.
+</details>
+
+## Start, stop and update
+- **Start:** run `tailorbirdcv serve` in Terminal or PowerShell. Your browser opens TailorbirdCV through a private link (also printed in the terminal) that unlocks it in that browser only.
 - **Stop:** press **Ctrl+C** in that window, or close it.
-- **Check your setup** (AI, PDF engine, fonts): `tailorbirdcv doctor`.
+- **Update:** when a new version is out, TailorbirdCV says so at the top of the page. Click **Upgrade** and it restarts by itself. To know, it asks PyPI for the latest version number at most once a day; nothing about you is sent. You can turn this off in **Settings → About TailorbirdCV**.
+- **Check your setup:** `tailorbirdcv doctor`.
 
-### Update
-When a new version is out, TailorbirdCV says so at the top of the page. If you installed it with the install line above, click **Upgrade**: TailorbirdCV downloads the new version and restarts (on Windows, in a new terminal window), and the page reloads by itself. Otherwise the notice shows the command to run.
+<details>
+<summary>Uninstall</summary>
 
-To know about new versions, TailorbirdCV asks PyPI (where it's published) for the latest version number when it opens, at most once a day. Nothing about you or your resumes is sent. Turn it off in **Settings → About TailorbirdCV**.
-
-To update by hand: stop TailorbirdCV, then run the install line again, or `uv tool upgrade tailorbirdcv`.
-
-### Uninstall
 Stop TailorbirdCV, then run:
 - macOS or Linux:
   ```bash
@@ -82,55 +78,27 @@ Stop TailorbirdCV, then run:
   $env:TAILORBIRDCV_UNINSTALL = "1"; irm https://raw.githubusercontent.com/atenreiro/tailorbirdcv/main/install.ps1 | iex
   ```
 
-`uv tool uninstall tailorbirdcv` does the same. Your profile and applications stay in your data folder (see [Your data stays on your computer](#your-data-stays-on-your-computer)) until you delete it. uv stays installed; [Astral's instructions](https://docs.astral.sh/uv/getting-started/installation/#uninstallation) explain how to remove it.
+`uv tool uninstall tailorbirdcv` does the same. Your profile and applications stay in your [data folder](#your-data-and-privacy) until you delete it. uv stays installed; [Astral explains how to remove it](https://docs.astral.sh/uv/getting-started/installation/#uninstallation).
+</details>
 
-### Install without the script
-Install uv yourself (`brew install uv` on macOS, `winget install astral-sh.uv` on Windows, or [another way](https://docs.astral.sh/uv/getting-started/installation/)), open a new terminal, then:
-```bash
-uv tool install --python 3.13 tailorbirdcv
-tailorbirdcv serve
-```
+## First run
+A short setup wizard (about 5 minutes) checks your computer, connects your AI, reads your CV, then asks about your targets (field, seniority, region, spelling, page limit) and a design (Classic, Modern or Compact).
 
-### If something goes wrong
-| What you see | What to do |
-|---|---|
-| `command not found: tailorbirdcv`, or *tailorbirdcv is not recognized* | Open a new Terminal or PowerShell window. If it's still not found, run `uv tool update-shell`, then open another new window. |
-| *TailorbirdCV is running. Stop it first* | Press Ctrl+C in the window where TailorbirdCV runs (or close it), then run the installer again. |
-| *Port 8000 is already in use* | TailorbirdCV is already running: use the link in its window, or start another copy with `tailorbirdcv serve --port 8001`. |
-| *Running scripts is disabled on this system* (Windows) | That happens when running a downloaded `install.ps1` file. Use the `irm … \| iex` line above instead. |
-| *Don't run this with sudo* (macOS, Linux) | Run the install line again without `sudo`: TailorbirdCV installs for your user only. |
-| Downloads fail or time out | Your network may block astral.sh, GitHub or PyPI. Try another network, or ask your IT team to allow them. |
+Your CV is copied word for word, never rewritten. Nothing is saved until you've checked it: any line that doesn't match your file exactly is highlighted for you to fix or confirm.
 
-### From a copy of this repository
-You'll also need [Node.js](https://nodejs.org/) to build the interface once:
-```bash
-uv sync
-npm --prefix web install && npm --prefix web run build
-uv run tailorbirdcv serve
-```
-
-## First run: the setup wizard
-The first time you open TailorbirdCV, a short wizard (about 5 minutes) sets everything up:
-1. **Welcome**: start fresh, or **restore from a backup** made on another computer.
-2. **Your computer**: checks what's installed (your AI options, Word or LibreOffice, the keychain) and shows how to fix anything missing.
-3. **Connect your AI**: choose Claude Code, Codex, or an API key. The page notices on its own once you've logged in.
-4. **Upload your CV** as .docx, PDF or plain text, after typing your name (so Privacy mode can hide it from the start). The AI copies the CV into your master profile word for word; it doesn't rewrite anything.
-5. **Review**: check every line. Anything that doesn't match your file exactly is highlighted: fix it, remove it, or confirm it's correct. Then click *Save my profile*. You can also start from a blank profile.
-6. **Your targets**, pre-filled from your CV: your field, seniority, the roles you want, region, US or UK spelling, and page limit. These guide what gets emphasised; they never add facts.
-7. **Design**: Classic, Modern or Compact, on A4 or US Letter.
-8. **Final checks**: the PDF engine, fonts, and an optional helper for job sites that need a full browser.
-
-You can change any of this later in **Settings**, and run the wizard again from there.
+Moving from another computer? Choose **Restore from a backup** on the wizard's first page.
 
 ![The setup wizard's review step: the CV as TailorbirdCV read it, checked line by line against the file](docs/screenshots/setup.png)
 
-## Everyday use
-1. Open **New tailoring** and paste the job posting's URL (or its text).
-2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
-3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
-4. Optionally write a **cover letter** (its own step): one page in the same design, in a Formal, Warm or Direct tone. Every sentence is checked like your resume: what it says about you must cite your evidence, what it says about the company must come from the posting, and the greeting, closing line and sign-off are written by TailorbirdCV. Click any sentence to edit it.
-5. Build the Word document and PDF. If it runs past your page limit, **Trim with AI** suggests what to cut; if the last page has room, **Fill the page with AI** suggests more of your evidence. Both open in Review for you to accept or change.
-6. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent (the cover letter too, when you built one). Found one of your resumes somewhere and not sure which version it is? **Identify a PDF** in Applications tells you which application it came from, using the exact file's SHA-256 or the PDF's own document id. Nothing is ever added to your PDFs.
+## Tailoring a resume
+1. Click **New tailoring** and paste the job posting's link (or its text).
+2. **Brief:** see what the role wants and how your experience matches.
+3. **Gaps:** answer questions about what the job wants and your profile doesn't show. No experience? Say so: it stays a gap.
+4. **Review:** read the draft, click any line to edit it, and optionally ask for a hiring-manager review.
+5. **Cover letter** (optional): one page in the same design, in a Formal, Warm or Direct tone, checked sentence by sentence like your resume.
+6. **Export:** build the Word document and PDF. Too long? **Trim with AI**. Room to spare? **Fill the page with AI**. Both show their suggestions in Review before anything changes.
+
+Then track it under **Applications**. Marking an application *applied* keeps a read-only copy of exactly what you sent. Found one of your resumes and not sure which version it is? **Identify a PDF** tells you which application it came from.
 
 ![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
 
@@ -138,28 +106,45 @@ You can change any of this later in **Settings**, and run the wizard again from 
 
 The screenshots use a fictional profile and job posting.
 
-## Your data stays on your computer
+## Your data and privacy
 > [!IMPORTANT]
 > **The only thing that leaves your computer is what the AI needs to read your CV and the job, and to write the resume.**
 
-TailorbirdCV only runs locally. There's no account, no server and no tracking. Your profile, applications and settings are kept in:
+There's no account, no server and no tracking. Your profile, applications and settings are kept in:
 - macOS: `~/Library/Application Support/TailorbirdCV`
 - Windows: `%LOCALAPPDATA%\TailorbirdCV`
 - Linux: `~/.local/share/TailorbirdCV`
 
-In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
+**Privacy mode** (on by default, **experimental**): your name, email, phone, address and personal links are replaced with placeholders like `[NAME]` before anything is sent to the AI, and put back afterwards, so your resume still shows them. Your career history is still sent and can identify you, and an unusual spelling can slip through, so use it with care. **Settings → Privacy → See what the AI receives** shows exactly what is sent.
 
-For each application made from a job link, TailorbirdCV fetches the company's site icon once, from the company's own website (never a job board's logo), and keeps it with the application. **Settings → Applications → Show company icons** turns this off: no icons shown, none fetched.
-
-**Privacy mode** (Settings → Privacy, on by default, **experimental**): your name, email, phone, street address and personal links (LinkedIn, GitHub, your own website), and any other email address or phone number in what you type, are replaced by placeholders like `[NAME]` before anything is sent to the AI, and put back in its answers. Your resume still shows them: TailorbirdCV prints them itself. The setup wizard asks for your name before reading your CV, so it's hidden from the first step. It matches your details as written and common formats, so an unusual spelling can slip through; your career history is still sent and can identify you, and other people's names aren't detected. Use it with care, and check **See what the AI receives** in Settings.
+**Company icons:** for applications made from a job link, TailorbirdCV fetches the company's icon once, from the company's own website. Turn this off in **Settings → Applications**.
 
 ### Backup and restore
-Because everything lives only on your computer, keep a backup. **Settings → Backup & restore → Download backup** saves your profile, memory, applications (including the copies you sent), settings and history as one `.zip`. On a new computer, choose **Restore from a backup** on the first setup page (or later in Settings). Restoring never deletes anything: the data it replaces is kept in a `before-restore` folder inside your data folder. From a terminal: `tailorbirdcv backup [file]` and `tailorbirdcv restore <file>`.
+Everything lives only on your computer, so keep a backup: **Settings → Backup & restore → Download backup** saves it all as one `.zip`. Restore it on any computer from the same page, or from the setup wizard's first page. Restoring never deletes anything: the data it replaces is kept in a `before-restore` folder. From a terminal: `tailorbirdcv backup [file]` and `tailorbirdcv restore <file>`.
 
 > [!WARNING]
-> **A backup isn't encrypted.** Anyone who has the file can read your CV, contact details and applications, and use your API keys if you chose to include them (they're left out unless you tick **Include my API keys**). Keep it somewhere private, such as an encrypted drive or your own cloud folder, and don't share it.
+> **A backup isn't encrypted.** Anyone with the file can read your CV, contact details and applications, and use your API keys if you chose to include them (they're left out unless you tick **Include my API keys**). Keep it somewhere private and don't share it.
+
+## If something goes wrong
+| What you see | What to do |
+|---|---|
+| `command not found: tailorbirdcv`, or *tailorbirdcv is not recognized* | Open a new Terminal or PowerShell window. Still not found? Run `uv tool update-shell`, then open another new window. |
+| *TailorbirdCV is running. Stop it first* | Press Ctrl+C in the window where TailorbirdCV runs (or close it), then run the installer again. |
+| *Port 8000 is already in use* | TailorbirdCV is already running: use the link in its window, or start another copy with `tailorbirdcv serve --port 8001`. |
+| *Running scripts is disabled on this system* (Windows) | Use the `irm … \| iex` line above instead of a downloaded `install.ps1` file. |
+| *Don't run this with sudo* (macOS, Linux) | Run the install line again without `sudo`: TailorbirdCV installs for your user only. |
+| Downloads fail or time out | Your network may block astral.sh, GitHub or PyPI. Try another network, or ask your IT team to allow them. |
+| Anything else | Run `tailorbirdcv doctor`: it checks your AI, PDF engine and fonts, and says how to fix what's missing. |
 
 ## For developers
+To run TailorbirdCV from a copy of this repository you'll also need [Node.js](https://nodejs.org/), to build the interface once:
+```bash
+uv sync
+npm --prefix web install && npm --prefix web run build
+uv run tailorbirdcv serve
+```
+A copy of the repository keeps your data in its `private/` folder (never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
+
 ```bash
 uv run pytest                                        # tests
 npm --prefix web run dev                             # interface with live reload (port 5173)
