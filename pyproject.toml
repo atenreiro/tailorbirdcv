@@ -3,6 +3,9 @@ name = "tailorbirdcv"
 dynamic = ["version"]  # from the VERSION file: bump it on main and CI releases it (see release.yml)
 description = "Tailor your resume to a job description without inventing anything — a local web app"
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Andre Tenreiro" }]
 requires-python = ">=3.11"
 keywords = ["resume", "cv", "job application", "ats", "claude", "openai", "openrouter"]
 classifiers = [
@@ -61,7 +64,7 @@ packages = ["tailorbirdcv"]
 path = "hatch_build.py"  # bundles the built web UI (web/dist) as tailorbirdcv/web
 
 [tool.hatch.build.targets.sdist]
-include = ["/tailorbirdcv", "/web/dist", "/README.md", "/CHANGELOG.md", "/hatch_build.py", "/VERSION"]  # anchored: nothing from node_modules or worktrees
+include = ["/tailorbirdcv", "/web/dist", "/README.md", "/CHANGELOG.md", "/LICENSE", "/hatch_build.py", "/VERSION"]  # anchored: nothing from node_modules or worktrees
 artifacts = ["/web/dist/**"]  # git-ignored, but the wheel built from the sdist needs it
 
 [tool.uv]

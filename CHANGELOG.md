@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **TailorbirdCV is now free software** under the GNU AGPL v3.0 or later. Settings → About links to the source code.
 - **TailorbirdCV learns your style by itself.** When you mark an application applied, it compares what you sent with its drafts (the resume and, new, the cover letter) and suggests style preferences for next time, in the background. Nothing is used until you approve it: the suggestions appear in the application's Export step, and Applications shows a notice while any are waiting. Turn it off in Settings → Applications.
 - **One remembered answer per topic.** A newer answer replaces older ones on the same topic, including when you update an answer that was pre-filled from an earlier application, so your memory stays short and current. An earlier "some experience" answer is never replaced by "no experience" on a related topic. Repeated answers from before are merged the next time TailorbirdCV starts (the previous version is kept in history).
 - **Known gaps are asked about again after six months**, with your old answer pre-filled, in case you've gained the experience since. Master profile → Answers & gaps shows when each one will be asked again.

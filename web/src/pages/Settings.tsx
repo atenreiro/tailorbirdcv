@@ -550,6 +550,12 @@ function AboutTailorbirdCV({ settings, onSaved }: { settings: SettingsData; onSa
           <button className="btn" onClick={check} disabled={!!busy}>{busy === 'check' && <Spinner />}Check now</button>
         )}
       </div>
+      <p className="text-sm text-muted text-pretty">
+        Free software under the{' '}
+        <a className="text-accent hover:underline" href="https://github.com/atenreiro/tailorbirdcv/blob/main/LICENSE" target="_blank" rel="noreferrer">GNU AGPL v3.0 or later</a>,
+        with no warranty.{' '}
+        <a className="text-accent hover:underline" href="https://github.com/atenreiro/tailorbirdcv" target="_blank" rel="noreferrer">Source code</a>
+      </p>
     </section>
   )
 }

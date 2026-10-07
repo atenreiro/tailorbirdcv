@@ -150,3 +150,12 @@ TAILORBIRDCV_ENGINE=fake uv run tailorbirdcv serve --port 8001   # demo mode, no
 To release a new version: change the number in [VERSION](https://github.com/atenreiro/tailorbirdcv/blob/main/VERSION) (and add a CHANGELOG entry), then push to `main` (automatic releases are on once the repository variable `RELEASES_ENABLED` is `true`). Once CI passes, the release workflow publishes that version to PyPI and tags it, and installed copies offer the upgrade within a day.
 
 The rules TailorbirdCV follows and how the code is laid out are described in [CLAUDE.md](https://github.com/atenreiro/tailorbirdcv/blob/main/CLAUDE.md). Changes are listed in [CHANGELOG.md](https://github.com/atenreiro/tailorbirdcv/blob/main/CHANGELOG.md).
+
+## Licence
+Copyright © 2026 Andre Tenreiro.
+
+TailorbirdCV is free software under the [GNU Affero General Public License v3.0 or later](https://github.com/atenreiro/tailorbirdcv/blob/main/LICENSE) (AGPL-3.0-or-later). You may use, study, change and share it. If you share a changed version, or run one for other people over a network (as a website, for example), you must make its full source code available to them under the same licence. It comes with no warranty.
+
+The bundled fonts, Carlito and Gelasio, are under the SIL Open Font License 1.1 (see `tailorbirdcv/data/fonts`).
+
+The licence doesn't cover the TailorbirdCV name or logo. Please don't use them for a changed version or another service without permission.
