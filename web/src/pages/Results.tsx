@@ -42,8 +42,8 @@ const barColor = (k: Stage, on: boolean) => (k === 'offer' ? (on ? 'bg-ok' : 'bg
 const RING = 'shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--color-ink)]'
 const EASE = 'duration-[350ms] ease-[cubic-bezier(.2,.7,.2,1)]'
 
-export default function Funnel() {
-  useTitle(['Funnel'])
+export default function Results() {
+  useTitle(['Results'])
   const [apps, setApps] = useState<AppSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState<Range>('90')
@@ -83,7 +83,7 @@ export default function Funnel() {
     <div className="flex flex-col gap-7">
       <div className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div className="flex flex-col gap-2.5">
-          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Funnel</h1>
+          <h1 className="font-display text-[48px] leading-[0.92] tracking-[-0.02em] text-ink sm:text-[64px]">Results</h1>
           {apps && <p className="font-mono text-xs text-muted">Built to offer: {pct(counts[3], counts[0])}% · {rangeText}{trackText}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -96,7 +96,7 @@ export default function Funnel() {
       {apps === null && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>}
 
       {apps && (
-        <section aria-label="Funnel chart" className="animate-rise rounded-[14px] border border-rule bg-sheet px-5 pb-6 pt-7 sm:px-7">
+        <section aria-label="How far your applications got" className="animate-rise rounded-[14px] border border-rule bg-sheet px-5 pb-6 pt-7 sm:px-7">
           {/* Columns with tapered connectors (wide screens) */}
           <div className="hidden items-end md:flex">
             {stages.map((s, i) => (
@@ -143,7 +143,7 @@ export default function Funnel() {
             ))}
           </div>
           {counts[0] === 0 && (
-            <p className="mt-6 text-center text-sm text-faint">Nothing in the funnel {range === 'all' ? 'yet' : 'for this range'}. Applications enter it once their CV is built.</p>
+            <p className="mt-6 text-center text-sm text-faint">Nothing to show {range === 'all' ? 'yet' : 'for this range'}. Applications appear here once their CV is built.</p>
           )}
         </section>
       )}

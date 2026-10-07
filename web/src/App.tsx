@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import Applications from './pages/Applications'
-import Funnel from './pages/Funnel'
 import NewApplication from './pages/NewApplication'
 import Profile from './pages/Profile'
+import Results from './pages/Results'
 import Settings from './pages/Settings'
 import SetupWizard from './pages/setup/SetupWizard'
 import UpdateBanner from './pages/UpdateBanner'
@@ -61,14 +61,14 @@ function Masthead() {
     )
   }
   const link = ({ isActive }: { isActive: boolean }) =>
-    cx('flex shrink-0 items-center px-1.5 transition-colors max-[359px]:px-1 sm:px-3', isActive ? 'text-white shadow-[inset_0_-3px_0_var(--color-amber)]' : 'text-[#a3bcb0] hover:text-white')
+    cx('flex shrink-0 items-center px-1.5 transition-colors max-[359px]:px-[3px] sm:px-3', isActive ? 'text-white shadow-[inset_0_-3px_0_var(--color-amber)]' : 'text-[#a3bcb0] hover:text-white')
   return (
     <header className="sticky top-0 z-30 bg-ink text-white">
       <div className={cx('mx-auto flex h-14 items-center gap-3 max-[359px]:gap-2 sm:gap-5 lg:gap-9', FRAME)}>
         <NavLink to="/" aria-label="TailorbirdCV" className="flex items-center"><Logo /></NavLink>
         <nav className="flex h-full gap-0 overflow-x-auto sm:gap-1 whitespace-nowrap [scrollbar-width:none]">
           <NavLink to="/" end className={link}><span className="lg:hidden">Apps</span><span className="hidden lg:inline">Applications</span></NavLink>
-          <NavLink to="/funnel" className={link}>Funnel</NavLink>
+          <NavLink to="/results" className={link}>Results</NavLink>
           <NavLink to="/new" className={link}>New<span className="hidden lg:inline">&nbsp;tailoring</span></NavLink>
           <NavLink to="/profile" className={link}><span className="lg:hidden">Profile</span><span className="hidden lg:inline">Master profile</span></NavLink>
         </nav>
@@ -196,7 +196,8 @@ export default function App() {
         <FirstTip />
         <Routes>
           <Route path="/" element={<Applications />} />
-          <Route path="/funnel" element={<Funnel />} />
+          <Route path="/results" element={<Results />} />
+          <Route path="/funnel" element={<Navigate to="/results" replace />} />
           <Route path="/new" element={<NewApplication />} />
           <Route path="/a/:id" element={<WorkspacePage />} />
           <Route path="/profile" element={<Profile />} />

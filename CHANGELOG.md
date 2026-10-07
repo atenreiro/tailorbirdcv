@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- The **Funnel** page is now called **Results** (how far your applications got: built, applied, interview, offer). Old `/funnel` links still open it.
+
 ## 0.2.5 — 2026-10-07
 - Hiring-manager review: "Accept all" no longer appears to do nothing. It counts only fixes whose line is still in the draft, and a fix written for a line that has since changed says so (Dismiss only) instead of offering Accept; re-run the review for fixes to the current draft.
 - A recent job no longer ends up as just its one-line description. Every role from the last 10 years that has evidence in your profile keeps at least one bullet: the AI is told so when it writes and trims the resume, a trim that removes a role's last bullet is thrown away, and Review warns if one has none (older roles can still be just their description).
