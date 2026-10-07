@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 — 2026-10-07
 - Gaps: what the job asks for is now shown in normal, readable text (in a box above each question, and in the question list) instead of small grey capitals.
 
 ## 0.2.3 — 2026-10-07
