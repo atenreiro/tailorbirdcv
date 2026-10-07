@@ -8,6 +8,7 @@ You give it your CV once. It turns it into a *master profile*: every role, achie
 - works out what the role cares about;
 - asks you about anything the job wants that your profile doesn't cover;
 - writes a tailored resume that reorders and rephrases your real experience to fit;
+- can write a matching one-page cover letter, checked the same way;
 - builds a Word document and a PDF, ready to send.
 
 Every line in a tailored resume must point back to something in your profile. A built-in fact-check blocks any number, tool, employer or claim that isn't there. Your name, employers, job titles, dates and education are always copied exactly as they appear in your profile.
@@ -110,12 +111,14 @@ uv run tailorbirdcv serve
 
 ## First run: the setup wizard
 The first time you open TailorbirdCV, a short wizard (about 5 minutes) sets everything up:
-1. **Connect your AI**: choose Claude Code, Codex, or an API key. The page notices on its own once you've logged in.
-2. **Upload your CV** as .docx, PDF or plain text. The AI copies it into your master profile word for word; it doesn't rewrite anything.
-3. **Review**: check every line. Anything that doesn't match your file exactly is highlighted: fix it, remove it, or confirm it's correct. Then click *Save my profile*. You can also start from a blank profile.
-4. **Your targets**, pre-filled from your CV: your field, seniority, the roles you want, region, US or UK spelling, and page limit. These guide what gets emphasised; they never add facts.
-5. **Design**: Classic, Modern or Compact, on A4 or US Letter.
-6. **Final checks**: the PDF engine, fonts, and an optional helper for job sites that need a full browser.
+1. **Welcome**: start fresh, or **restore from a backup** made on another computer.
+2. **Your computer**: checks what's installed (your AI options, Word or LibreOffice, the keychain) and shows how to fix anything missing.
+3. **Connect your AI**: choose Claude Code, Codex, or an API key. The page notices on its own once you've logged in.
+4. **Upload your CV** as .docx, PDF or plain text, after typing your name (so Privacy mode can hide it from the start). The AI copies the CV into your master profile word for word; it doesn't rewrite anything.
+5. **Review**: check every line. Anything that doesn't match your file exactly is highlighted: fix it, remove it, or confirm it's correct. Then click *Save my profile*. You can also start from a blank profile.
+6. **Your targets**, pre-filled from your CV: your field, seniority, the roles you want, region, US or UK spelling, and page limit. These guide what gets emphasised; they never add facts.
+7. **Design**: Classic, Modern or Compact, on A4 or US Letter.
+8. **Final checks**: the PDF engine, fonts, and an optional helper for job sites that need a full browser.
 
 You can change any of this later in **Settings**, and run the wizard again from there.
 
@@ -126,7 +129,7 @@ You can change any of this later in **Settings**, and run the wizard again from 
 2. Answer any questions about gaps. If you don't have the experience, say so: it stays a gap.
 3. Review the draft and edit it if you like. You can also ask for a hiring-manager review.
 4. Optionally write a **cover letter** (its own step): one page in the same design, in a Formal, Warm or Direct tone. Every sentence is checked like your resume: what it says about you must cite your evidence, what it says about the company must come from the posting, and the greeting, closing line and sign-off are written by TailorbirdCV. Click any sentence to edit it.
-5. Build the Word document and PDF.
+5. Build the Word document and PDF. If it runs past your page limit, **Trim with AI** suggests what to cut; if the last page has room, **Fill the page with AI** suggests more of your evidence. Both open in Review for you to accept or change.
 6. Track each application under **Applications**. Marking one *applied* keeps a read-only copy of exactly what you sent (the cover letter too, when you built one). Found one of your resumes somewhere and not sure which version it is? **Identify a PDF** in Applications tells you which application it came from, using the exact file's SHA-256 or the PDF's own document id. Nothing is ever added to your PDFs.
 
 ![The brief: what the role wants, and how your evidence stacks up against each requirement](docs/screenshots/brief.png)
@@ -144,11 +147,11 @@ TailorbirdCV only runs locally. There's no account, no server and no tracking. Y
 - Windows: `%LOCALAPPDATA%\TailorbirdCV`
 - Linux: `~/.local/share/TailorbirdCV`
 
+In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
+
 For each application made from a job link, TailorbirdCV fetches the company's site icon once, from the company's own website (never a job board's logo), and keeps it with the application. **Settings → Applications → Show company icons** turns this off: no icons shown, none fetched.
 
 **Privacy mode** (Settings → Privacy, on by default, **experimental**): your name, email, phone, street address and personal links (LinkedIn, GitHub, your own website), and any other email address or phone number in what you type, are replaced by placeholders like `[NAME]` before anything is sent to the AI, and put back in its answers. Your resume still shows them: TailorbirdCV prints them itself. The setup wizard asks for your name before reading your CV, so it's hidden from the first step. It matches your details as written and common formats, so an unusual spelling can slip through; your career history is still sent and can identify you, and other people's names aren't detected. Use it with care, and check **See what the AI receives** in Settings.
-
-In a copy of this repository that has a `private/` folder, TailorbirdCV uses that folder instead (it's never committed). To use any other folder, set `TAILORBIRDCV_PRIVATE` to its path.
 
 ### Backup and restore
 Because everything lives only on your computer, keep a backup. **Settings → Backup & restore → Download backup** saves your profile, memory, applications (including the copies you sent), settings and history as one `.zip`. On a new computer, choose **Restore from a backup** on the first setup page (or later in Settings). Restoring never deletes anything: the data it replaces is kept in a `before-restore` folder inside your data folder. From a terminal: `tailorbirdcv backup [file]` and `tailorbirdcv restore <file>`.
