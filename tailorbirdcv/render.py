@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from contextvars import ContextVar
+from dataclasses import replace
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -161,9 +162,13 @@ def _set(el, **attrs) -> None:
 _DESIGN: ContextVar[tuple[Theme | None, str | None]] = ContextVar("tailorbirdcv_design", default=(None, None))
 
 
-def use_design(theme: str | None, paper: str | None, text_size: str | None = None):
-    """Set the design for renders in this request/task. `text_size` None = each theme as designed ("standard")."""
-    return _DESIGN.set((themes.get(theme, text_size), paper if paper in themes.PAPER else None))
+def use_design(theme: str | None, paper: str | None, text_size: str | None = None, titles: dict | None = None):
+    """Set the design for renders in this request/task. `text_size` None = each theme as designed ("standard");
+    `titles` = the user's section headings (Settings), each blank one the design's own."""
+    t = themes.get(theme, text_size)
+    if mine := {k: v.strip() for k, v in (titles or {}).items() if k in t.titles and isinstance(v, str) and v.strip()}:
+        t = replace(t, titles={**t.titles, **mine})
+    return _DESIGN.set((t, paper if paper in themes.PAPER else None))
 
 
 def active_design() -> tuple[Theme, str]:

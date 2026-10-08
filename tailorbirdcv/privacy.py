@@ -22,15 +22,26 @@ from dataclasses import dataclass, field
 EXTRA: ContextVar[dict] = ContextVar("tailorbirdcv_privacy_extra", default={})
 
 EMAIL = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?![\w-])")
-# Phone numbers, strictly: international (+…) or grouped like a phone number (3+ groups, 8+ digits), so resume
-# metrics ("US$1.7M", "20M+", "4,500", "2019 – 2022") are never mistaken for one.
+# Phone numbers, strictly: international (+…), grouped like a phone number (3+ groups), or a national format —
+# a trunk "0" then space-separated groups (UK 07700 900123, FR 06 12 34 56 78, DE 0151 23456789), Singapore/
+# Hong Kong 9123 4567, India 98765 43210 — always 8+ digits, so resume metrics ("US$1.7M", "20M+", "4,500",
+# "2019 – 2022") and dates ("01.03.2019") are never mistaken for one.
 PHONE = re.compile(r"(?<![\w+$£€.,])(?:\+\d{1,3}[\s.\-]?(?:\(\d{1,4}\)[\s.\-]?)?\d{2,4}(?:[\s.\-]?\d{2,4}){1,4}"
                    r"|\(\d{2,4}\)[\s.\-]?\d{3,4}[\s.\-]\d{3,4}"
-                   r"|\d{3,4}[\s.\-]\d{3,4}[\s.\-]\d{3,4})(?![\w%])")
+                   r"|\d{3,4}[\s.\-]\d{3,4}[\s.\-]\d{3,4}"
+                   r"|0\d{1,4}(?:[ \u00a0]\d{2,8}){1,4}|0\d{9,11}"
+                   r"|[3689]\d{3}[ \u00a0]\d{4}|[6-9]\d{4}[ \u00a0]\d{5})(?![\w%])")
 PROFILE_LINK = re.compile(r"(?<![\w/.-])(?:https?://)?(?:www\.)?(?:linkedin\.com/in|github\.com|gitlab\.com|"
                           r"x\.com|twitter\.com|medium\.com/@?)/?[A-Za-z0-9_.\-]+/?(?![\w/-])", re.I)
 
 DOMAIN = re.compile(r"(?<![\w@/.-])(?:https?://)?(?:www\.)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?:/[^\s,;)]*)?", re.I)
+
+
+# Added to the system prompt whenever something was hidden: without it the AI sometimes drops a placeholder it
+# doesn't recognise (a CV import once came back with no name at all).
+PLACEHOLDER_NOTE = ("\n\nSome personal details in this request were replaced by placeholders such as [NAME] or [EMAIL]. "
+                    "Wherever one of those details belongs in your answer, copy its placeholder exactly as written: "
+                    "never drop, translate or fill it in.")
 
 
 def use(name: str = "", address: str = ""):

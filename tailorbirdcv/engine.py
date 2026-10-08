@@ -1014,7 +1014,11 @@ class PrivateEngine:
         vault = self.vault()
         if vault is None:
             return await self.inner.complete(system, prompt, schema)
-        return vault.restore(await self.inner.complete(vault.redact(system), vault.redact(prompt), schema))
+        from .privacy import PLACEHOLDER_NOTE
+        system, prompt = vault.redact(system), vault.redact(prompt)
+        if vault.tokens:
+            system += PLACEHOLDER_NOTE
+        return vault.restore(await self.inner.complete(system, prompt, schema))
 
 
 class FakeEngine:

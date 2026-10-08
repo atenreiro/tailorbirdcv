@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Tested end to end with other people's CVs (a UK nurse, a Berlin engineer, a new graduate, a TPM), which fixed:
+  - Importing a CV no longer sometimes names you "Your Name": the AI is told to keep the hidden-name placeholder, and the name you typed is used if it drops it anyway.
+  - The hiring-manager review now sees your education, certificates, projects and other sections, so it no longer reports a degree or certificate that's on the page as missing.
+  - Two jobs at the same employer (a promotion) no longer flag the first one as "not found in your CV" at import.
+  - Phone numbers written the local way (07700 900123, 06 12 34 56 78, 0151 23456789, 9123 4567) are now hidden from the AI too.
+  - Section headings can be renamed in Settings → Resume design. New profiles start with neutral ones ("Projects", "Additional information"); existing resumes keep theirs.
 - Five new domain packs in Settings → Your targets: **Software engineering**, **Data & AI**, **Product management**, **Project management** and **Technical program management** (alongside General and Cybersecurity). Each tells the AI what employers in that field look for and which words to mirror, for every industry and for manager, hands-on and player-coach roles. They only change emphasis, never facts. The setup wizard picks one from your CV's field.
 - Resumes no longer say the same thing twice. The AI is told not to restate a bullet as a highlight (and a trim drops such a bullet first), and Review warns when a highlight repeats a bullet ("Highlight 1 repeats JPMorgan Chase's bullet 2").
 - When the AI trims a resume to fit, it now cuts descriptions of duties before results: numbers, scale and who uses the work stay.

@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import oscompat, paths
+from . import oscompat, paths, themes
 from .schema import (AppAnswer, CoverLetter, Knowledge, KnowledgeAnswer, MasterProfile, TailoredResume, dump_yaml,
                      load_letter, load_profile, load_tailored, load_yaml)
 
@@ -274,6 +274,7 @@ class Store:
         "learn_style": True,         # on marking an application applied, propose style rules from what was changed
         "hide_personal": True,       # replace contact details with placeholders in everything sent to the AI
         "private_address": "",       # the user's street address, hidden from the AI too (never printed by us)
+        "section_titles": {k: "" for k in themes.TITLES},  # resume headings; "" = the design's own (themes.TITLES)
     }
 
     @property

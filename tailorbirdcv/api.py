@@ -15,7 +15,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Request
@@ -106,6 +106,7 @@ class SettingsPatch(BaseModel):
     learn_style: bool | None = None
     hide_personal: bool | None = None
     private_address: str | None = Field(None, max_length=300)
+    section_titles: dict[Literal[tuple(themes.TITLES)], Annotated[str, Field(max_length=60)]] | None = None  # type: ignore[valid-type]
 
 
 class ApiKey(BaseModel):
@@ -313,7 +314,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             # The candidate's targets (Settings) steer every AI prompt made while handling this request.
             settings = store.settings()
             ai.use_context(ai.Context.from_settings(settings["targets"], store.private))
-            use_design(settings["theme"], settings["paper"], settings["text_size"])  # every render uses the chosen design
+            use_design(settings["theme"], settings["paper"], settings["text_size"],  # every render uses the chosen design
+                       settings["section_titles"])
         counted = request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD", "OPTIONS")
         app.state.busy += counted
         try:
@@ -383,7 +385,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except RuntimeError:
             effective = None
         return {**settings, "pdf_engines": engines, "pdf_effective": effective, "platform": oscompat.PLATFORM,
-                "packs": ai.PACKS,
+                "packs": ai.PACKS, "section_defaults": themes.TITLES,
                 "themes": [{"id": t.id, "name": t.name, "description": t.description, "fonts": t.fonts(),
                             "accent": t.accent, "ink": t.ink, "rule": t.rule, "name_font": t.name_font,
                             "paper": t.paper} for t in themes.THEMES.values()],
@@ -685,7 +687,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         except importer.ImportError_ as e:
             raise HTTPException(422, str(e))
         try:
-            result = await importer.import_profile(engine, text, store.used_ids("profile"))
+            result = await importer.import_profile(engine, text, store.used_ids("profile"), body.name)
         except EngineError as e:
             raise HTTPException(503, f"AI engine unavailable: {e}")
         try:
@@ -733,6 +735,8 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             profile = store.save_profile(data, cause=cause)
         except (ValidationError, RetiredIdReused, IncompleteRole) as e:
             raise HTTPException(422, str(e))
+        if not any(store.settings()["section_titles"].values()):  # a new profile: neutral headings (Settings)
+            store.save_settings({"section_titles": themes.NEW_PROFILE_TITLES})
         store.save_setup_state(step="targets")
         return profile_payload(profile)
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type UpdateStatus, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
+import { api, type UpdateStatus, type EngineId, type EngineInfo, type PdfEngine, type PdfEngineInfo, type Platform, type SectionKey, type Settings as SettingsData, type Targets, type ThemeInfo } from '../api'
 import { cx, fmtDate, useTitle } from '../lib'
 import { cacheSettings, loadSettings, thisComputer } from '../settings'
 import { setUnsaved } from '../unsaved'
@@ -266,7 +266,40 @@ export function ResumeDesign({ settings, onSaved, bare }: { settings: SettingsDa
           )
         })}
       </div>
+      <SectionHeadings key={JSON.stringify(settings.section_titles)} settings={settings} busy={busy} save={save} />
     </section>
+  )
+}
+
+const SECTION_NAMES: [SectionKey, string][] = [
+  ['summary', 'Summary'], ['highlights', 'Highlights'], ['competencies', 'Skills'], ['experience', 'Experience'],
+  ['projects', 'Projects'], ['education', 'Education'], ['extras', 'Everything else (awards, certificates, languages…)'],
+]
+
+/** What each section is called on the resume. A blank field prints the design's own heading. */
+function SectionHeadings({ settings, busy, save }: { settings: SettingsData; busy: boolean; save: (p: { section_titles: Partial<Record<SectionKey, string>> }) => Promise<void> }) {
+  const [draft, setDraft] = useState(settings.section_titles)  // the parent remounts this when the saved headings change
+  const commit = (k: SectionKey) => {
+    const value = draft[k].trim()
+    if (!busy && value !== settings.section_titles[k]) void save({ section_titles: { [k]: value } })
+  }
+  return (
+    <div className="flex flex-col gap-3 border-t border-rule pt-5">
+      <div className="flex max-w-[640px] flex-col gap-1">
+        <span className="text-[13px] font-semibold text-ink">Section headings</span>
+        <span className="text-xs leading-[1.5] text-faint text-pretty">What each section is called on your resume. Leave one blank for the design’s own heading.</span>
+      </div>
+      <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+        {SECTION_NAMES.map(([k, name]) => (
+          <label key={k} className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-[13px] text-muted">{name}</span>
+            <input className="field" value={draft[k]} placeholder={settings.section_defaults[k]} maxLength={60}
+              onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} onBlur={() => commit(k)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }} />
+          </label>
+        ))}
+      </div>
+    </div>
   )
 }
 

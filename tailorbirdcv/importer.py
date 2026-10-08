@@ -204,11 +204,11 @@ RESUME:
 """
 
 
-async def import_profile(engine: Engine, text: str, used_ids: set[str] | None = None) -> dict:
+async def import_profile(engine: Engine, text: str, used_ids: set[str] | None = None, name: str = "") -> dict:
     """Ask the AI to transcribe, then assign ids (never one an earlier profile used) and verify
-    against the original text."""
+    against the original text. `name` is the one the user typed: used if the AI's reading has none."""
     raw = await engine.complete(SYSTEM, _prompt(text), import_schema())
-    profile = build_profile(raw, used_ids)
+    profile = build_profile(raw, used_ids, name)
     return {"profile": profile, "unverified": unverified(profile, text),
             "suggested_targets": suggested_targets(raw.get("suggested_targets"))}
 
@@ -261,13 +261,13 @@ def _clean(x) -> str:
     return re.sub(r"\s+", " ", str(x or "")).strip().lstrip("•·-*–— ").strip()
 
 
-def build_profile(raw: dict, used_ids: set[str] | None = None) -> dict:
+def build_profile(raw: dict, used_ids: set[str] | None = None, name: str = "") -> dict:
     """The AI's transcription → a MasterProfile dict with TailorbirdCV's own ids (avoiding `used_ids`)."""
     taken: set[str] = set(used_ids or ())
     c = raw.get("contact") or {}
     links = [{"text": _clean(lk.get("text")), "url": _clean(lk.get("url"))}
              for lk in c.get("links") or [] if _clean(lk.get("text")) and _clean(lk.get("url"))]
-    contact = {"name": _clean(c.get("name")) or "Your Name", "location": _clean(c.get("location")), "links": links}
+    contact = {"name": _clean(c.get("name")) or _clean(name) or "Your Name", "location": _clean(c.get("location")), "links": links}
     if _clean(c.get("phone")):
         contact["phone"] = _clean(c["phone"])
     if _clean(c.get("email")):
@@ -421,14 +421,22 @@ def _role_sections(profile: dict, source: str) -> dict[str, str]:
     role's begins. A role whose heading can't be found isn't sectioned (it's checked against the whole file)."""
     words = _tokens(source)
     starts: list[tuple[int, str]] = []
+    claimed: set[int] = set()
+    last = -1
     for r in profile.get("roles") or []:
         emp, title = _tokens(r.get("employer", "")), _tokens(r.get("title", ""))[:3]
         hits = [i for i in range(len(words)) if emp and words[i:i + len(emp)] == emp]
-        near = [i for i in hits if title and any(words[j:j + len(title)] == title
-                                                 for j in range(max(0, i - 40), min(len(words), i + 40)))]
+        near = [i for i in hits if i not in claimed and title and any(
+            words[j:j + len(title)] == title for j in range(max(0, i - 40), min(len(words), i + 40)))]
+        # Each heading belongs to one role. Roles are transcribed in the CV's order, so with the same employer twice
+        # (a promotion) the next role's heading is the next one down, not the first that matches its title
+        # ("Technical Program Manager" is also inside "Senior Technical Program Manager").
+        near = [i for i in near if i > last] or near
         if near:
             pos = near[0]
-            title_at = [j for j in range(max(0, pos - 40), pos) if words[j:j + len(title)] == title]
+            claimed.add(pos)
+            title_at = [j for j in range(max(0, pos - 40, last + 1), pos) if words[j:j + len(title)] == title]
+            last = pos
             starts.append((min([pos, *title_at]), r["id"]))  # some CVs put the title first
     starts.sort()
     sections: dict[str, str] = {}

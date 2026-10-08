@@ -18,6 +18,7 @@ import re
 from . import factcheck
 from .ai import _profile_text, _yaml, system_prompt, untrusted
 from .engine import Engine
+from .render import _lead_text
 from .schema import Claim, Knowledge, MasterProfile, TailoredResume
 
 MAX_ISSUES = 8
@@ -169,11 +170,36 @@ def unused_must_have_evidence(profile: MasterProfile, tailored: TailoredResume, 
     return out
 
 
+def printed_sections(profile: MasterProfile, tailored: TailoredResume) -> dict:
+    """What the draft prints beyond its claims: sub-roles, projects, education and extras (e.g. degrees,
+    certifications, languages), as the resume shows them. Without these the review reports a degree or a
+    certification as missing when it's on the page."""
+    def lead(pool, item_id, override=None):
+        item = next((x for x in pool if x.id == item_id), None)
+        return (item.label + _lead_text(override.text if override else item.text)).strip() if item else None
+    out: dict = {}
+    sub = {}
+    for tr in tailored.experience:
+        role = next((r for r in profile.roles if r.id == tr.role), None)
+        lines = [lead(role.sub_roles, s.id, s.text) for s in tr.sub_roles] if role else []
+        if lines := [x for x in lines if x]:
+            sub[role.employer] = lines
+    if sub:
+        out["sub_roles"] = sub
+    for key, pool, entries in (("projects", profile.projects, [(p.id, p.text) for p in tailored.projects]),
+                               ("education", profile.education, [(i, None) for i in tailored.education]),
+                               ("extras", profile.extras, [(i, None) for i in tailored.extras])):
+        if lines := [x for x in (lead(pool, i, o) for i, o in entries) if x]:
+            out[key] = lines
+    return out
+
+
 def _prompt(profile: MasterProfile, tailored: TailoredResume, analysis: dict, knowledge: Knowledge | None) -> str:
     brief = {k: analysis.get(k) for k in ("company", "role", "industry", "track", "seniority", "summary")}
     brief["must_haves"] = [r["text"] for r in analysis.get("requirements", []) if r.get("priority") == "must"]
     prefs = [p.text for p in (knowledge.active_preferences() if knowledge else [])]
     unused = unused_must_have_evidence(profile, tailored, analysis)
+    printed = printed_sections(profile, tailored)
     numbered = {path: {"text": c.text, "sources": c.sources}
                 for path, (c, _) in claim_paths(tailored).items()}
     return f"""TASK: critique
@@ -208,6 +234,8 @@ PROFILE (the only source of facts):
 {_profile_text(profile)}
 DRAFT CLAIMS BY PATH:
 {json.dumps(numbered, indent=1, ensure_ascii=False)}
+ALSO ON THE PAGE (printed from the profile as written; you can't edit these, but they count as shown):
+{_yaml(printed) if printed else "(nothing else)"}
 """
 
 

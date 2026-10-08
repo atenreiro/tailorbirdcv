@@ -485,7 +485,7 @@ export default function Profile() {
 
           {view === 'projects' && (['projects', 'education', 'extras'] as const).map((key) => (
             <section key={key} className={cx(card, 'flex flex-col gap-1 px-[22px] py-[18px]')}>
-              <p className={cx(cardTitle, 'pb-1.5')}>{{ projects: 'Projects & community', education: 'Education & certifications', extras: 'Awards & languages' }[key]}</p>
+              <p className={cx(cardTitle, 'pb-1.5')}>{{ projects: 'Projects', education: 'Education & certifications', extras: 'Awards, certificates, languages & more' }[key]}</p>
               {p[key].map((item: LeadItem, i) => (
                 <div key={item.id} className="grid items-start gap-x-3 gap-y-1 py-[3px] md:grid-cols-[100px_minmax(0,220px)_minmax(0,1fr)]">
                   <span className="break-all pt-2.5 font-mono text-[11px] text-accent">{item.id}</span>

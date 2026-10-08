@@ -25,6 +25,11 @@ TITLES = {
     "extras": "AWARDS & LANGUAGES",
 }
 
+# What a new profile starts with (Settings → Resume design → Section headings): the two TITLES above that read
+# like one person's resume ("community leadership", "awards & languages") become neutral. Profiles made before
+# headings were a setting keep TITLES exactly, and so does the Classic golden render.
+NEW_PROFILE_TITLES = {"projects": "PROJECTS", "extras": "ADDITIONAL INFORMATION"}
+
 
 @dataclass(frozen=True)
 class Theme:

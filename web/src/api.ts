@@ -199,6 +199,8 @@ export interface TestResult { ok: boolean; detail: string; seconds: number; engi
 /** Who the resume is for: steers the AI's prompts and sets the page limit (never a source of facts). */
 export interface Targets { field: string; seniority: string; roles: string; region: string; spelling: 'US' | 'UK'; pages: 1 | 2 | 3; pack: string }
 export interface ThemeInfo { id: string; name: string; description: string; fonts: string[]; accent: string; ink: string; rule: string; name_font: string; paper: 'letter' | 'a4' }
+/** Resume sections whose heading the user can rename (Settings → Resume design). */
+export type SectionKey = 'summary' | 'highlights' | 'competencies' | 'experience' | 'projects' | 'education' | 'extras'
 export interface Settings {
   pdf_engine: PdfEngine | null; pdf_engines: PdfEngineInfo[]; pdf_effective: PdfEngine | null; platform?: Platform
   targets: Targets; packs: string[]; theme: string; paper: 'letter' | 'a4' | null; themes: ThemeInfo[]
@@ -206,10 +208,12 @@ export interface Settings {
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
   openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean; learn_style: boolean
   hide_personal: boolean; private_address: string
+  /** The user's headings ("" = the design's own, in section_defaults). */
+  section_titles: Record<SectionKey, string>; section_defaults: Record<SectionKey, string>
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
-export type SettingsPatch = { pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
+export type SettingsPatch = { section_titles?: Partial<Record<SectionKey, string>>; pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
   openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean; learn_style?: boolean; hide_personal?: boolean; private_address?: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]
