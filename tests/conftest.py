@@ -43,7 +43,7 @@ def no_update_checks(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_favicon_fetches(monkeypatch):
     """Tests never contact company sites for icons; test_favicon.py drives the fetcher with fake sites."""
-    async def none(job_url, sites=None, client=None):
+    async def none(job_url, sites=None, client=None, **_):
         return None
     from tailorbirdcv import favicon
     monkeypatch.setattr(favicon, "fetch", none)

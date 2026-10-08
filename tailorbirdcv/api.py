@@ -914,18 +914,23 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     # -- the company's site icon: fetched in the background, once per application (favicon.py) ----------
     favicon_pending: set[str] = set()
     favicon_tasks: set = set()  # keeps the running tasks referenced
+    favicon_next: dict[str, tuple] = {}  # a job waiting for the one in progress for the same application
 
-    async def fetch_favicons(jobs: list[tuple[str, str, list[str]]]) -> None:
-        for app_id, url, sites in jobs:  # one at a time: never a burst of requests to company sites
+    # A job: (app id, job link or "", sites the posting names, company name, website the analysis names or "").
+    async def fetch_favicons(jobs: list[tuple[str, str, list[str], str, str]]) -> None:
+        for app_id, url, sites, company, website in jobs:  # one at a time: never a burst of requests to company sites
+            found = None
             try:
-                found = await favicon.fetch(url, sites)
-                await asyncio.to_thread(store.save_favicon, app_id, found)
+                found = await favicon.fetch(url, sites, company=company, website=website)
+                await asyncio.to_thread(store.save_favicon, app_id, found, website)
             except Exception as e:  # noqa: BLE001 — an icon is never worth an error
                 log.debug("TailorbirdCV: site icon for %s failed (%s)", app_id, e)
             finally:
                 favicon_pending.discard(app_id)
+                if (waiting := favicon_next.pop(app_id, None)) and not found:
+                    queue_favicons([waiting])
 
-    def queue_favicons(jobs: list[tuple[str, str, list[str]]]) -> None:
+    def queue_favicons(jobs: list[tuple[str, str, list[str], str, str]]) -> None:
         """Fetch these applications' icons in the background, unless icons are off in Settings."""
         jobs = [j for j in jobs if j[0] not in favicon_pending]
         if not jobs or not store.settings()["company_icons"]:
@@ -939,7 +944,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
     async def list_applications():
         apps = await asyncio.to_thread(list_rows)
         # Applications from before icons existed (or made while they were off) get theirs now.
-        queue_favicons([(a["id"], a["url"], []) for a in apps
+        queue_favicons([(a["id"], a["url"], [], a.get("company") or "", "") for a in apps
                         if a.get("url") and "favicon" not in a and not a.get("broken")])
         return apps
 
@@ -986,7 +991,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                                      f"{MAX_JD:,}). Paste just the posting itself.")
         app_id = store.create_app(company or "company", role or "role", jd, body.url)
         if body.url:
-            queue_favicons([(app_id, body.url.strip(), sites)])
+            queue_favicons([(app_id, body.url.strip(), sites, company or "", "")])
         return {"id": app_id}
 
     @api.get("/applications/{app_id}")
@@ -1143,7 +1148,20 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         store.advance_status(app_id, "analyzed")
         if placeholder:
             app_id = store.rename_app(app_id, changes["company"] or "", changes.get("role") or meta.get("role", ""))
+        queue_analysis_favicon(app_id, analysis)
         return get_application(app_id)
+
+    def queue_analysis_favicon(app_id: str, analysis: dict) -> None:
+        """No icon yet: try the company website the analysis names (once per website), for job boards that don't
+        name it and for pasted job descriptions. It still has to pass favicon.matches_company."""
+        site = favicon.clean_site(analysis.get("company_website"))
+        meta = store.meta(app_id)
+        if site and not store.favicon_path(app_id) and meta.get("favicon_website") != site:
+            job = (app_id, "", [], analysis.get("company") or meta.get("company") or "", site)
+            if app_id in favicon_pending:
+                favicon_next[app_id] = job  # after the attempt in progress, if that finds nothing
+            else:
+                queue_favicons([job])
 
     @api.post("/applications/{app_id}/proposals")
     async def proposals(app_id: str, answers: list[Answer]):

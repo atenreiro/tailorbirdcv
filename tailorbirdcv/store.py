@@ -1414,9 +1414,10 @@ class Store:
         path = self.app_path(app_id) / name
         return path if path.is_file() else None
 
-    def save_favicon(self, app_id: str, found: tuple[bytes, str] | None) -> None:
+    def save_favicon(self, app_id: str, found: tuple[bytes, str] | None, website: str = "") -> None:
         """Keep the company's icon with the application (or record that there is none, so it's fetched once).
-        Never part of the built or sent files (files() lists only .docx/.pdf)."""
+        `website`: the site the analysis named, recorded so it's tried once. Never part of the built or sent
+        files (files() lists only .docx/.pdf)."""
         try:
             with _LOCK:
                 folder = self.app_path(app_id)
@@ -1435,7 +1436,8 @@ class Store:
                         Path(tmp).unlink(missing_ok=True)
                         raise
                 # Bookkeeping, not activity: the application's "updated" time (the board's order) stays as it was.
-                _write_json_atomic(folder / "meta.json", {**self.meta(app_id), "favicon": name})
+                tried = {"favicon_website": website} if website else {}
+                _write_json_atomic(folder / "meta.json", {**self.meta(app_id), "favicon": name, **tried})
         except AppNotFound:
             pass  # deleted while its icon was being fetched
 

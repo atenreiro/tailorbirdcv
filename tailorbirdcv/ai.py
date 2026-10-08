@@ -136,10 +136,11 @@ def analysis_schema(evidence_ids: list[str], knowledge_ids: list[str] | None = N
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["company", "role", "industry", "track", "seniority", "location", "summary",
+        "required": ["company", "company_website", "role", "industry", "track", "seniority", "location", "summary",
                      "requirements", "keywords", "questions", "known_gaps"],
         "properties": {
             "company": {"type": "string"},
+            "company_website": {"type": "string", "description": "the hiring company's official website, or \"\""},
             "role": {"type": "string"},
             "industry": {"type": "string", "enum": industries()},
             "track": {"type": "string", "enum": TRACKS},
@@ -207,6 +208,10 @@ async def analyze(engine: Engine, profile: MasterProfile, jd: str, knowledge: Kn
     prompt = f"""TASK: analyze
 Analyze this job description against the candidate's profile.
 
+- company_website: the hiring company's own official website (e.g. https://www.example.com), only if you are \
+certain of it, from the posting or general knowledge (used only for its icon). "" when unsure, when the employer \
+is undisclosed or a recruitment agency's client, or when you'd be guessing. Never a job board, recruiting system, \
+social profile or an agency's site.
 - industry: pick the closest lens from {industries()} (lenses below).
 - track: manager (people leadership is the core), ic (hands-on depth is the core), or hybrid (player-coach).
 - requirements: every distinct requirement in JD order. status: strong = clear profile evidence; \

@@ -49,9 +49,9 @@ def sites(routes: dict):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler)), seen
 
 
-def get(url, routes):
+def get(url, routes, company="Example Co", website=""):
     client, seen = sites(routes)
-    return asyncio.run(real_fetch(url, [], client)), seen
+    return asyncio.run(real_fetch(url, [], client, company=company, website=website)), seen
 
 
 def page(head: str) -> httpx.Response:
@@ -108,7 +108,7 @@ def test_a_job_board_uses_the_company_site_named_in_the_posting(public_dns):
     posting = page('<script type="application/ld+json">{"@type": "JobPosting", "title": "Engineer", '
                    '"hiringOrganization": {"name": "Northwind", "sameAs": ["https://www.linkedin.com/company/nw", '
                    '"https://jobs.lever.co/nw", "https://northwind.example"]}}</script>')
-    found, seen = get("https://boards.greenhouse.io/northwind/jobs/123", {
+    found, seen = get("https://boards.greenhouse.io/northwind/jobs/123", company="Northwind", routes={
         "https://boards.greenhouse.io/northwind/jobs/123": posting,
         "https://northwind.example/": page(""),
         "https://northwind.example/favicon.ico": httpx.Response(200, content=ICO)})
@@ -157,7 +157,7 @@ def test_json_ld_names_the_company_sites():
             '"sameAs": "https://twitter.com/northwind"}}</script>')
     job = jobfetch.from_json_ld(html)
     assert job.sites == ["https://northwind.example", "https://twitter.com/northwind"]
-    assert favicon.company_site("https://boards.greenhouse.io/nw/jobs/1", job.sites) == "https://northwind.example"
+    assert [favicon.clean_site(s) for s in job.sites] == ["https://northwind.example", None]  # never a social profile
 
 
 # ---- API: stored once, served by TailorbirdCV, and Settings can turn it all off -----------------------------------
@@ -169,7 +169,7 @@ def env(tmp_path, monkeypatch):
     store = Store(private)
     calls = []
 
-    async def fake(job_url, sites=None, client=None):
+    async def fake(job_url, sites=None, client=None, company="", website=""):
         calls.append((job_url, list(sites or [])))
         return (PNG, "png")
     monkeypatch.setattr(favicon, "fetch", fake)
@@ -205,7 +205,7 @@ def test_created_from_a_link_the_icon_is_fetched_once_stored_and_served(env):
 def test_an_svg_icon_is_served_with_scripts_blocked(env, monkeypatch):
     client, store, calls = env
 
-    async def svg(job_url, sites=None, client=None):
+    async def svg(job_url, sites=None, client=None, **_):
         return (SVG, "svg")
     monkeypatch.setattr(favicon, "fetch", svg)
     with client:
@@ -229,7 +229,7 @@ def test_saving_an_icon_never_changes_the_boards_order(tmp_path):
 def test_no_icon_found_is_recorded_so_it_isnt_fetched_again(env, monkeypatch):
     client, store, calls = env
 
-    async def none(job_url, sites=None, client=None):
+    async def none(job_url, sites=None, client=None, **_):
         calls.append(job_url)
         return None
     monkeypatch.setattr(favicon, "fetch", none)
@@ -271,3 +271,80 @@ def test_icons_off_in_settings_means_nothing_is_fetched(env):
         client.get("/api/applications")
         time.sleep(0.3)
     assert calls == []
+
+
+# ---- job boards that don't name the company's site: the analysis names it, every candidate must match -------------
+@pytest.mark.parametrize("company, site, title, ok", [
+    ("Northwind", "https://northwind.example", "", True),                       # the name is in the address
+    ("Northwind Traders Ltd", "https://www.nwt.example", "Northwind Traders | Home", True),  # …or in the title
+    ("Oversea-Chinese Banking Corporation", "https://www.ocbc.example", "", True),  # initials = the address
+    ("Contoso Bank", "https://www.contoso.example", "", True),
+    ("Northwind", "https://www.fabrikam.example", "Fabrikam — careers", False),  # another company's site
+    ("Undisclosed multinational (via Gravitas Recruitment)", "https://gravitas.example", "Gravitas Recruitment", False),
+    ("Confidential client", "https://example.com", "Confidential client", False),  # nobody's name
+    ("", "https://northwind.example", "Northwind", False),
+])
+def test_a_site_counts_only_when_it_names_the_company(company, site, title, ok):
+    home = f'<html><head><title>{title}</title></head></html>' if title else ""
+    assert favicon.matches_company(company, site, home) is ok
+
+
+def test_the_analysis_website_gives_a_board_job_its_icon_when_it_is_the_company(public_dns):
+    routes = {"https://www.linkedin.com/jobs/view/123": page(""),  # LinkedIn names no website for logged-out readers
+              "https://northwind.example/": page("<title>Northwind — home</title>"),
+              "https://northwind.example/favicon.ico": httpx.Response(200, content=ICO)}
+    found, seen = get("https://www.linkedin.com/jobs/view/123", routes, company="Northwind", website="northwind.example")
+    assert found == (ICO, "ico") and not any("linkedin.com/favicon" in u for u in seen)
+    wrong = {**routes, "https://fabrikam.example/": page("<title>Fabrikam</title>"),
+             "https://fabrikam.example/favicon.ico": httpx.Response(200, content=ICO)}
+    found, seen = get("https://www.linkedin.com/jobs/view/123", wrong, company="Northwind", website="https://fabrikam.example/about")
+    assert found is None and "https://fabrikam.example/favicon.ico" not in seen  # never the wrong company's icon
+
+
+def test_a_pasted_job_description_uses_the_analysis_website(public_dns):
+    found, _ = get("", {"https://www.northwind.example/": page("<title>Northwind</title>"),
+                        "https://www.northwind.example/favicon.ico": httpx.Response(200, content=ICO)},
+                   company="Northwind", website="https://www.northwind.example")
+    assert found == (ICO, "ico")
+
+
+def test_a_board_link_that_names_the_domain_is_used(public_dns):
+    found, seen = get("https://northwind.eightfold.ai/careers/job/1?domain=northwind.example", {
+        "https://northwind.eightfold.ai/careers/job/1?domain=northwind.example": page(""),
+        "https://northwind.example/": page("<title>Northwind</title>"),
+        "https://northwind.example/favicon.ico": httpx.Response(200, content=ICO)}, company="Northwind")
+    assert found == (ICO, "ico") and not any("eightfold.ai/favicon" in u for u in seen)
+
+
+@pytest.mark.parametrize("value, site", [("ocbc.example", "https://ocbc.example"),
+                                         ("https://www.ocbc.example/group/about", "https://www.ocbc.example"),
+                                         ("", None), ("unknown", None), ("https://www.linkedin.com/company/x", None),
+                                         ("http://127.0.0.1", None), ("javascript:alert(1)", None)])
+def test_only_plain_public_websites_are_candidates(value, site):
+    assert favicon.clean_site(value) == site
+
+
+def test_after_the_analysis_the_named_website_is_tried_once(tmp_path, monkeypatch):
+    private = tmp_path / "private"
+    private.mkdir()
+    shutil.copy(FIX / "profile.yaml", private / "profile.yaml")
+    store, seen = Store(private), []
+
+    async def record(job_url, sites=None, client=None, company="", website=""):
+        seen.append((job_url, company, website))
+        return (PNG, "png") if website else None  # the board names nothing; the website has the icon
+    monkeypatch.setattr(favicon, "fetch", record)
+    analysis = {"company": "Northwind", "company_website": "https://northwind.example", "role": "Engineer",
+                "industry": "tech", "track": "ic", "seniority": "", "location": "", "summary": "", "requirements": [],
+                "keywords": [], "questions": [], "known_gaps": []}
+    client = client_for(create_app(store, FakeEngine({"analyze": analysis})))
+    with client:
+        app_id = new_app(client, "https://www.linkedin.com/jobs/view/123")
+        assert wait_for(lambda: store.meta(app_id).get("favicon") == "")
+        assert client.post(f"/api/applications/{app_id}/analyze").status_code == 200
+        assert wait_for(lambda: store.meta(app_id).get("favicon") == "favicon.png")
+        assert store.meta(app_id)["favicon_website"] == "https://northwind.example"
+        client.post(f"/api/applications/{app_id}/analyze")  # the same website again: not fetched again
+        time.sleep(0.2)
+    assert seen == [("https://www.linkedin.com/jobs/view/123", "Northwind", ""),
+                    ("", "Northwind", "https://northwind.example")]
