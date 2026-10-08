@@ -1154,6 +1154,7 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
             analysis = await ai.analyze(engine, profile, store.jd(app_id), store.knowledge())
         except EngineError as e:
             raise _engine_call(e)
+        analysis["profile_evidence"] = insights.evidence_fingerprint(profile)  # what it was judged against
         store.save_analysis(app_id, analysis)
         store.remap_answers(app_id, analysis.get("questions", []))  # question ids are renumbered
         meta = store.meta(app_id)

@@ -174,10 +174,13 @@ export interface AppSummary extends Meta {
   task?: TaskView | null
 }
 /** Results → Recurring gaps: one requirement of one application, as grouped into a theme (insights.py). */
-/** no_experience: the date the user said they have none ("yes" when the date isn't known), or null. */
-export interface GapItem { app_id: string; text: string; priority: 'must' | 'nice'; status: 'gap' | 'partial'; no_experience: string | null }
+/** no_experience: the date the user said they have none ("yes" when the date isn't known), or null.
+ *  answered: the evidence id when the user has since answered it with approved experience (no longer a gap). */
+export interface GapItem { app_id: string; text: string; priority: 'must' | 'nice'; status: 'gap' | 'partial'; no_experience: string | null; answered?: string | null }
 export interface GapTheme { label: string; items: GapItem[] }
-export interface GapsView { themes: GapTheme[] | null; created: string | null; stale: boolean; requirements: number; analysed: string[] }
+/** outdated: analysed before the profile's evidence last changed and not sent yet (worth re-analysing);
+ *  outdated_sent: how many already-sent ones were. */
+export interface GapsView { themes: GapTheme[] | null; created: string | null; stale: boolean; requirements: number; analysed: string[]; outdated: string[]; outdated_sent: number }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 /** The AI engines (mirrors engine.ENGINES): two subscriptions through a local app, three API keys. */
 export type EngineId = 'claude-cli' | 'codex-cli' | 'anthropic-api' | 'openai-api' | 'openrouter-api'
