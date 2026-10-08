@@ -1,0 +1,73 @@
+# Technical Program Management pack — industry lenses. EMPHASIS heuristics only. These are never facts: they
+# only decide what to surface first and which vocabulary to mirror when the profile already has the evidence.
+# Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, financial institution, regulated, core banking, risk, compliance, resilience, migration]
+  lead_with: [large technology programmes under regulation, platform migrations, risk and dependency management, executive reporting]
+  mirror_terms: [programme, dependencies, regulatory commitments, migration, operational resilience, governance]
+  surface: [systems migrated, regulatory deadlines met, teams coordinated, risk retired]
+  tone: measured and precise; control and predictability
+
+tech:
+  signals: [SaaS, platform, infrastructure, product, cloud, scale, engineering org, launch]
+  lead_with: [cross-team technical launches, platform and infrastructure programmes, technical depth, execution at scale]
+  mirror_terms: [launch, cross-functional, dependencies, roadmap, OKRs, execution, technical trade-offs]
+  surface: [launches delivered, number of teams aligned, latency, cost or reliability gains, timelines]
+  tone: engineering-fluent and crisp; outcomes and trade-offs
+
+fintech:
+  signals: [payments, wallet, digital bank, lending, crypto, exchange, ledger]
+  lead_with: [payment platform launches, integrations with partners and regulators, reliability, fast execution]
+  mirror_terms: [launch, integration, partners, compliance, reliability, roadmap]
+  surface: [markets or partners launched, volume enabled, go-lives, incident reductions]
+  tone: fast-moving and technically grounded
+
+consulting:
+  signals: [advisory, consulting, systems integrator, client-facing, transformation, engagements]
+  lead_with: [client technology programmes, architecture and delivery alignment, executive communication]
+  mirror_terms: [engagement, transformation, architecture, roadmap, client, delivery]
+  surface: [programme values, client outcomes, platforms delivered]
+  tone: structured and client-ready
+
+healthcare:
+  signals: [health, clinical, patient, EHR, medical device, pharma, biotech]
+  lead_with: [regulated system rollouts, integrations and interoperability, validation, safety]
+  mirror_terms: [implementation, interoperability, validation, compliance, clinical stakeholders]
+  surface: [systems or sites brought live, integrations delivered, validations passed]
+  tone: careful and precise
+
+public_sector:
+  signals: [government, agency, GovTech, defence, ministry, public sector]
+  lead_with: [digital service and platform programmes, legacy modernization, governance, security]
+  mirror_terms: [programme, digital services, modernization, governance, procurement, security]
+  surface: [services launched, legacy systems retired, users served, budgets managed]
+  tone: formal and accountable
+
+telco:
+  signals: [telecom, operator, 5G, network, OSS, BSS, carrier]
+  lead_with: [network and platform rollouts, multi-vendor integration, migrations, availability]
+  mirror_terms: [rollout, migration, OSS/BSS, vendors, availability, cut-over]
+  surface: [sites or subscribers migrated, vendors integrated, downtime avoided]
+  tone: operational scale and reliability
+
+retail:
+  signals: [e-commerce, marketplace, retail, consumer, checkout, supply chain]
+  lead_with: [platform launches, peak readiness, cross-team delivery, customer impact]
+  mirror_terms: [launch, peak traffic, checkout, experimentation, roadmap, customer experience]
+  surface: [launches, peak-event results, conversion or speed effects]
+  tone: commercial and customer-centred
+
+industrial:
+  signals: [manufacturing, automotive, hardware, IoT, energy, robotics, semiconductor]
+  lead_with: [hardware and software programmes, supply-chain dependencies, new product introduction, quality]
+  mirror_terms: [NPI, hardware, firmware, supply chain, quality, schedule]
+  surface: [products introduced, schedules met, defects or costs reduced]
+  tone: practical and engineering-precise
+
+education:
+  signals: [edtech, university, research, learning platform, nonprofit]
+  lead_with: [platform programmes, research infrastructure, cross-team delivery, mission impact]
+  mirror_terms: [platform, programme, research, learners, stakeholders]
+  surface: [platforms launched, users reached, systems delivered]
+  tone: mission-driven and clear

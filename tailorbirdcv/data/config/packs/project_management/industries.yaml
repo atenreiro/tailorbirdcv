@@ -1,0 +1,73 @@
+# Project Management pack — industry lenses. EMPHASIS heuristics only. These are never facts: they only
+# decide what to surface first and which vocabulary to mirror when the profile already has the evidence.
+# Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, financial institution, regulatory, compliance, risk, audit, insurance, wealth]
+  lead_with: [regulatory and compliance projects delivered, governance and controls, risk and issue management, stakeholder reporting]
+  mirror_terms: [governance, RAID log, steering committee, regulatory deadline, change management, audit]
+  surface: [deadlines met, budgets managed, regulatory programmes closed, audit findings resolved]
+  tone: measured and precise; delivery under control
+
+tech:
+  signals: [SaaS, software, platform, product, startup, agile, scrum, cloud]
+  lead_with: [releases and launches delivered, agile delivery, cross-team coordination, delivery speed]
+  mirror_terms: [agile, scrum, sprint, release, roadmap, dependencies, stakeholders]
+  surface: [launches on schedule, cycle-time or velocity gains, teams coordinated, scope delivered]
+  tone: pragmatic and outcome-focused; light on ceremony
+
+fintech:
+  signals: [payments, wallet, digital bank, lending, crypto, exchange, KYC]
+  lead_with: [product launches under regulation, fast delivery with control, vendor and partner integrations]
+  mirror_terms: [launch, go-live, compliance, integration, partners, roadmap]
+  surface: [launches and go-lives, markets or partners onboarded, deadlines met]
+  tone: fast-moving but controlled
+
+consulting:
+  signals: [advisory, consulting, client-facing, engagements, Big Four, transformation, systems integrator]
+  lead_with: [client engagements delivered, scope and budget control, executive communication, transformation]
+  mirror_terms: [engagement, client, statement of work, scope, deliverables, transformation]
+  surface: [engagement value, clients served, on-time and on-budget delivery, follow-on work won]
+  tone: structured and client-ready
+
+healthcare:
+  signals: [hospital, clinical, patient, healthcare, pharma, biotech, medical device]
+  lead_with: [clinical or system implementations, compliance and validation, safety, cross-functional coordination]
+  mirror_terms: [implementation, go-live, validation, compliance, clinical stakeholders, quality]
+  surface: [sites or users brought live, validations passed, timelines met]
+  tone: careful and precise; safety and compliance first
+
+public_sector:
+  signals: [government, ministry, agency, public sector, policy, defence, NGO, procurement]
+  lead_with: [programme and policy delivery, procurement and governance, public accountability, stakeholder engagement]
+  mirror_terms: [programme, governance, procurement, business case, benefits realization, stakeholders]
+  surface: [programmes delivered, budgets managed, benefits realized, citizens served]
+  tone: formal and accountable
+
+telco:
+  signals: [telecom, operator, mobile network, carrier, 5G, rollout, network]
+  lead_with: [network and IT rollouts, multi-vendor coordination, operational cut-overs, scale]
+  mirror_terms: [rollout, cut-over, migration, vendors, availability, subscribers]
+  surface: [sites rolled out, migrations completed, downtime avoided, vendors managed]
+  tone: operational and schedule-driven
+
+retail:
+  signals: [retail, e-commerce, consumer, brand, store, supply chain, FMCG]
+  lead_with: [launches and store or system rollouts, peak-season readiness, vendor coordination, cost control]
+  mirror_terms: [rollout, launch, peak season, vendors, omnichannel, budget]
+  surface: [stores or markets launched, peak events delivered, savings]
+  tone: commercial and deadline-driven
+
+industrial:
+  signals: [manufacturing, plant, construction, engineering, energy, infrastructure, logistics, automotive]
+  lead_with: [capital projects delivered, schedule and cost control, safety, contractor management]
+  mirror_terms: [capex, schedule, critical path, safety, contractors, commissioning]
+  surface: [project values, schedule and cost performance, safety record, commissioning milestones]
+  tone: practical and results-driven
+
+education:
+  signals: [school, university, education, research, nonprofit, foundation, grant]
+  lead_with: [programmes and systems implemented, grant-funded projects, stakeholder coordination, mission outcomes]
+  mirror_terms: [programme, implementation, grant, stakeholders, learners, mission]
+  surface: [programmes launched, people reached, grant budgets managed]
+  tone: mission-driven and clear

@@ -1,0 +1,73 @@
+# Product Management pack — industry lenses. EMPHASIS heuristics only. These are never facts: they only
+# decide what to surface first and which vocabulary to mirror when the profile already has the evidence.
+# Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, wealth, insurance, financial institution, regulated, compliance, digital banking]
+  lead_with: [customer products under regulation, adoption and revenue outcomes, risk-aware product decisions, stakeholder alignment]
+  mirror_terms: [customer journey, digital adoption, compliance, roadmap, business case, risk]
+  surface: [customers or accounts acquired, adoption and revenue, products launched, regulatory approvals]
+  tone: measured; customer value with control
+
+tech:
+  signals: [SaaS, platform, product-led, startup, B2B, B2C, consumer app, API]
+  lead_with: [products shipped and their metrics, discovery and prioritization, growth, cross-functional leadership]
+  mirror_terms: [roadmap, discovery, prioritization, OKRs, retention, activation, experimentation]
+  surface: [users, revenue, retention or conversion changes, launches, experiments run]
+  tone: crisp and metric-driven; outcomes over output
+
+fintech:
+  signals: [payments, wallet, lending, digital bank, crypto, exchange, KYC, fraud]
+  lead_with: [payments and money-movement products, growth with compliance, partner integrations, conversion]
+  mirror_terms: [onboarding, conversion, payments, fraud, compliance, partners]
+  surface: [transaction volume, users onboarded, conversion and loss rates, markets launched]
+  tone: growth-stage and metric-driven
+
+consulting:
+  signals: [advisory, consulting, digital agency, client-facing, transformation]
+  lead_with: [client products delivered, product strategy, discovery workshops, executive communication]
+  mirror_terms: [client, product strategy, discovery, roadmap, transformation]
+  surface: [client outcomes, products launched for clients, engagements led]
+  tone: structured and client-ready
+
+healthcare:
+  signals: [health, clinical, patient, digital health, medical device, pharma, biotech]
+  lead_with: [patient or clinician products, safety and compliance, evidence of outcomes, adoption]
+  mirror_terms: [patient experience, clinical workflow, compliance, outcomes, adoption]
+  surface: [patients or clinicians served, outcomes improved, approvals obtained, launches]
+  tone: careful and evidence-based
+
+public_sector:
+  signals: [government, GovTech, agency, citizen services, public sector, ministry]
+  lead_with: [citizen-facing services, user research, accessibility, policy-to-product delivery]
+  mirror_terms: [user needs, service design, accessibility, digital services, policy]
+  surface: [citizens served, service take-up, time or cost saved, launches]
+  tone: formal and user-centred
+
+telco:
+  signals: [telecom, operator, mobile, carrier, 5G, subscribers, broadband]
+  lead_with: [subscriber products and plans, digital channels, partner ecosystems, revenue]
+  mirror_terms: [subscribers, ARPU, churn, digital channels, partners, launch]
+  surface: [subscriber growth, churn or ARPU changes, products launched]
+  tone: commercial and scale-aware
+
+retail:
+  signals: [e-commerce, marketplace, retail, consumer, checkout, loyalty, omnichannel]
+  lead_with: [customer-facing features, conversion and basket size, personalization, experimentation]
+  mirror_terms: [conversion, basket size, loyalty, personalization, A/B testing, customer experience]
+  surface: [conversion and revenue effects, customers reached, features launched, experiments]
+  tone: commercial and customer-centred
+
+industrial:
+  signals: [manufacturing, hardware, IoT, automotive, energy, industrial software, logistics]
+  lead_with: [hardware or industrial software products, customer needs to requirements, lifecycle, cost and quality]
+  mirror_terms: [product lifecycle, requirements, customers, quality, cost, launch]
+  surface: [products launched, revenue or cost effects, customers served]
+  tone: practical and results-driven
+
+education:
+  signals: [edtech, university, learning platform, research, nonprofit]
+  lead_with: [learner-facing products, engagement and outcomes, mission impact, user research]
+  mirror_terms: [learners, engagement, learning outcomes, user research, mission]
+  surface: [learners reached, engagement or completion changes, launches]
+  tone: mission-driven and clear

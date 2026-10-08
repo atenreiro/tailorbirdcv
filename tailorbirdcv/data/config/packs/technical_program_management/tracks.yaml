@@ -1,0 +1,23 @@
+# Technical Program Management pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [head of program management, director of TPM, TPM manager, manage TPMs, program management office]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [program functions built, portfolios of launches owned, execution practices introduced, teams of TPMs led, outcomes]
+  bullet_style: lead with scope (programs, teams aligned, TPMs led) then outcome; keep 1–2 hands-on program bullets
+  keep: [team sizes, number of programs and teams aligned, practices introduced, people developed]
+
+ic:
+  detect: [technical program manager, TPM, senior TPM, staff TPM, principal TPM, engineering program manager]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [cross-team technical launches, technical depth and trade-offs, scale (teams, systems), risks retired, measurable results]
+  bullet_style: lead with the technical program, how many teams or systems it spanned, and the measurable result
+  keep: [technologies and systems actually involved, teams aligned, timelines, metrics]
+  note: show technical fluency (architecture, systems, trade-offs) from the evidence — that separates a TPM from a project manager
+
+hybrid:
+  detect: [lead TPM, program lead, senior technical program manager, technical lead]
+  headline_tracks: [hybrid, ic, manager]
+  highlights_order: [programs delivered with measurable impact, technical depth, coordination of other TPMs or leads, scale]
+  bullet_style: alternate drove-it and built-it evidence
+  keep: [teams aligned, hands-on technical work, outcomes, coaching]

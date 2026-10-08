@@ -1,0 +1,23 @@
+# Product Management pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [head of product, director of product, VP product, group product manager, CPO, manage product managers]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [product areas owned and their results, product strategy, teams of PMs built and led, practices introduced, people developed]
+  bullet_style: lead with the product area and team scope, then the business outcome
+  keep: [revenue or user scale owned, team sizes, strategy set, people developed]
+
+ic:
+  detect: [product manager, senior product manager, product owner, staff product manager, principal product manager]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [products launched with measurable results, discovery that changed direction, metrics moved, cross-functional leadership]
+  bullet_style: lead with the product decision or launch and the metric it moved
+  keep: [metrics moved, users and revenue, experiments, teams worked with]
+  note: product managers lead without authority — keep evidence of influence across engineering, design and business
+
+hybrid:
+  detect: [lead product manager, senior product lead, product lead]
+  headline_tracks: [hybrid, manager, ic]
+  highlights_order: [products shipped with measurable impact, PMs coached, strategy, scale]
+  bullet_style: alternate shipped-it and led-it evidence
+  keep: [metrics moved, team sizes, coaching]

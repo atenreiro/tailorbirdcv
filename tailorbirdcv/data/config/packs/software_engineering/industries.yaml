@@ -1,0 +1,73 @@
+# Software Engineering pack — industry lenses. EMPHASIS heuristics only. These are never facts: they only
+# decide what to surface first and which vocabulary to mirror when the profile already has the evidence.
+# Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, trading, core banking, payments, regulated, low latency, mainframe, risk systems]
+  lead_with: [reliability and correctness, systems at scale, secure and compliant delivery, legacy modernization]
+  mirror_terms: [high availability, resilience, data integrity, audit trail, latency, regulatory requirements]
+  surface: [uptime and SLOs, transaction volumes, migrations completed, incidents reduced]
+  tone: precise and reliability-first; quantify correctness, availability and risk removed
+
+tech:
+  signals: [SaaS, platform, product engineering, startup, scale-up, cloud-native, developer tools, API]
+  lead_with: [products and features shipped, scale and performance, end-to-end ownership, developer velocity]
+  mirror_terms: [ship, ownership, scale, latency, throughput, CI/CD, observability]
+  surface: [users or requests served, performance and cost gains, launches, open-source work]
+  tone: builder voice; concrete systems shipped and their measurable effect
+
+fintech:
+  signals: [payments, wallet, lending, digital bank, crypto, exchange, ledger, KYC]
+  lead_with: [payment and ledger systems, correctness under load, security and compliance by design, fast iteration]
+  mirror_terms: [transaction processing, reconciliation, ledger, fraud prevention, onboarding, compliance]
+  surface: [transaction volume, latency, failure rates reduced, products launched]
+  tone: growth-stage builder; correctness and speed together
+
+consulting:
+  signals: [consultancy, agency, systems integrator, client delivery, outsourcing, digital transformation]
+  lead_with: [client delivery, breadth across stacks, requirements to production, clear communication]
+  mirror_terms: [client, delivery, solution, stakeholders, requirements, transformation]
+  surface: [projects delivered, client outcomes, technologies used, teams led on engagements]
+  tone: structured and client-ready; outcomes over activity
+
+healthcare:
+  signals: [health, clinical, patient, EHR, HL7, FHIR, medical device, pharma, biotech]
+  lead_with: [reliable and safe systems, data privacy, interoperability and integrations, regulatory compliance]
+  mirror_terms: [patient data, interoperability, privacy, validation, quality, compliance]
+  surface: [integrations built, users or patients served, audits and validations passed, reliability gains]
+  tone: careful and precise; safety and privacy first
+
+public_sector:
+  signals: [government, agency, GovTech, citizen services, public sector, defence, ministry]
+  lead_with: [accessible and reliable public services, security, legacy modernization, open standards]
+  mirror_terms: [digital services, accessibility, open source, security, modernization, user needs]
+  surface: [services launched, citizens or users served, legacy systems replaced, accessibility outcomes]
+  tone: formal and user-centred; public outcomes
+
+telco:
+  signals: [telecom, operator, mobile network, carrier, 5G, OSS, BSS, network automation]
+  lead_with: [high-availability distributed systems, network software, automation, operator scale]
+  mirror_terms: [carrier-grade, OSS/BSS, network automation, availability, subscribers]
+  surface: [subscriber scale, uptime, automation built, rollouts]
+  tone: operational scale and reliability
+
+retail:
+  signals: [e-commerce, marketplace, retail, consumer, checkout, storefront, omnichannel]
+  lead_with: [customer-facing features, conversion and performance, peak-traffic reliability, experimentation]
+  mirror_terms: [conversion, checkout, A/B testing, personalization, peak traffic, customer experience]
+  surface: [conversion or revenue effects, page speed, peak-event results, features launched]
+  tone: commercial and customer-centred
+
+industrial:
+  signals: [manufacturing, embedded, IoT, automotive, energy, robotics, logistics, firmware]
+  lead_with: [embedded and real-time systems, safety and reliability, hardware integration, operational data]
+  mirror_terms: [embedded, firmware, real-time, safety-critical, telemetry, IoT]
+  surface: [devices or sites supported, reliability and safety results, efficiency gains]
+  tone: practical and engineering-precise
+
+education:
+  signals: [edtech, university, research, learning platform, nonprofit, foundation]
+  lead_with: [learner-facing products, research software, accessibility, mission impact]
+  mirror_terms: [learners, research, accessibility, platform, open source, mission]
+  surface: [learners or researchers served, tools built, publications or grants supported]
+  tone: mission-driven and clear

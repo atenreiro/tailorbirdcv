@@ -1,0 +1,23 @@
+# Project Management pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [head of PMO, PMO lead, programme director, portfolio manager, delivery director, manage project managers]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [portfolios and programmes owned, delivery governance built, budgets, teams of project managers led, outcomes]
+  bullet_style: lead with portfolio scope (value, number of projects, team) then outcome; keep 1–2 hands-on delivery bullets
+  keep: [portfolio and budget sizes, number of projects, governance introduced, people developed]
+
+ic:
+  detect: [project manager, senior project manager, delivery manager, scrum master, project lead, PMP, PRINCE2]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [projects delivered on time and budget, scale and complexity, risks handled, stakeholders aligned, methods used]
+  bullet_style: lead with the project, its scale (budget, team, timeline) and the delivered result
+  keep: [budgets, timelines, team sizes, methodologies actually used, stakeholder levels]
+  note: name the methodology only where the evidence does (agile, waterfall, PRINCE2, PMP)
+
+hybrid:
+  detect: [senior programme manager, lead project manager, programme manager, delivery lead]
+  headline_tracks: [hybrid, manager, ic]
+  highlights_order: [programmes delivered with measurable results, project managers coordinated, governance, scale]
+  bullet_style: alternate delivered-it and led-it evidence
+  keep: [programme sizes, teams coordinated, outcomes, coaching]

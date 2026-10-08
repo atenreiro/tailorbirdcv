@@ -1,0 +1,23 @@
+# Software Engineering pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [engineering manager, head of engineering, director of engineering, VP engineering, manage engineers, hiring, direct reports]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [teams built and grown, delivery and reliability outcomes, engineering practices improved, technical strategy, people developed]
+  bullet_style: lead with scope (team size, systems owned) then outcome; keep 1–2 technical bullets for credibility
+  keep: [team sizes, hiring, delivery and reliability metrics, practices introduced, promotions]
+
+ic:
+  detect: [software engineer, senior engineer, staff engineer, principal engineer, developer, backend, frontend, full stack, SRE]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [systems designed and shipped, performance, reliability or cost gains, technical depth, scale, open source]
+  bullet_style: lead with what was built, the technology used and its measurable effect; compress people-management bullets
+  keep: [languages, frameworks and platforms actually used, scale numbers, design ownership]
+  note: staff and principal roles value influence too — keep design reviews, mentoring and cross-team technical leadership
+
+hybrid:
+  detect: [tech lead, lead engineer, technical lead, player-coach, team lead]
+  headline_tracks: [hybrid, ic, manager]
+  highlights_order: [systems built with measurable impact, small-team leadership, technical direction, delivery]
+  bullet_style: alternate built-it and led-it evidence; make the hands-on balance explicit
+  keep: [team sizes, hands-on technology, architecture decisions, coaching]

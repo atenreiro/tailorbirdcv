@@ -476,3 +476,26 @@ def test_a_keychain_that_refuses_is_not_no_key(monkeypatch):
     monkeypatch.setattr(apikey, "backend_status", lambda: {"available": True, "backend": "macOS Keychain"})
     assert apikey.get("openai") == (None, "locked")
     assert keyring  # imported for the fixture's backend
+
+
+def test_a_highlight_that_restates_a_bullet_is_flagged(env):
+    _, store, _ = env
+    t = copy.deepcopy(TAILORED)
+    t["highlights"].append({"text": "Rebuilt Splunk detection logic, cutting false positives by over 65%.",
+                            "sources": ["acme-bank.a1"]})
+    report = factcheck.check(store.profile(), TailoredResume.model_validate(t))
+    assert report.ok                                              # a warning, never a blocker
+    assert [w.where for w in report.warnings if "repeats" in w.message] == ["highlights[1]"]
+    assert any("Highlight 2 repeats Acme Bank's bullet 1: keep the fact in one place" in w.message for w in report.warnings)
+    plain = factcheck.check(store.profile(), TailoredResume.model_validate(TAILORED))
+    assert not any("repeats" in w.message for w in plain.warnings)  # a loose echo with other words isn't flagged
+
+
+def test_compose_and_trim_prompts_ask_for_no_repeats_and_kept_outcomes(env):
+    _, store, _ = env
+    profile = store.profile()
+    compose = ai._compose_prompt(profile, ANALYSIS, None, "")
+    trim = ai._trim_prompt(profile, TAILORED, 120, 100, ANALYSIS)
+    assert "Never restate a bullet as a highlight" in compose
+    assert "drop a bullet that restates a highlight" in trim
+    assert "cut the wording about duties and context before its outcome" in trim

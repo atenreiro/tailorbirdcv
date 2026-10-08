@@ -731,6 +731,24 @@ def evidence_overlap(text: str, sources: str) -> tuple[float, int]:
     return sum(w in have for w in words) / len(words), len(words)
 
 
+# A highlight that restates a bullet spends the reader's attention twice on one fact. Measured on real tailored
+# resumes: a highlight and the bullet it restates share 55–100% of their meaningful words (in one direction or
+# the other); unrelated lines share under 15%.
+REPEAT_MIN = 0.55
+
+
+def repeated_highlights(t: TailoredResume) -> list[tuple[int, int, int]]:
+    """(highlight index, experience index, bullet index) for each highlight that restates a bullet."""
+    out = []
+    for h, hl in enumerate(t.highlights):
+        for i, tr in enumerate(t.experience):
+            for j, b in enumerate(tr.bullets):
+                (a, n), (c, m) = evidence_overlap(hl.text, b.text), evidence_overlap(b.text, hl.text)
+                if min(n, m) >= OVERLAP_MIN_WORDS and max(a, c) >= REPEAT_MIN:
+                    out.append((h, i, j))
+    return out
+
+
 # Text addressed to whoever (or whatever) reads the resume, the way a job description could try to plant it:
 # never a fact from the user's evidence (unless the evidence itself says it).
 INJECTION_RE = re.compile(
@@ -1131,6 +1149,10 @@ class FactChecker:
                 elif key == "projects" and entry.text:
                     self.check_claim(entry.text, f"{key}[{j}]", report, allowed={entry.id})
 
+        for h, i, j in repeated_highlights(t):
+            role = p.role(t.experience[i].role) if t.experience[i].role in role_ids else None
+            report.warn(f"highlights[{h}]", f"Highlight {h + 1} repeats {role.employer if role else 'a role'}'s "
+                                            f"bullet {j + 1}: keep the fact in one place")
         return report
 
 

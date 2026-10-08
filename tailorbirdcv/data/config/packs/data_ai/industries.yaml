@@ -1,0 +1,73 @@
+# Data & AI pack — industry lenses. EMPHASIS heuristics only. These are never facts: they only decide what
+# to surface first and which vocabulary to mirror when the profile already has the evidence.
+# Never add a claim because a lens mentions it.
+
+banking:
+  signals: [bank, credit risk, trading, quant, regulatory reporting, model risk, insurance, AML]
+  lead_with: [models and data in regulated use, model risk and governance, data quality, business decisions supported]
+  mirror_terms: [model risk, validation, data governance, regulatory reporting, explainability, data lineage]
+  surface: [models deployed, losses or risk reduced, reports automated, data quality improved]
+  tone: precise and controlled; accuracy and governance
+
+tech:
+  signals: [SaaS, platform, product analytics, machine learning, LLM, recommendation, search, data platform]
+  lead_with: [models and pipelines in production, measurable product impact, scale, experimentation]
+  mirror_terms: [production ML, data pipelines, experimentation, A/B testing, LLM, MLOps, latency]
+  surface: [metric lift from models, data volumes, latency and cost, experiments run]
+  tone: builder voice; production impact over research
+
+fintech:
+  signals: [payments, lending, fraud, credit scoring, digital bank, crypto, KYC, AML]
+  lead_with: [fraud and credit models, real-time decisioning, measurable loss and approval effects, compliance]
+  mirror_terms: [fraud detection, credit scoring, real-time, decisioning, false positives, compliance]
+  surface: [fraud losses reduced, approval rates, false positives cut, volumes scored]
+  tone: metric-driven and controlled
+
+consulting:
+  signals: [advisory, consulting, analytics consultancy, client-facing, transformation]
+  lead_with: [client analytics and AI delivered, business cases, executive communication, data strategy]
+  mirror_terms: [data strategy, client, use cases, value, roadmap, insights]
+  surface: [client value delivered, use cases shipped, engagements led]
+  tone: structured and client-ready
+
+healthcare:
+  signals: [health, clinical, patient, pharma, biotech, genomics, medical imaging, real-world evidence]
+  lead_with: [clinical or research models, data privacy, validation, outcomes]
+  mirror_terms: [clinical data, validation, privacy, real-world evidence, outcomes, regulatory]
+  surface: [studies or patients covered, model performance validated, publications]
+  tone: careful and evidence-based
+
+public_sector:
+  signals: [government, agency, statistics, policy, public sector, defence]
+  lead_with: [evidence for policy, data platforms, privacy and ethics, public outcomes]
+  mirror_terms: [evidence-based policy, open data, privacy, responsible AI, data platform]
+  surface: [decisions informed, datasets published, services improved]
+  tone: formal and transparent
+
+telco:
+  signals: [telecom, operator, network analytics, churn, subscribers, 5G]
+  lead_with: [churn and network models, large-scale data, revenue effects, automation]
+  mirror_terms: [churn, network analytics, subscribers, ARPU, anomaly detection]
+  surface: [churn reduced, subscribers covered, network issues predicted]
+  tone: commercial and scale-aware
+
+retail:
+  signals: [e-commerce, retail, marketplace, recommendation, pricing, demand forecasting, personalization]
+  lead_with: [recommendation, pricing and forecasting models, revenue and conversion effects, experimentation]
+  mirror_terms: [personalization, demand forecasting, pricing, recommendation, A/B testing, conversion]
+  surface: [revenue or conversion lift, forecast accuracy, stock or waste reduced]
+  tone: commercial and metric-driven
+
+industrial:
+  signals: [manufacturing, predictive maintenance, IoT, energy, logistics, supply chain, computer vision]
+  lead_with: [predictive maintenance and optimization, sensor data, operational savings, reliability]
+  mirror_terms: [predictive maintenance, optimization, sensor data, forecasting, computer vision]
+  surface: [downtime avoided, costs saved, forecast accuracy, sites covered]
+  tone: practical and results-driven
+
+education:
+  signals: [university, research, edtech, learning analytics, nonprofit, foundation]
+  lead_with: [research and publications, learning analytics, open data and tools, mission impact]
+  mirror_terms: [research, publications, learning analytics, open science, mission]
+  surface: [publications, datasets and tools released, learners reached, grants]
+  tone: rigorous and clear

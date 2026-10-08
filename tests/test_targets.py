@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tailorbirdcv import ai, themes
+from tailorbirdcv import ai, importer, themes
 from tailorbirdcv.factcheck import is_common_word
 from tailorbirdcv.api import create_app
 from tailorbirdcv.engine import FakeEngine
@@ -131,3 +131,34 @@ def test_analysis_entities_the_jd_does_not_contain_are_unescaped():
                               "note": "&lt;b&gt; as written", "n": 3}, jd)
     assert out == {"role": "Head of Detection & Response", "keywords": [{"term": "R&D"}],
                    "note": "&lt;b&gt; as written", "n": 3}
+
+
+def test_every_domain_pack_is_complete():
+    """Each pack frames all three tracks and every industry it lists the same way."""
+    for pack in ai.PACKS[1:]:
+        folder = ai.paths.DATA / "config" / "packs" / pack
+        industries = yaml.safe_load((folder / "industries.yaml").read_text(encoding="utf-8"))
+        tracks = yaml.safe_load((folder / "tracks.yaml").read_text(encoding="utf-8"))
+        assert set(tracks) == {"manager", "ic", "hybrid"}, pack
+        for name, t in tracks.items():
+            assert {"detect", "headline_tracks", "highlights_order", "bullet_style", "keep"} <= set(t), (pack, name)
+        for name, lens in industries.items():
+            assert set(lens) == {"signals", "lead_with", "mirror_terms", "surface", "tone"}, (pack, name)
+        ai.use_context(ai.Context(pack=pack))
+        assert ai.industries() == list(industries)
+    ai.use_context(ai.Context())
+    assert sorted(p.name for p in (ai.paths.DATA / "config" / "packs").iterdir()) == sorted(ai.PACKS[1:])
+
+
+@pytest.mark.parametrize("field, roles, pack", [
+    ("Cybersecurity", "", "cybersecurity"), ("Security engineering", "", "cybersecurity"),
+    ("Software engineering", "", "software_engineering"), ("Backend development", "", "software_engineering"),
+    ("Technical program management", "", "technical_program_management"),
+    ("Product management", "", "product_management"), ("Project management", "", "project_management"),
+    ("Data science", "", "data_ai"), ("Machine learning", "", "data_ai"),
+    ("Civil engineering", "", None), ("Nursing", "", None),
+    ("", "Senior TPM roles at cloud companies", "technical_program_management"),
+])
+def test_the_cv_suggests_a_domain_pack(field, roles, pack):
+    assert importer.suggested_pack(field, roles) == pack
+    assert importer.suggested_targets({"field": field, "roles": roles}).get("pack") == pack

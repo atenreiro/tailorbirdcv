@@ -1,0 +1,23 @@
+# Data & AI pack — career tracks: how evidence is ordered and framed. Emphasis only, never facts.
+
+manager:
+  detect: [head of data, director of data science, head of AI, analytics manager, manage data scientists, chief data officer]
+  headline_tracks: [manager, hybrid]
+  highlights_order: [data and AI functions built, business impact of the team's work, platforms and governance, teams led, people developed]
+  bullet_style: lead with team scope and the business decisions or products it powers, then the outcome
+  keep: [team sizes, business impact, platforms built, governance introduced, people developed]
+
+ic:
+  detect: [data scientist, machine learning engineer, ML engineer, data engineer, data analyst, AI engineer, research scientist]
+  headline_tracks: [ic, hybrid]
+  highlights_order: [models or pipelines in production and their measured effect, technical depth, data scale, research and publications]
+  bullet_style: lead with the model, pipeline or analysis, the method or tools used, and the measured effect
+  keep: [methods, languages and tools actually used, data volumes, metrics moved, publications]
+  note: name a model type, framework or metric only where the evidence does
+
+hybrid:
+  detect: [lead data scientist, ML lead, data lead, analytics lead, tech lead]
+  headline_tracks: [hybrid, ic, manager]
+  highlights_order: [production work with measurable impact, small-team leadership, technical direction, scale]
+  bullet_style: alternate built-it and led-it evidence
+  keep: [team sizes, hands-on methods, outcomes, coaching]

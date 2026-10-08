@@ -219,9 +219,32 @@ def suggested_targets(raw) -> dict:
     out = {k: _clean(raw.get(k))[:limit] for k, limit in (("field", 80), ("seniority", 80), ("roles", 240),
                                                           ("region", 80))}
     out["spelling"] = raw.get("spelling") if raw.get("spelling") in ("US", "UK") else "US"
-    if "cyber" in out["field"].lower() or "security" in out["field"].lower():
-        out["pack"] = "cybersecurity"
+    if pack := suggested_pack(out["field"], out["roles"]):
+        out["pack"] = pack
     return out
+
+
+# The field (or target roles) the CV suggests → the domain pack to start with; the first match wins, so the
+# more specific fields come first ("security engineer" is cybersecurity, "technical program manager" isn't a
+# project manager). The user can always change it in Settings.
+_PACK_HINTS = [
+    ("cybersecurity", r"cyber|security|infosec"),
+    ("technical_program_management", r"technical program|engineering program|\btpm\b"),
+    ("product_management", r"product manag|product owner|\bproduct lead"),
+    ("project_management", r"project manag|programme manag|program manag|\bpmo\b|delivery manag|scrum master"),
+    ("data_ai", r"\bdata\b|machine learning|\bml\b|\bai\b|artificial intelligence|analytics"),
+    ("software_engineering", r"software|developer|full.?stack|back.?end|front.?end|\bsre\b|devops|site reliability"),
+]
+
+
+def suggested_pack(field: str, roles: str = "") -> str | None:
+    for pack, pattern in _PACK_HINTS:
+        if re.search(pattern, field, re.I):
+            return pack
+    for pack, pattern in _PACK_HINTS:  # nothing in the field: try the roles they're aiming for
+        if re.search(pattern, roles, re.I):
+            return pack
+    return None
 
 
 # --------------------------------------------------------------------------- ids + verification

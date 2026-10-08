@@ -53,6 +53,7 @@ The schema is in `tailorbirdcv/schema.py`; `<data folder>/source/base_tailored.y
   - Merge or drop low-relevance bullets.
   - You may surface profile evidence with `in_base_resume: false`.
   - Older roles get fewer bullets, but every role that ended in the last 10 years and has evidence keeps at least one (`check` warns otherwise).
+  - Never restate a bullet as a highlight: a fact lives in one place (`check` warns when a highlight repeats a bullet). When trimming, cut duty wording before outcomes.
 - Each claim's `sources` must contain everything it relies on (numbers, tools, names). Citing a role-bound id also allows that role's employer and title.
 - Apply the active industry lens (`lead_with`, `mirror_terms`, tone) and track rules (ordering, bullet style) as emphasis only.
 

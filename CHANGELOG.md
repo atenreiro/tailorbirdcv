@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Five new domain packs in Settings → Your targets: **Software engineering**, **Data & AI**, **Product management**, **Project management** and **Technical program management** (alongside General and Cybersecurity). Each tells the AI what employers in that field look for and which words to mirror, for every industry and for manager, hands-on and player-coach roles. They only change emphasis, never facts. The setup wizard picks one from your CV's field.
+- Resumes no longer say the same thing twice. The AI is told not to restate a bullet as a highlight (and a trim drops such a bullet first), and Review warns when a highlight repeats a bullet ("Highlight 1 repeats JPMorgan Chase's bullet 2").
+- When the AI trims a resume to fit, it now cuts descriptions of duties before results: numbers, scale and who uses the work stay.
 - The **Funnel** page is now called **Results** (how far your applications got: built, applied, interview, offer). Old `/funnel` links still open it.
 
 ## 0.2.5 — 2026-10-07

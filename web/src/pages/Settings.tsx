@@ -82,7 +82,11 @@ function EngineCard({ e, chosen, effective, busy, platform, onChoose }: {
   )
 }
 
-const PACK_NAMES: Record<string, string> = { general: 'General', cybersecurity: 'Cybersecurity' }
+const PACK_NAMES: Record<string, string> = {
+  general: 'General', cybersecurity: 'Cybersecurity', software_engineering: 'Software engineering',
+  data_ai: 'Data & AI', product_management: 'Product management', project_management: 'Project management',
+  technical_program_management: 'Technical program management',
+}
 
 function Segmented<T extends string | number>({ label: name, options, value, onChange }: {
   label: string; options: [T, string][]; value: T; onChange: (v: T) => void
