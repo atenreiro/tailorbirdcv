@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6 — 2026-10-08
 - Company icons for jobs from LinkedIn and other job boards, and for pasted job descriptions: the job analysis now names the company's official website when the AI is certain of it (never for recruitment agencies or undisclosed clients), and Eightfold links' own domain is used. Any website a board, posting or the AI names is only used if its homepage names the company, so a wrong or agency icon is never shown: no match, no icon. No search engine or logo service is ever asked.
 - Hiring-manager scores now read as **Strong / Good / Fair / Weak** with a small meter and the reason for each, instead of 1–10. The AI's scores move a point between runs, so a change is shown only when it crosses a band ("↑ from Fair"); the exact number is still in the tooltip.
 - Applications: "8 fixes open" (it said "fixs" to screen readers).
