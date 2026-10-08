@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.8 — 2026-10-08
 - Company icons for older applications: those analysed before the analysis named the company's website get it looked up once (one small AI call for all of them, company names only), then the icon is fetched with the usual checks. Short company names like DBS now match their website (dbs.com).
 
 ## 0.2.7 — 2026-10-08
