@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type Application, type AppSummary, type Outcome, type ScoreKey } from '../api'
+import { api, type Application, type AppSummary, type Outcome } from '../api'
 import { cx, OUTCOME_GROUPS, OUTCOMES, statusLabel, useTitle } from '../lib'
 import { useSettings } from '../settings'
 import { ErrorNote, Favicon, Spinner, StatusPill, StatusSelect } from '../ui'
 import { changeStatus, sentAsApplied } from '../status'
 import { setPendingSave } from '../unsaved'
+import { ScoreBands } from './ScoreBands'
 import { useIdentifyPdf } from './useIdentifyPdf'
 
 type Stage = 'progress' | 'ready' | 'flight' | 'closed'
@@ -29,9 +30,8 @@ const TONE: Record<Tone, [string, string, string]> = {
 // progress meter segment colours
 const BAR = { ok: 'bg-ok', warn: 'bg-[#c47a00]', act: 'bg-accent', bad: 'bg-bad', off: 'bg-rule' }
 const VERDICT = { interview: 'text-ok', borderline: 'text-warn', pass: 'text-bad' }
-const SCORES: ScoreKey[] = ['fit', 'impact', 'clarity', 'seniority']
 
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : /(s|x|ch|sh)$/.test(w) ? 'es' : 's'}`
 const short = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : '')
 const hasPdf = (a: AppSummary) => a.files.some((f) => f.endsWith('.pdf'))
 const recent = (x: AppSummary, y: AppSummary) => (y.updated ?? '').localeCompare(x.updated ?? '') || (y.created ?? '').localeCompare(x.created ?? '')
@@ -639,21 +639,7 @@ function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, 
             <span className={cx('font-display text-[32px] capitalize leading-none', VERDICT[hm.latest.verdict.decision])}>{hm.latest.verdict.decision}</span>
             <p className="text-[15px] leading-[1.45] text-body text-pretty">“{hm.latest.verdict.reason}”</p>
             {hm.stale && <p className="text-[13px] text-[#7a4700]">The resume changed since this read. Re-run it in Review for fresh scores.</p>}
-            <div className="grid grid-cols-4 rounded-[10px] border border-line">
-              {SCORES.map((k, i) => {
-                const v = hm.latest.scores[k].score, prev = hm.previous_scores?.[k]?.score
-                const d = prev === undefined ? 0 : v - prev
-                return (
-                  <div key={k} title={hm.latest.scores[k].why} className={cx('flex flex-col gap-1 p-3', i > 0 && 'shadow-[inset_1px_0_0_var(--color-line)]')}>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-faint">{k}</span>
-                    <span className="flex items-baseline gap-1.5">
-                      <span className="font-display text-[28px] leading-none text-ink">{v}</span>
-                      {d !== 0 && <span className={cx('font-mono text-[11px]', d > 0 ? 'text-ok' : 'text-bad')}>{d > 0 ? `+${d}` : d}</span>}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+            <ScoreBands scores={hm.latest.scores} previous={hm.previous_scores} />
           </div>
         )}
 

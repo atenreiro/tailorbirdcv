@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Hiring-manager scores now read as **Strong / Good / Fair / Weak** with a small meter and the reason for each, instead of 1–10. The AI's scores move a point between runs, so a change is shown only when it crosses a band ("↑ from Fair"); the exact number is still in the tooltip.
+- Applications: "8 fixes open" (it said "fixs" to screen readers).
 - Tested end to end with other people's CVs (a UK nurse, a Berlin engineer, a new graduate, a TPM), which fixed:
   - Importing a CV no longer sometimes names you "Your Name": the AI is told to keep the hidden-name placeholder, and the name you typed is used if it drops it anyway.
   - The hiring-manager review now sees your education, certificates, projects and other sections, so it no longer reports a degree or certificate that's on the page as missing.

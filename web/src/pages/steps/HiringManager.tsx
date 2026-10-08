@@ -1,4 +1,5 @@
-import type { Critique, CritiqueIssue, ScoreKey } from '../../api'
+import type { Critique, CritiqueIssue } from '../../api'
+import { ScoreBands } from '../ScoreBands'
 import { openIssues } from './critique'
 import { cx } from '../../lib'
 
@@ -14,7 +15,6 @@ const VERDICT = {
   borderline: { label: 'Borderline', cls: 'border-warn text-warn' },
   pass: { label: 'Would pass', cls: 'border-bad text-bad' },
 }
-const SCORE_LABEL: Record<ScoreKey, string> = { fit: 'Fit to must-haves', impact: 'Impact', clarity: 'Clarity', seniority: 'Seniority signal' }
 
 export interface ReviewActions {
   decide: (issue: CritiqueIssue, decision: 'accepted' | 'rejected') => void
@@ -79,26 +79,7 @@ export function HiringManagerCard({ critique, canRun, dirty, onRun, onAcceptAll,
         <>
           {critique!.stale && <p className="mt-2 rounded-[5px] bg-[#f6ead2] px-2 py-1 text-xs text-warn">The draft changed since this review. Re-run it for fresh scores.</p>}
           <p className="mt-2 text-[13px] text-body">{r.verdict.reason}</p>
-          <dl className="mt-3 space-y-1.5">
-            {(Object.keys(SCORE_LABEL) as ScoreKey[]).map((k) => {
-              const prev = critique!.previous_scores?.[k]?.score
-              const delta = prev === undefined ? 0 : r.scores[k].score - prev
-              return (
-                <div key={k} title={r.scores[k].why}>
-                  <div className="flex justify-between text-xs text-muted">
-                    <dt>{SCORE_LABEL[k]}</dt>
-                    <dd className="font-mono">
-                      {r.scores[k].score}/10
-                      {delta !== 0 && <span className={delta > 0 ? 'ml-1 text-ok' : 'ml-1 text-bad'}>{delta > 0 ? `+${delta}` : delta}</span>}
-                    </dd>
-                  </div>
-                  <div className="mt-[3px] h-1 overflow-hidden rounded-full bg-paper">
-                    <div className="h-full rounded-full bg-accent" style={{ width: `${r.scores[k].score * 10}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-          </dl>
+          <ScoreBands className="mt-3" scores={r.scores} previous={critique!.previous_scores} />
           <div className="mt-4 border-t border-rule pt-3 text-xs">
             <p className="font-semibold uppercase tracking-[0.06em] text-muted">Recruiter’s 6-second skim</p>
             <p className="mt-1 text-body">{r.skim.takeaway}</p>
