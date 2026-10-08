@@ -111,17 +111,19 @@ def _name_words(company: str) -> list[str]:
 
 
 def address_names_company(company: str, site: str) -> bool:
-    """Whether the site's address itself names the company: its main name word (4+ letters) is in it, or the
-    name's initials are its first label ("Oversea-Chinese Banking Corporation" → ocbc.com, "Standard Chartered"
-    → sc.com). An undisclosed or generic name never matches."""
+    """Whether the site's address itself names the company: its main name word is its first label ("DBS Bank" →
+    dbs.com, any length) or is in it (4+ letters: "Thales" → thalesgroup.com), or the name's initials are its first
+    label ("Oversea-Chinese Banking Corporation" → ocbc.com, "Standard Chartered" → sc.com). An undisclosed or
+    generic name never matches."""
     words = _name_words(company)
     distinctive = [w for w in words if w not in _GENERIC and len(w) >= 2]
     if not distinctive:
         return False
     host = _host(site).removeprefix("www.")
     initials = "".join(w[0] for w in words if w not in ("the", "and", "of", "via", "by", "for"))
-    return (len(distinctive[0]) >= 4 and distinctive[0] in host.replace("-", "")) \
-        or (len(initials) >= 2 and host.split(".")[0] == initials)
+    label = host.split(".")[0]
+    return label == distinctive[0] or (len(distinctive[0]) >= 4 and distinctive[0] in host.replace("-", "")) \
+        or (len(initials) >= 2 and label == initials)
 
 
 def matches_company(company: str, site: str, home: str) -> bool:

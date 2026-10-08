@@ -960,12 +960,48 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
                 raise _engine_call(e)
         return insights.view(store)
 
+    website_lookup: set = set()  # the running lookup (at most one)
+
+    def queue_website_lookup(apps: list[dict]) -> None:
+        """Applications with no icon whose analysis predates `company_website` (and pasted ones): look their
+        websites up with one AI call, once per application, then fetch the icons the usual, checked way."""
+        if website_lookup or not store.settings()["company_icons"]:
+            return
+        jobs = []
+        for a in apps:
+            if a.get("broken") or a.get("favicon") not in ("", None) or a.get("favicon_lookup") or a["id"] in favicon_pending \
+                    or (a.get("url") and "favicon" not in a):  # never fetched yet: the usual fetch comes first
+                continue
+            analysis = store.analysis(a["id"]) or {}
+            if analysis and "company_website" not in analysis:
+                jobs.append((a["id"], a.get("url") or "", analysis.get("company") or a.get("company") or ""))
+        if not jobs:
+            return
+
+        async def lookup():
+            try:
+                sites = await ai.company_websites(engine, [c for _, _, c in jobs])
+            except Exception as e:  # noqa: BLE001 — an icon is never worth an error; asked again next time
+                log.debug("TailorbirdCV: company website lookup failed (%s)", e)
+                return
+            fetch = []
+            for app_id, url, company in jobs:
+                await asyncio.to_thread(store.note_website_lookup, app_id)
+                website = favicon.clean_site(sites.get(" ".join(company.split()))) or ""
+                if website or favicon.board_domain(url):
+                    fetch.append((app_id, url, [], company, website))
+            queue_favicons(fetch)
+        task = asyncio.get_running_loop().create_task(lookup())  # keeps this request's context (targets, privacy)
+        website_lookup.add(task)
+        task.add_done_callback(website_lookup.discard)
+
     @api.get("/applications")
     async def list_applications():
         apps = await asyncio.to_thread(list_rows)
         # Applications from before icons existed (or made while they were off) get theirs now.
         queue_favicons([(a["id"], a["url"], [], a.get("company") or "", "") for a in apps
                         if a.get("url") and "favicon" not in a and not a.get("broken")])
+        queue_website_lookup(apps)
         return apps
 
     def list_rows():

@@ -374,6 +374,56 @@ def test_a_planted_website_is_never_contacted(public_dns, monkeypatch):
                                                ("Oversea-Chinese Banking Corporation", "https://ocbc.example", True),
                                                ("PayPal", "https://www.paypal.example", True),
                                                ("PayPal", "https://tracker.example", False),
+                                               ("DBS Bank Ltd", "https://www.dbs.example", True),  # a short name: whole label
+                                               ("DBS Bank Ltd", "https://www.adbsx.example", False),  # …never inside one
                                                ("Confidential client", "https://client.example", False)])
 def test_an_address_names_the_company(company, site, ok):
     assert favicon.address_names_company(company, site) is ok
+
+
+def test_older_applications_without_an_icon_get_one_website_lookup(tmp_path, monkeypatch):
+    """Analysed before the analysis named the company's website: one AI call for all of them, once each."""
+    private = tmp_path / "private"
+    private.mkdir()
+    shutil.copy(FIX / "profile.yaml", private / "profile.yaml")
+    store, fetched, asked = Store(private), [], []
+
+    async def record(job_url, sites=None, client=None, company="", website=""):
+        fetched.append((job_url, company, website))
+        return (PNG, "png") if website else None
+    monkeypatch.setattr(favicon, "fetch", record)
+
+    def websites(prompt):
+        asked.append(prompt)
+        return {"sites": [{"company": "Northwind", "website": "https://northwind.example"},
+                          {"company": "Undisclosed client (via Agency)", "website": ""}]}
+    client = client_for(create_app(store, FakeEngine({"company_websites": websites})))
+    with client:
+        ids = []
+        for company, url in (("Northwind", "https://www.linkedin.com/jobs/view/1"), ("Undisclosed client (via Agency)", "")):
+            app_id = client.post("/api/applications", json={"jd": JD, "url": url or None, "company": company,
+                                                            "role": "Engineer"}).json()["id"]
+            store.save_analysis(app_id, {"company": company, "track": "ic", "requirements": []})  # no company_website
+            store.save_favicon(app_id, None)  # checked before: nothing found
+            ids.append(app_id)
+        client.get("/api/applications")
+        assert wait_for(lambda: store.meta(ids[0]).get("favicon") == "favicon.png")
+        assert wait_for(lambda: all(store.meta(i).get("favicon_lookup") for i in ids))
+        client.get("/api/applications")  # asked once
+        time.sleep(0.2)
+    assert len(asked) == 1 and "<<COMPANIES-" in asked[0]
+    assert ("https://www.linkedin.com/jobs/view/1", "Northwind", "https://northwind.example") in fetched
+    assert not any(c.startswith("Undisclosed") for _, c, _ in fetched)  # no website, nothing fetched
+
+
+def test_no_website_lookup_when_icons_are_off(env):
+    client, store, calls = env
+    with client:
+        app_id = new_app(client, "https://www.linkedin.com/jobs/view/2")
+        assert wait_for(lambda: "favicon" in store.meta(app_id))
+        store.save_analysis(app_id, {"company": "Northwind", "track": "ic", "requirements": []})
+        store.save_favicon(app_id, None)
+        client.put("/api/settings", json={"company_icons": False})
+        client.get("/api/applications")
+        time.sleep(0.2)
+    assert "favicon_lookup" not in store.meta(app_id)

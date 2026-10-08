@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Company icons for older applications: those analysed before the analysis named the company's website get it looked up once (one small AI call for all of them, company names only), then the icon is fetched with the usual checks. Short company names like DBS now match their website (dbs.com).
+
 ## 0.2.7 — 2026-10-08
 - **Results → What to learn next:** what your target jobs keep asking for that your profile doesn't show, or only partly, grouped by the need behind it ("Third-party and supply chain cyber risk: 3 of 12 applications, must-have in 3, you said no experience on 1 Oct"). The AI groups the requirements once, when you ask (one call, kept until newer analyses arrive); TailorbirdCV does the counting, so the page's range and track filters apply. Click a theme to see exactly what each job asked. Two lists: what's **missing** from your profile in two or more applications (ranked by that: worth learning), and what it shows only **partly** (worth describing better). Gaps you've since answered with approved evidence no longer count, theme names stay the same across refreshes, and applications not sent yet whose analysis predates your latest evidence changes are listed for re-analysis.
 

@@ -1441,6 +1441,16 @@ class Store:
         except AppNotFound:
             pass  # deleted while its icon was being fetched
 
+    def note_website_lookup(self, app_id: str) -> None:
+        """Record that the company's website was looked up for its icon (so it's asked once). Bookkeeping, not
+        activity: "updated" stays as it was."""
+        try:
+            with _LOCK:
+                folder = self.app_path(app_id)
+                _write_json_atomic(folder / "meta.json", {**self.meta(app_id), "favicon_lookup": f"{dt.date.today():%Y-%m-%d}"})
+        except AppNotFound:
+            pass
+
     def files(self, app_id: str) -> list[str]:
         """Every built document (resume and cover letter)."""
         path = self.app_path(app_id)  # never Word's "~$" lock file or hidden files
