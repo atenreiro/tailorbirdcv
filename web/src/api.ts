@@ -173,6 +173,11 @@ export interface AppSummary extends Meta {
   reached?: 'built' | 'applied' | 'interview' | 'offer' | null; reached_at?: string | null
   task?: TaskView | null
 }
+/** Results → Recurring gaps: one requirement of one application, as grouped into a theme (insights.py). */
+/** no_experience: the date the user said they have none ("yes" when the date isn't known), or null. */
+export interface GapItem { app_id: string; text: string; priority: 'must' | 'nice'; status: 'gap' | 'partial'; no_experience: string | null }
+export interface GapTheme { label: string; items: GapItem[] }
+export interface GapsView { themes: GapTheme[] | null; created: string | null; stale: boolean; requirements: number; analysed: string[] }
 export interface EngineStatus { engine: string; ready: boolean; model?: string; detail: string }
 /** The AI engines (mirrors engine.ENGINES): two subscriptions through a local app, three API keys. */
 export type EngineId = 'claude-cli' | 'codex-cli' | 'anthropic-api' | 'openai-api' | 'openrouter-api'
@@ -356,6 +361,8 @@ export const api = {
     req<{ id: string; evidence: Record<string, string> }>('POST', '/profile/evidence', e),
 
   applications: () => req<AppSummary[]>('GET', '/applications'),
+  gaps: () => req<GapsView>('GET', '/insights/gaps'),
+  groupGaps: () => req<GapsView>('POST', '/insights/gaps'),
   identifyPdf: (filename: string, data: string) => req<Identified>('POST', '/identify', { filename, data }),
   create: (b: { jd: string; url?: string; company?: string; role?: string }) =>
     req<{ id: string }>('POST', '/applications', b),

@@ -25,7 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import ai, ats, backup, critique as hm, factcheck, favicon, fit, oscompat, paths, pdf as pdfmod, themes, update
+from . import (ai, ats, backup, critique as hm, factcheck, favicon, fit, insights, oscompat, paths, pdf as pdfmod,
+               themes, update)
 from .jobfetch import FetchError, fetch_job
 from .apikey import PROVIDERS
 from .engine import DEFAULT_API_MODEL, ENGINES, Engine, EngineError, PrivateEngine, default_engine
@@ -939,6 +940,25 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         task = asyncio.get_running_loop().create_task(fetch_favicons(jobs))
         favicon_tasks.add(task)
         task.add_done_callback(favicon_tasks.discard)
+
+    # -- Results → Recurring gaps (insights.py) --------------------------------------------------------------------
+    grouping = asyncio.Lock()
+
+    @api.get("/insights/gaps")
+    def get_gaps():
+        return insights.view(store)
+
+    @api.post("/insights/gaps")
+    async def group_gaps():
+        """Group the analysed applications' gaps into themes (one AI call), keep it, and return the page's view."""
+        if grouping.locked():
+            raise HTTPException(409, {"code": "running", "message": "Already grouping your gaps."})
+        async with grouping:
+            try:
+                await asyncio.shield(insights.group_gaps(engine, store))
+            except EngineError as e:
+                raise _engine_call(e)
+        return insights.view(store)
 
     @api.get("/applications")
     async def list_applications():

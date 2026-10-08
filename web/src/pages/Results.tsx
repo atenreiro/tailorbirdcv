@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AppSummary } from '../api'
 import { cx, useTitle } from '../lib'
 import { ErrorNote, Spinner, StatusPill } from '../ui'
+import RecurringGaps from './RecurringGaps'
 
 type Stage = 'built' | 'applied' | 'interview' | 'offer'
 type Range = '30' | '90' | 'all'
@@ -52,10 +53,9 @@ export default function Results() {
   useEffect(() => { api.applications().then(setApps).catch((e) => setError(e.message)) }, [])
 
   // Applications enter the funnel once their CV is built; the range is by when they were started.
-  const inFunnel = useMemo(() => {
-    const days = RANGES.find((r) => r[0] === range)![2]
-    return (apps ?? []).filter((a) => a.reached && daysAgo(a.created) <= days && (track === 'all' || a.track === track))
-  }, [apps, range, track])
+  const inView = useCallback((a: AppSummary) => daysAgo(a.created) <= RANGES.find((r) => r[0] === range)![2]
+    && (track === 'all' || a.track === track), [range, track])
+  const inFunnel = useMemo(() => (apps ?? []).filter((a) => a.reached && inView(a)), [apps, inView])
   const counts = STAGES.map(([k]) => inFunnel.filter((a) => RANK[a.reached!] >= RANK[k]).length)
   const top = Math.max(1, counts[0])
   const hOf = (c: number) => Math.max(6, Math.round((c / top) * H))
@@ -178,6 +178,8 @@ export default function Results() {
           <p className="font-mono text-[11px] text-faint">Click a stage to list the applications that stopped there · newest first</p>
         </section>
       )}
+
+      {apps && <RecurringGaps apps={apps} inView={inView} filterText={`${rangeText}${trackText}`} />}
     </div>
   )
 }
