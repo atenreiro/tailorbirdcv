@@ -348,3 +348,32 @@ def test_after_the_analysis_the_named_website_is_tried_once(tmp_path, monkeypatc
         time.sleep(0.2)
     assert seen == [("https://www.linkedin.com/jobs/view/123", "Northwind", ""),
                     ("", "Northwind", "https://northwind.example")]
+
+
+def test_a_planted_website_is_never_contacted(public_dns, monkeypatch):
+    """The job description is untrusted and can steer the AI's company_website: unless the address itself names the
+    company, TailorbirdCV makes no request to it at all (no beacon), and named sites are never rendered."""
+    rendered = []
+
+    async def render(url):
+        rendered.append(url)
+        return jobfetch.Rendered("<html><head><title>Northwind</title></head></html>", "", url, [])
+    monkeypatch.setattr(jobfetch, "render_page", render)
+    found, seen = get("", {"https://tracker.example/": page("<title>Northwind</title>")},
+                      company="Northwind", website="https://tracker.example")
+    assert found is None and seen == [] and rendered == []
+    found, seen = get("https://boards.greenhouse.io/nw/jobs/1", {  # a site only its page title could vouch for…
+        "https://boards.greenhouse.io/nw/jobs/1": page('<script type="application/ld+json">{"@type": "JobPosting", '
+                                                      '"hiringOrganization": {"name": "Northwind", '
+                                                      '"url": "https://nwt-group.example"}}</script>'),
+        "https://nwt-group.example/": httpx.Response(200, content=b"")}, company="Northwind")
+    assert found is None and rendered == []  # …is never rendered in the browser when its page is empty
+
+
+@pytest.mark.parametrize("company, site, ok", [("Standard Chartered", "https://www.sc.example", True),
+                                               ("Oversea-Chinese Banking Corporation", "https://ocbc.example", True),
+                                               ("PayPal", "https://www.paypal.example", True),
+                                               ("PayPal", "https://tracker.example", False),
+                                               ("Confidential client", "https://client.example", False)])
+def test_an_address_names_the_company(company, site, ok):
+    assert favicon.address_names_company(company, site) is ok

@@ -110,19 +110,28 @@ def _name_words(company: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", name)
 
 
-def matches_company(company: str, site: str, home: str) -> bool:
-    """Whether the site at `site` (homepage HTML `home`) is this company's: its main name word is in the page's
-    title or site name, or in the address (4+ letters), or the name's initials are the address
-    ("Oversea-Chinese Banking Corporation" → ocbc.com). An undisclosed or generic name never matches."""
+def address_names_company(company: str, site: str) -> bool:
+    """Whether the site's address itself names the company: its main name word (4+ letters) is in it, or the
+    name's initials are its first label ("Oversea-Chinese Banking Corporation" → ocbc.com, "Standard Chartered"
+    → sc.com). An undisclosed or generic name never matches."""
     words = _name_words(company)
     distinctive = [w for w in words if w not in _GENERIC and len(w) >= 2]
     if not distinctive:
         return False
-    main = distinctive[0]
     host = _host(site).removeprefix("www.")
-    label = host.split(".")[0]
     initials = "".join(w[0] for w in words if w not in ("the", "and", "of", "via", "by", "for"))
-    if (len(main) >= 4 and main in host.replace("-", "")) or (len(initials) >= 3 and label == initials):
+    return (len(distinctive[0]) >= 4 and distinctive[0] in host.replace("-", "")) \
+        or (len(initials) >= 2 and host.split(".")[0] == initials)
+
+
+def matches_company(company: str, site: str, home: str) -> bool:
+    """Whether the site at `site` (homepage HTML `home`) is this company's: its address names it
+    (`address_names_company`), or its main name word is in the page's title or site name."""
+    distinctive = [w for w in _name_words(company) if w not in _GENERIC and len(w) >= 2]
+    if not distinctive:
+        return False
+    main = distinctive[0]
+    if address_names_company(company, site):
         return True
     soup = BeautifulSoup(home or "", "html.parser")
     names = [soup.title.get_text(" ") if soup.title else ""]
@@ -176,10 +185,12 @@ def sniff(data: bytes) -> str | None:
     return None
 
 
-async def candidates(job_url: str, sites: list[str], website: str, client: httpx.AsyncClient
-                     ) -> list[tuple[str, bool]]:
+async def candidates(job_url: str, sites: list[str], website: str, client: httpx.AsyncClient,
+                     company: str = "") -> list[tuple[str, bool]]:
     """(site, must it match the company?) in order of trust. The job link's own site needs no check (it's the
-    company's careers site); everything named by a board, the posting or the AI does."""
+    company's careers site); everything named by a board, the posting or the AI does. The AI's website is
+    steerable by the job description (untrusted), so it must name the company in its own address before
+    TailorbirdCV contacts it at all: a planted "website" can't make this computer visit an arbitrary site."""
     out: list[tuple[str, bool]] = []
     if job_url and not is_board(job_url):
         if origin := _origin(job_url):
@@ -187,13 +198,13 @@ async def candidates(job_url: str, sites: list[str], website: str, client: httpx
     elif job_url:
         if not sites:
             try:  # read through a board API: the posting page may still name the company's website
-                sites = org_sites(await safe_get(client, job_url))
-            except (FetchError, httpx.HTTPError, ValueError):
-                sites = []
+                sites = org_sites(await asyncio.wait_for(safe_get(client, job_url), TIMEOUT))
+            except (FetchError, httpx.HTTPError, ValueError, asyncio.TimeoutError):
+                sites = []  # a slow board doesn't stop the other candidates
         out += [(site, True) for site in map(clean_site, sites) if site]
         if site := board_domain(job_url):
             out.append((site, True))
-    if site := clean_site(website):
+    if (site := clean_site(website)) and address_names_company(company, site):
         out.append((site, True))
     unique: dict[str, tuple[str, bool]] = {}
     for site, check in out:  # one try per site ("www." or not)
@@ -224,16 +235,14 @@ async def _first_icon(urls: list[str], client: httpx.AsyncClient) -> tuple[bytes
     return None
 
 
-async def find_icon_rendered(site: str, check: bool, company: str, client: httpx.AsyncClient
-                             ) -> tuple[bytes, str] | None:
-    """For sites that give plain requests an empty page: render the homepage in the headless browser (every
-    request still SSRF-checked) to find the icon's real address, often on a separate image server."""
+async def find_icon_rendered(site: str, client: httpx.AsyncClient) -> tuple[bytes, str] | None:
+    """For a site that gives plain requests an empty page (bot protection): render the homepage in the headless
+    browser (every request still SSRF-checked) to find the icon's real address, often on a separate image server.
+    Only for the job link's own site or one whose address names the company (`fetch`)."""
     from . import jobfetch
     if not jobfetch.BROWSER_FALLBACK:
         return None
     rendered = await jobfetch.render_page(site + "/")
-    if check and not matches_company(company, site, rendered.html):
-        return None
     return await _first_icon(icon_links(rendered.html, rendered.url or site + "/"), client)
 
 
@@ -241,12 +250,13 @@ async def fetch(job_url: str, sites: list[str] | None = None, client: httpx.Asyn
                 company: str = "", website: str = "") -> tuple[bytes, str] | None:
     """The company's icon, or None (never raises). Each candidate site in turn (`candidates`): plain requests
     first (at most TIMEOUT seconds), then the headless browser when they found nothing (at most BROWSER_TIMEOUT
-    seconds); a site that isn't the company's is skipped without the browser."""
+    seconds) for the job link's own site or one whose address names the company; a site that isn't the company's
+    is skipped."""
     own = client is None
     client = client or pinned_client(timeout=TIMEOUT)
     try:
         try:
-            found_sites = await asyncio.wait_for(candidates(job_url, list(sites or []), website, client), TIMEOUT)
+            found_sites = await candidates(job_url, list(sites or []), website, client, company)
         except Exception as e:  # noqa: BLE001 — no icon is fine
             log.debug("TailorbirdCV: no site candidates for %s (%s)", job_url, e)
             return None
@@ -260,8 +270,10 @@ async def fetch(job_url: str, sites: list[str] | None = None, client: httpx.Asyn
                 continue  # not the company's site
             if found:
                 return found
+            if check and not address_names_company(company, site):
+                continue  # rendered only when its address names the company (or it's the job link's own site)
             try:
-                if found := await asyncio.wait_for(find_icon_rendered(site, check, company, client), BROWSER_TIMEOUT):
+                if found := await asyncio.wait_for(find_icon_rendered(site, client), BROWSER_TIMEOUT):
                     return found
             except Exception as e:  # noqa: BLE001
                 log.debug("TailorbirdCV: no rendered site icon from %s (%s)", site, e)
