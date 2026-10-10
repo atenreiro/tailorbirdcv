@@ -501,15 +501,16 @@ const KIND_LABEL: Record<UpdateStatus['kind'], string> = {
 function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; onSaved: (s: SettingsData) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const save = (patch: { company_icons?: boolean; learn_style?: boolean }) => {
+  const [days, setDays] = useState(String(settings.auto_close.days))
+  const save = (patch: Parameters<typeof api.saveSettings>[0]) => {
     setBusy(true); setError(null)
     api.saveSettings(patch).then(onSaved).catch((e) => setError((e as Error).message)).finally(() => setBusy(false))
   }
   return (
-    <section aria-labelledby="apps-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
+    <section id="applications" aria-labelledby="apps-title" className="animate-rise flex min-w-0 max-w-[980px] flex-col gap-4 rounded-[14px] border border-rule bg-sheet px-5 py-6 sm:px-7">
       <div className="flex flex-col gap-1.5">
         <p className={cx(label, 'text-accent')}>Applications</p>
-        <h2 id="apps-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Icons and learning</h2>
+        <h2 id="apps-title" className="font-display text-[28px] leading-none tracking-[-0.01em] text-ink">Icons, learning and closing</h2>
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       <label className="flex cursor-pointer items-start gap-2.5 text-sm">
@@ -535,6 +536,30 @@ function ApplicationsSettings({ settings, onSaved }: { settings: SettingsData; o
           </span>
         </span>
       </label>
+      <div className="flex items-start gap-2.5 text-sm">
+        <input id="auto-close" type="checkbox" className="mt-0.5 size-4 accent-[var(--color-accent)]" checked={settings.auto_close.enabled}
+          disabled={busy} onChange={(e) => save({ auto_close: { enabled: e.target.checked } })} />
+        <span className="flex flex-col gap-1.5">
+          <label htmlFor="auto-close" className="cursor-pointer font-medium text-ink">Close applications with no response</label>
+          <span className="flex flex-wrap items-center gap-2 text-muted">
+            <span>Close an application as <em>No response</em> when it’s still at Applied</span>
+            <input type="number" min={7} max={365} inputMode="numeric" aria-label="Days after applying" value={days}
+              disabled={busy || !settings.auto_close.enabled} className="field h-8 w-[72px] px-2 text-center"
+              onChange={(e) => setDays(e.target.value)}
+              onBlur={() => {
+                const n = Math.round(Number(days))
+                if (n >= 7 && n <= 365 && n !== settings.auto_close.days) save({ auto_close: { days: n } })
+                else setDays(String(settings.auto_close.days))
+              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }} />
+            <span>days after you applied (7–365).</span>
+          </span>
+          <span className="text-muted text-pretty">
+            Off by default. Applications that reached an interview or an offer are never touched, and one you reopen stays
+            open. Closing doesn’t change Results: it still counts as applied.
+          </span>
+        </span>
+      </div>
     </section>
   )
 }

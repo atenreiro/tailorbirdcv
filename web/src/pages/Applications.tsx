@@ -41,6 +41,7 @@ function nextOf(a: AppSummary): Next {
   const p = a.progress
   if (a.status === 'closed') {
     return a.outcome === 'accepted_offer' ? { text: 'Offer accepted', tone: 'ok' }
+      : a.auto_closed ? { text: `No reply in ${a.auto_close_days ?? 60} days · closed ${short(a.auto_closed)}`, tone: 'mute' }
       : { text: a.closed_at ? `Closed ${short(a.closed_at)}` : 'Closed', tone: 'mute' }  // the pill says how
   }
   if (a.status === 'offer') return { text: 'Offer received', tone: 'ok' }
@@ -412,6 +413,7 @@ export default function Applications() {
       </div>
       {identify.panel}
       <StyleSuggestions refresh={apps} />
+      {apps && <RecentlyAutoClosed apps={apps} />}
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {apps === null && !error && <p className="flex items-center gap-2 text-muted"><Spinner /> Loading…</p>}
@@ -590,6 +592,12 @@ function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, 
           <span className="font-mono text-[11px] text-faint">
             Created {short(a.created)} · updated {short(a.updated)}{a.pages ? ` · ${plural(a.pages, 'page')}` : ''}
           </span>
+          {a.status === 'closed' && a.auto_closed && (
+            <p className="w-full text-[13px] text-muted text-pretty">
+              Closed automatically on {short(a.auto_closed)}: no reply {a.auto_close_days ?? 60} days after you applied.
+              Heard back? Change its status: it won’t be closed again.
+            </p>
+          )}
         </div>
       </div>
 
@@ -712,6 +720,20 @@ function Sheet({ a, icon, detail, busy, notes, closeRef, deleteRef, confirming, 
         </div>
       )}
     </>
+  )
+}
+
+/** Applications that Settings → Applications → "close with no response" closed in the last week, so it's never silent. */
+function RecentlyAutoClosed({ apps }: { apps: AppSummary[] }) {
+  const [now] = useState(() => Date.now())
+  const week = apps.filter((a) => a.status === 'closed' && a.auto_closed && now - Date.parse(a.auto_closed) < 7 * 86_400_000)
+  if (!week.length) return null
+  const days = week[0].auto_close_days ?? 60
+  return (
+    <p className="animate-rise rounded-lg border border-rule bg-sheet px-3.5 py-2.5 text-sm text-ink text-pretty">
+      Closed as no response after {days} days without a reply: {week.map((a) => a.company).join(', ')}. Heard back from one?
+      Change its status and it stays open. <Link to="/settings#applications" className="font-medium text-accent hover:underline">Settings</Link>
+    </p>
   )
 }
 

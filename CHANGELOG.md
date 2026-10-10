@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- **Close applications with no response** (Settings → Applications, off by default): an application still at Applied 60 days after you applied (or the number of days you choose, 7–365) is closed as *No response*. Ones that reached an interview or an offer are never touched, one you reopen stays open, and Results still counts it as applied. The board says which ones were closed this way.
+
 ## 0.2.8 — 2026-10-08
 - Company icons for older applications: those analysed before the analysis named the company's website get it looked up once (one small AI call for all of them, company names only), then the icon is fetched with the usual checks. Short company names like DBS now match their website (dbs.com).
 

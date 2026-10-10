@@ -122,6 +122,8 @@ export interface Meta {
   /** The company's site icon kept with the application ("favicon.png"), "" when there is none. */
   favicon?: string
   outcome?: Outcome | null; closed_at?: string | null
+  /** Closed by Settings → Applications → close with no response: when, and after how many days. */
+  auto_closed?: string | null; auto_close_days?: number | null
   created: string; updated: string; notes?: string; pages?: number | null; repair_rounds?: number
   guidance?: string; trim_rounds?: number; built_hash?: string
   /** How full each PDF page is (0-1) and the lines left on the last one, measured after the build. */
@@ -215,13 +217,15 @@ export interface Settings {
   text_size?: 'standard' | 'comfortable'
   ai_engine: EngineId; api_model: string | null; openai_model: string | null; codex_model: string | null
   openrouter_model: string | null; openrouter_zdr: boolean; update_check: boolean; company_icons: boolean; learn_style: boolean
+  /** Close applications still at "applied" this many days after applying, as no response (off by default). */
+  auto_close: { enabled: boolean; days: number }
   hide_personal: boolean; private_address: string
   /** The user's headings ("" = the design's own, in section_defaults). */
   section_titles: Record<SectionKey, string>; section_defaults: Record<SectionKey, string>
   api_key: ApiKeyInfo; api_default_model: string; api_keys: Record<KeyProvider, ApiKeyInfo>; engines: EngineInfo[]
   keychain?: { available: boolean; backend: string | null }
 }
-export type SettingsPatch = { section_titles?: Partial<Record<SectionKey, string>>; pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
+export type SettingsPatch = { auto_close?: Partial<Settings['auto_close']>; section_titles?: Partial<Record<SectionKey, string>>; pdf_engine?: PdfEngine | null; targets?: Partial<Targets>; theme?: string; paper?: 'letter' | 'a4' | null; text_size?: 'standard' | 'comfortable'; ai_engine?: EngineId; api_model?: string | null
   openai_model?: string | null; codex_model?: string | null; openrouter_model?: string | null; openrouter_zdr?: boolean; update_check?: boolean; company_icons?: boolean; learn_style?: boolean; hide_personal?: boolean; private_address?: string }
 export interface Proposal {
   question_id: string; target: string; text: string; skills: { category: string; item: string }[]

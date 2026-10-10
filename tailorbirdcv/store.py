@@ -39,6 +39,7 @@ PIPELINE = ["draft", "analyzed", "composed", "built"]  # set by the tool; the re
 # Funnel stages, in order. An application "reached" a stage once its status got there,
 # even if it was later closed.
 MILESTONES = ["built", "applied", "interview", "offer"]
+AUTO_CLOSE_DAYS = (7, 365)  # the range Settings allows for "close with no response after … days"
 # How a closed application ended. Who ended it matters more than the label; the stage it
 # reached is already known from its milestones (so "rejected" + reached "interview" means
 # rejected after interviewing).
@@ -274,6 +275,7 @@ class Store:
         "learn_style": True,         # on marking an application applied, propose style rules from what was changed
         "hide_personal": True,       # replace contact details with placeholders in everything sent to the AI
         "private_address": "",       # the user's street address, hidden from the AI too (never printed by us)
+        "auto_close": {"enabled": False, "days": 60},  # close applied-but-unanswered ones as no_response (off by default)
         "section_titles": {k: "" for k in themes.TITLES},  # resume headings; "" = the design's own (themes.TITLES)
     }
 
@@ -303,6 +305,8 @@ class Store:
             out["text_size"] = self.SETTINGS["text_size"]
         if out["targets"]["pages"] not in (1, 2, 3):
             out["targets"]["pages"] = self.TARGETS["pages"]
+        if not (AUTO_CLOSE_DAYS[0] <= out["auto_close"]["days"] <= AUTO_CLOSE_DAYS[1]) or isinstance(out["auto_close"]["days"], bool):
+            out["auto_close"]["days"] = self.SETTINGS["auto_close"]["days"]
         return out
 
     def save_settings(self, patch: dict) -> dict:
@@ -880,6 +884,39 @@ class Store:
             if meta.get("status") != "closed":
                 meta["closed_at"] = dt.datetime.now().isoformat(timespec="seconds")
             return self.save_meta(app_id, {**meta, "status": "closed", "outcome": outcome})
+
+    def applied_on(self, app_id: str) -> str | None:
+        """When the application was marked applied: its milestone, else the copy frozen when applying."""
+        meta = self.meta(app_id)
+        applied = (meta.get("milestones") or {}).get("applied")
+        if not applied and (copy := self.applied_copy(app_id)):
+            applied = copy.get("created")
+        return applied
+
+    def auto_close(self, days: int, now: dt.datetime | None = None) -> list[str]:
+        """Settings → Applications → close with no response: every application still at "applied" `days` after it
+        was applied becomes closed / no_response, marked `auto_closed` (when). Only "applied": one that reached an
+        interview or an offer heard back. One the user reopened after it was closed this way (it still carries
+        `auto_closed`) is never closed again. Returns the ids it closed."""
+        now = now or dt.datetime.now()
+        closed = []
+        for app in self.list_apps():
+            if app.get("broken") or app.get("status") != "applied" or app.get("auto_closed"):
+                continue
+            try:
+                applied = self.applied_on(app["id"])
+                if not applied or now - dt.datetime.fromisoformat(applied[:19]) < dt.timedelta(days=days):
+                    continue
+                with _LOCK:
+                    meta = self.meta(app["id"])
+                    if meta.get("status") != "applied" or meta.get("auto_closed"):
+                        continue  # changed meanwhile
+                    self.set_status(app["id"], "closed", "no_response")
+                    self.update_meta(app["id"], auto_closed=now.isoformat(timespec="seconds"), auto_close_days=days)
+                closed.append(app["id"])
+            except (ValueError, AppNotFound, CorruptApp):
+                continue
+        return closed
 
     def applied_copy(self, app_id: str) -> dict | None:
         """The sent copy frozen when the application was marked applied (oldest, if several)."""

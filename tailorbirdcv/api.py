@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -88,6 +89,11 @@ class TargetsPatch(BaseModel):
 MODEL_ID = r"^(?:[A-Za-z0-9][A-Za-z0-9._:/\-]*)?$"  # e.g. claude-sonnet-5-5, gpt-6.1-sol, anthropic/claude-sonnet-5.5
 
 
+class AutoClosePatch(BaseModel):
+    enabled: bool | None = None
+    days: int | None = Field(None, ge=7, le=365)  # store.AUTO_CLOSE_DAYS
+
+
 class SettingsPatch(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -107,6 +113,7 @@ class SettingsPatch(BaseModel):
     learn_style: bool | None = None
     hide_personal: bool | None = None
     private_address: str | None = Field(None, max_length=300)
+    auto_close: AutoClosePatch | None = None
     section_titles: dict[Literal[tuple(themes.TITLES)], Annotated[str, Field(max_length=60)]] | None = None  # type: ignore[valid-type]
 
 
@@ -460,7 +467,9 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         if patch.pdf_engine and not any(e["id"] == patch.pdf_engine and e["available"]
                                         for e in await asyncio.to_thread(pdfmod.detect)):
             raise HTTPException(400, f"{pdfmod.NAMES[patch.pdf_engine]} isn't installed on this computer.")
-        data = patch.model_dump(include=patch.model_fields_set - {"targets"})
+        data = patch.model_dump(include=patch.model_fields_set - {"targets", "auto_close"})
+        if patch.auto_close is not None:
+            data["auto_close"] = patch.auto_close.model_dump(exclude_unset=True, exclude_none=True)
         for key in ("api_model", "openai_model", "codex_model", "openrouter_model"):
             if key in data:
                 data[key] = (data[key] or "").strip() or None
@@ -995,8 +1004,21 @@ def create_app(store: Store | None = None, engine: Engine | None = None,
         website_lookup.add(task)
         task.add_done_callback(website_lookup.discard)
 
+    auto_closed_at = {"t": 0.0}  # when the last no-response sweep ran (monotonic)
+
+    def sweep_no_response() -> None:
+        """Settings → Applications: close applications with no response after N days (off by default), at most
+        hourly, when the list is read."""
+        settings = store.settings()["auto_close"]
+        if not settings["enabled"] or time.monotonic() - auto_closed_at["t"] < 3600 and auto_closed_at["t"]:
+            return
+        auto_closed_at["t"] = time.monotonic()
+        if closed := store.auto_close(settings["days"]):
+            log.info("TailorbirdCV: closed %d application(s) with no response after %d days", len(closed), settings["days"])
+
     @api.get("/applications")
     async def list_applications():
+        await asyncio.to_thread(sweep_no_response)
         apps = await asyncio.to_thread(list_rows)
         # Applications from before icons existed (or made while they were off) get theirs now.
         queue_favicons([(a["id"], a["url"], [], a.get("company") or "", "") for a in apps
